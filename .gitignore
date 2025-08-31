@@ -1,0 +1,20 @@
+
+# Media files
+*.png
+*.jpg
+*.jpeg
+*.mp4
+*.avi
+*.mov
+
+# Media directories  
+*/OrientationPlots/
+*/VideoFrames/
+*/Rotplot_frames/
+
+# Data files
+*/Data/
+*.mat
+# Python cache
+__pycache__/
+*.pyc
