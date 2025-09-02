@@ -1,20 +1,22 @@
-
 # Media files
 *.png
+*.mp4
 *.jpg
 *.jpeg
-*.mp4
-*.avi
-*.mov
+*.gif
 
-# Media directories  
-*/OrientationPlots/
-*/VideoFrames/
-*/Rotplot_frames/
-
-# Data files
-*/Data/
-*.mat
 # Python cache
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+
+# Generated directories
+*/VideoFrames/
+*/OrientationPlots/
+
+# Binary files
+*.so
+*.zip
+
+# Other
+.DS_Store
