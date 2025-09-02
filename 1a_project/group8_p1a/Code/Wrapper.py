@@ -17,6 +17,17 @@ base_imu_path = "../Data/Train/IMU/"
 base_vicon_path = "../Data/Train/Vicon/"
 IMUParams = io.loadmat("../IMUParams.mat")
 
+
+'''
+ISSUE with params
+The provided IMUParams.mat file contained negative scale factors, requiring modification of the calibration formula to use absolute values of scale factors and subtract rather than add bias values to achieve correct accelerometer magnitudes of ~9.81 m/s²
+IMUParams
+array([[-0.00941012, -0.00944606,  0.00893549],
+       [ 4.81660203,  4.72727773, -4.42103827]])}
+       
+       
+'''
+
 def validate_rotation_matrix(matrix, tol=1e-6):
     identity_check = np.dot(matrix, matrix.T)
     if not np.allclose(identity_check, np.eye(3), atol=tol):
@@ -52,12 +63,14 @@ for dataset_num in range(1, 2):
             PhysAcc = np.zeros((3, np.shape(IMUData['vals'])[1]))
             for i in range(3):
                 # PhysAcc[i,:] = (IMUData['vals'][i,:] - IMUParams['IMUParams'][1,i])/abs(IMUParams['IMUParams'][0,i]) 
-                PhysAcc[i,:] = (IMUData['vals'][i,:] * abs(IMUParams['IMUParams'][0,i])) - IMUParams['IMUParams'][1,i]
+                PhysAcc[i,:] = ((IMUData['vals'][i,:] * abs(IMUParams['IMUParams'][0,i])) - IMUParams['IMUParams'][1,i])
             # print("PhysAcc = ", PhysAcc)
                 
             return PhysAcc
 
         PhysAcc = Acc_To_PhysAcc(IMUData, IMUParams)
+        
+
 
         def w_To_Physw(IMUData):
             n = np.shape(IMUData['vals'])[1]
@@ -116,7 +129,7 @@ for dataset_num in range(1, 2):
         
         def getOrientationIMU_Gyro(Physw, ViconNewRots, ValidMask, dtar):
 
-            omega = Physw[:, ValidMask][[0 ,1, 2], :]  # [wx, wy, wz]
+            omega = Physw[:, ValidMask][[0 ,1, 2], :]  
             
 
             initial_euler = ViconNewRots[0].as_euler('zxy', degrees=True)
@@ -141,11 +154,12 @@ for dataset_num in range(1, 2):
             initial_yaw = ViconNewRots[0].as_euler('zxy', degrees=True)[0]
             
             for i in range(n):
-                acc_norm = acc[:, i] 
+                acc_norm = acc[:, i]/ np.linalg.norm(acc[:, i])
                 
                 pitch = np.arctan2(-acc_norm[0], np.sqrt(acc_norm[1]**2 + acc_norm[2]**2)) * 180/np.pi
                 roll = np.arctan2(acc_norm[1], acc_norm[2]) * 180/np.pi
                 yaw = initial_yaw
+
                 
                 OrientationFromAcc[i] = [yaw, pitch, roll]
             
@@ -178,9 +192,65 @@ for dataset_num in range(1, 2):
             
             return np.array(orientations)
 
-        OrientationFromComplementary = getOrientationFromComplementaryFilter(Physw, PhysAcc, ViconNewRots, ValidMask, dtar, alpha=0.999)
+        OrientationFromComplementary = getOrientationFromComplementaryFilter(Physw, PhysAcc, ViconNewRots, ValidMask, dtar, alpha=0.9999)
         print("Orientation from Complementary Filter calculated.")
-
+        
+        def quaternion_multiplication(q1,q2):
+            w1, x1, y1, z1 = q1
+            w2, x2, y2, z2 = q2
+            
+            w = w1*w2 - x1*x2 - y1*y2 - z1*z2
+            x = w1*x2 + x1*w2 + y1*z2 - z1*y2
+            y = w1*y2 - x1*z2 + y1*w2 + z1*x2
+            z = w1*z2 + x1*y2 - y1*x2 + z1*w2
+            
+            return np.array([w, x, y, z])
+        
+        def getOrientatiomfromMadgwickFilter(Physw, PhysAcc, ViconNewRots, ValidMask, dtar, beta=0.1):
+            q_current = ViconNewRots[0].as_quat(scalar_first=True)
+            orientations = []
+            orientations.append(ViconNewRots[0].as_euler('zxy', degrees=True))
+            
+            for i, dt in enumerate(dtar):
+                
+                omega = Physw[:, ValidMask][[1,2,0], i] # wx, wy, wz
+                acc = PhysAcc[:, ValidMask][:, i]
+                acc_norm = acc / np.linalg.norm(acc)
+                
+                q_dot_gyro = 0.5 * quaternion_multiplication(q_current, [0, omega[0], omega[1], omega[2]])
+                w, x, y, z = q_current
+                f = np.array([
+                2*(x*z - w*y) - acc_norm[0],       
+                2*(w*x + y*z) - acc_norm[1],       
+                2*(0.5 - x*x - y*y) - acc_norm[2]])
+                
+                
+                J = np.array([
+                [-2*y,  2*z, -2*w,  2*x], 
+                [ 2*x,  2*w,  2*z,  2*y],  
+                [ 0,   -4*x, -4*y,  0  ]])
+                
+                gradient = J.T @ f
+                
+                gradient_norm = np.linalg.norm(gradient)
+                gradient_normalized = gradient / gradient_norm if gradient_norm != 0 else np.zeros(4)
+                
+                q_dot_est = q_dot_gyro - beta * gradient_normalized
+                q_current = q_current + q_dot_est * dt
+                q_current = q_current / np.linalg.norm(q_current)
+                
+                euler = R.from_quat(q_current, scalar_first=True).as_euler('zxy', degrees=True)
+                orientations.append(euler)
+            
+            return np.array(orientations)
+        
+        OrientationFromMadgwick = getOrientatiomfromMadgwickFilter(Physw, PhysAcc, ViconNewRots, ValidMask, dtar, beta=0.0001)
+        print("Orientation from Madgwick Filter calculated.")
+        # beta = 0.1 not that good
+        # beta = 0  works,  but no correction .. 
+        # beta = 0.9 
+        # beta = 0.001 is better
+        
         comparison_save_path = os.path.join(orientation_plot_dir, f'orientation_comparison_{dataset_num}.png')
         plt.figure(figsize=(15, 12))
         plt.subplot(3, 1, 1)
@@ -188,6 +258,7 @@ for dataset_num in range(1, 2):
         plt.plot(ValidIMU_ts, OrientationFromGyro[:, 0], label='Gyro Yaw', color='b', linestyle='--', alpha=0.7)
         plt.plot(ValidIMU_ts, OrientationFromAcc[:, 0], label='Acc Yaw', color='r', linestyle=':', alpha=0.7)
         plt.plot(ValidIMU_ts, OrientationFromComplementary[:, 0], label='Complementary Yaw', color='g', linewidth=1.5)
+        plt.plot(ValidIMU_ts, OrientationFromMadgwick[:, 0], label='Madgwick Yaw', color='m', linewidth=1.5)
         plt.ylabel('Yaw (deg)')
         plt.legend()
         plt.grid(True, alpha=0.3)
@@ -197,6 +268,7 @@ for dataset_num in range(1, 2):
         plt.plot(ValidIMU_ts, OrientationFromGyro[:, 1], label='Gyro Pitch', color='b', linestyle='--', alpha=0.7)
         plt.plot(ValidIMU_ts, OrientationFromAcc[:, 1], label='Acc Pitch', color='r', linestyle=':', alpha=0.7)
         plt.plot(ValidIMU_ts, OrientationFromComplementary[:, 1], label='Complementary Pitch', color='g', linewidth=1.5)
+        plt.plot(ValidIMU_ts, OrientationFromMadgwick[:, 1], label='Madgwick Pitch', color='m', linewidth=1.5)
         plt.ylabel('Pitch (deg)')
         plt.legend()
         plt.grid(True, alpha=0.3)
@@ -205,6 +277,7 @@ for dataset_num in range(1, 2):
         plt.plot(ValidIMU_ts, OrientationFromGyro[:, 2], label='Gyro Roll', color='b', linestyle='--', alpha=0.7)
         plt.plot(ValidIMU_ts, OrientationFromAcc[:, 2], label='Acc Roll', color='r', linestyle=':', alpha=0.7)
         plt.plot(ValidIMU_ts, OrientationFromComplementary[:, 2], label='Complementary Roll', color='g', linewidth=1.5)
+        plt.plot(ValidIMU_ts, OrientationFromMadgwick[:, 2], label='Madgwick Roll', color='m', linewidth=1.5)
         plt.xlabel('Time (s)')
         plt.ylabel('Roll (deg)')
         plt.legend()
@@ -240,6 +313,7 @@ for dataset_num in range(1, 2):
             'Gyro': OrientationFromGyro,
             'Acc': OrientationFromAcc,
             'CF': OrientationFromComplementary,
+            'Madgwick': OrientationFromMadgwick,
             'Vicon': OrientationFromVicon
         }
         for method, orientation_array in methods.items():
