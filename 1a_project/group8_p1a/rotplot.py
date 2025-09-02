@@ -52,7 +52,6 @@ def rotplot(R, currentAxes=None):
     return ax
 
 
-
 # Example usage: Putting two rotations on one graph.
 # Call the function below from another Python file.
 
@@ -63,24 +62,75 @@ RTurn = np.array([[np.cos(np.pi / 2), 0, np.sin(np.pi / 2)], [0, 1, 0], [-np.sin
 rotplot(RTurn, myAxis)
 plt.show()
 
-def make_videos_for_dataset(dataset_dir, methods=['Gyro', 'Acc', 'CF', 'Vicon'], framerate=10):
 
+def make_videos_for_dataset(dataset_dir, methods=['Gyro', 'Acc', 'CF', 'Vicon', 'Madgwick'], framerate=10):
+    """
+    Create individual videos for each method and combine them into a grid layout.
+    
+    Args:
+        dataset_dir: Path to the dataset directory containing method folders
+        methods: List of method names to process
+        framerate: Framerate for the output videos
+    """
     video_paths = []
+    successful_methods = []
+    
     for method in methods:
         method_dir = os.path.join(dataset_dir, method)
+        
+        # Check if method directory exists and has frames
+        if not os.path.exists(method_dir):
+            print(f'Method directory {method_dir} does not exist, skipping {method}...')
+            continue
+            
+        # Check if there are any frame files
+        frame_files = [f for f in os.listdir(method_dir) if f.startswith('frame_') and f.endswith('.png')]
+        if not frame_files:
+            print(f'No frame files found in {method_dir}, skipping {method}...')
+            continue
+            
         video_path = os.path.join(dataset_dir, f'{method}.mp4')
+        
         # ffmpeg command to create video from frames
         cmd = [
             'ffmpeg', '-y', '-loglevel', 'error', '-framerate', str(framerate),
             '-i', os.path.join(method_dir, 'frame_%04d.png'),
             '-c:v', 'libx264', '-pix_fmt', 'yuv420p', video_path
         ]
+        
         print(f'Creating video for {method} in {dataset_dir}...')
-        subprocess.run(cmd, check=True)
-        video_paths.append(video_path)
-    # Combine 4 videos into a 2x2 grid (Gyro, Acc, CF, Vicon)
+        
+        try:
+            subprocess.run(cmd, check=True)
+            video_paths.append(video_path)
+            successful_methods.append(method)
+            print(f'Successfully created {method}.mp4')
+        except subprocess.CalledProcessError as e:
+            print(f'Error creating video for {method}: {e}')
+        except FileNotFoundError:
+            print(f'ffmpeg not found. Please install ffmpeg to create videos.')
+            return
+    
+    # Create combined grid video based on number of successful videos
+    if len(video_paths) >= 4:
+        create_combined_video(dataset_dir, video_paths, successful_methods)
+    else:
+        print(f'Created {len(video_paths)} individual videos. Need at least 4 videos to create combined grid.')
+
+
+def create_combined_video(dataset_dir, video_paths, method_names):
+    """
+    Create a combined grid video from individual method videos.
+    
+    Args:
+        dataset_dir: Directory to save the combined video
+        video_paths: List of paths to individual videos
+        method_names: List of method names corresponding to video paths
+    """
+    combined_path = os.path.join(dataset_dir, 'combined.mp4')
+    
     if len(video_paths) == 4:
-        combined_path = os.path.join(dataset_dir, 'combined.mp4')
+        # 2x2 grid for 4 videos
         cmd_grid = [
             'ffmpeg', '-y', '-loglevel', 'error',
             '-i', video_paths[0], '-i', video_paths[1], '-i', video_paths[2], '-i', video_paths[3],
@@ -88,10 +138,52 @@ def make_videos_for_dataset(dataset_dir, methods=['Gyro', 'Acc', 'CF', 'Vicon'],
             '[0:v][1:v]hstack=inputs=2[top];[2:v][3:v]hstack=inputs=2[bottom];[top][bottom]vstack=inputs=2',
             '-c:v', 'libx264', '-pix_fmt', 'yuv420p', combined_path
         ]
-        print(f'Combining videos into grid for {dataset_dir}...')
+        layout = "2x2"
+        
+    elif len(video_paths) == 5:
+        # 5 videos in a horizontal row - simple and clean
+        cmd_grid = [
+            'ffmpeg', '-y', '-loglevel', 'error',
+            '-i', video_paths[0], '-i', video_paths[1], '-i', video_paths[2], 
+            '-i', video_paths[3], '-i', video_paths[4],
+            '-filter_complex',
+            '[0:v][1:v][2:v][3:v][4:v]hstack=inputs=5',
+            '-c:v', 'libx264', '-pix_fmt', 'yuv420p', combined_path
+        ]
+        layout = "1x5 horizontal"
+        
+    elif len(video_paths) == 6:
+        # 3x2 grid for 6 videos
+        cmd_grid = [
+            'ffmpeg', '-y', '-loglevel', 'error',
+            '-i', video_paths[0], '-i', video_paths[1], '-i', video_paths[2], 
+            '-i', video_paths[3], '-i', video_paths[4], '-i', video_paths[5],
+            '-filter_complex',
+            '[0:v][1:v][2:v]hstack=inputs=3[top];[3:v][4:v][5:v]hstack=inputs=3[bottom];[top][bottom]vstack=inputs=2',
+            '-c:v', 'libx264', '-pix_fmt', 'yuv420p', combined_path
+        ]
+        layout = "3x2"
+        
+    else:
+        # For other numbers, create a horizontal stack
+        inputs = ''.join([f'-i {path} ' for path in video_paths])
+        filter_str = ''.join([f'[{i}:v]' for i in range(len(video_paths))]) + f'hstack=inputs={len(video_paths)}'
+        
+        cmd_grid = [
+            'ffmpeg', '-y', '-loglevel', 'error'
+        ] + [item for path in video_paths for item in ['-i', path]] + [
+            '-filter_complex', filter_str,
+            '-c:v', 'libx264', '-pix_fmt', 'yuv420p', combined_path
+        ]
+        layout = f"1x{len(video_paths)}"
+    
+    print(f'Combining videos into {layout} grid for {dataset_dir}...')
+    print(f'Methods in grid: {", ".join(method_names)}')
+    
+    try:
         subprocess.run(cmd_grid, check=True)
         print(f'Combined video saved at {combined_path}')
-    else:
-        print('Not enough videos to combine into a grid.')
-
-
+    except subprocess.CalledProcessError as e:
+        print(f'Error creating combined video: {e}')
+    except FileNotFoundError:
+        print(f'ffmpeg not found. Please install ffmpeg to create combined video.')
