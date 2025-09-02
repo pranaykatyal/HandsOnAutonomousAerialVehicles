@@ -63,7 +63,7 @@ for dataset_num in range(1, 2):
             PhysAcc = np.zeros((3, np.shape(IMUData['vals'])[1]))
             for i in range(3):
                 # PhysAcc[i,:] = (IMUData['vals'][i,:] - IMUParams['IMUParams'][1,i])/abs(IMUParams['IMUParams'][0,i]) 
-                PhysAcc[i,:] = ((IMUData['vals'][i,:] * abs(IMUParams['IMUParams'][0,i])) - IMUParams['IMUParams'][1,i])
+                PhysAcc[i,:] = ((IMUData['vals'][i,:] * IMUParams['IMUParams'][0,i]) + IMUParams['IMUParams'][1,i])
             # print("PhysAcc = ", PhysAcc)
                 
             return PhysAcc
@@ -161,7 +161,7 @@ for dataset_num in range(1, 2):
                 yaw = initial_yaw
 
                 
-                OrientationFromAcc[i] = [yaw, pitch, roll]
+                OrientationFromAcc[i] = [yaw, roll, pitch]
             
             return OrientationFromAcc
 
@@ -182,8 +182,8 @@ for dataset_num in range(1, 2):
                 
                 acc_norm = acc[:, i+1] / np.linalg.norm(acc[:, i+1]) if i+1 < acc.shape[1] else acc[:, i] / np.linalg.norm(acc[:, i])
                 acc_pitch = np.arctan2(-acc_norm[0], np.sqrt(acc_norm[1]**2 + acc_norm[2]**2)) * 180/np.pi
-                acc_roll = np.arctan2(acc_norm[1], acc_norm[2]) * 180/np.pi
-                acc_measurement = np.array([current_orientation[0], acc_pitch, acc_roll])
+                acc_roll = np.arctan2(acc_norm[1], np.sqrt(acc_norm[0]**2 + acc_norm[2]**2)) * 180/np.pi
+                acc_measurement = np.array([current_orientation[0], acc_roll, acc_pitch])
 
                 complementary_euler = alpha * gyro_prediction + (1 - alpha) * acc_measurement
                 
@@ -192,7 +192,7 @@ for dataset_num in range(1, 2):
             
             return np.array(orientations)
 
-        OrientationFromComplementary = getOrientationFromComplementaryFilter(Physw, PhysAcc, ViconNewRots, ValidMask, dtar, alpha=0.9999)
+        OrientationFromComplementary = getOrientationFromComplementaryFilter(Physw, PhysAcc, ViconNewRots, ValidMask, dtar, alpha=0.99)
         print("Orientation from Complementary Filter calculated.")
         
         def quaternion_multiplication(q1,q2):
@@ -244,7 +244,7 @@ for dataset_num in range(1, 2):
             
             return np.array(orientations)
         
-        OrientationFromMadgwick = getOrientatiomfromMadgwickFilter(Physw, PhysAcc, ViconNewRots, ValidMask, dtar, beta=0.0001)
+        OrientationFromMadgwick = getOrientatiomfromMadgwickFilter(Physw, PhysAcc, ViconNewRots, ValidMask, dtar, beta=0.2)
         print("Orientation from Madgwick Filter calculated.")
         # beta = 0.1 not that good
         # beta = 0  works,  but no correction .. 
