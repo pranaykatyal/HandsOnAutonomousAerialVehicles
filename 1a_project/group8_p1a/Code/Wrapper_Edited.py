@@ -51,8 +51,8 @@ for dataset_num in range(1, 2):
         def Acc_To_PhysAcc(IMUData, IMUParams):
             PhysAcc = np.zeros((3, np.shape(IMUData['vals'])[1]))
             for i in range(3):
-                # PhysAcc[i,:] = (IMUData['vals'][i,:] - IMUParams['IMUParams'][1,i])/abs(IMUParams['IMUParams'][0,i]) 
-                PhysAcc[i,:] = (IMUData['vals'][i,:] * abs(IMUParams['IMUParams'][0,i])) - IMUParams['IMUParams'][1,i]
+                #PhysAcc[i,:] = (IMUData['vals'][i,:] - IMUParams['IMUParams'][1,i])/abs(IMUParams['IMUParams'][0,i]) 
+                PhysAcc[i,:] =  (IMUData['vals'][i,:]) * IMUParams['IMUParams'][0,i] + IMUParams['IMUParams'][1,i]
             # print("PhysAcc = ", PhysAcc)
                 
             return PhysAcc
@@ -179,58 +179,109 @@ for dataset_num in range(1, 2):
             
             return np.array(orientations)
 
-        OrientationFromComplementary = getOrientationFromComplementaryFilter(Physw, PhysAcc, ViconNewRots, ValidMask, dtar, alpha=0.999)
+        OrientationFromComplementary = getOrientationFromComplementaryFilter(Physw, PhysAcc, ViconNewRots, ValidMask, dtar, alpha=0.9999)
         print("Orientation from Complementary Filter calculated.")
 
 
-        def getOrientationFromMadgwickFilter(Physw, PhysAcc, ViconNewRots, ValidMask, dtar, alpha=0.98):
-            {
+        def quat_multiply(q1, q2):
+            """
+            Multiply two quaternions (compose rotations).
+            Convention: quaternions in [w, x, y, z] format.
+            """
+            w1, x1, y1, z1 = q1
+            w2, x2, y2, z2 = q2
 
+            w = w1*w2 - x1*x2 - y1*y2 - z1*z2
+            x = w1*x2 + x1*w2 + y1*z2 - z1*y2
+            y = w1*y2 - x1*z2 + y1*w2 + z1*x2
+            z = w1*z2 + x1*y2 - y1*x2 + z1*w2
+
+            return np.array([w, x, y, z])
+
+        
+        def getOrientationFromMadgwickFilter(Physw, PhysAcc, ViconNewRots, ValidMask, dtar, beta=0.98, gamma=0.98):
+            
+                
+            
                 # Load Physical Acc & Gyro Values in Euler (Pitch, Roll, Yaw) Form
 
                 # Convert to quaternion form
 
-                cy = cos(yaw/2)
-                sy = sin(yaw/2)
-                cp = cos(pitch/2)
-                sp = sin(pitch/2)
-                cr = cos(roll/2)
-                sr= sin(roll/2)
+                # cy = cos(yaw/2)
+                # sy = sin(yaw/2)
+                # cp = cos(pitch/2)
+                # sp = sin(pitch/2)
+                # cr = cos(roll/2)
+                # sr= sin(roll/2)
                 
 
-                w = cr⋅cp⋅cy+sr⋅sp⋅sy
-                x = sr⋅cp⋅cy−cr⋅sp⋅sy
-                y = cr⋅sp⋅cy+sr⋅cp⋅sy
-                z = cr⋅cp⋅sy−sr⋅sp⋅cy
-
-
+                # w = cr⋅cp⋅cy+sr⋅sp⋅sy
+                # x = sr⋅cp⋅cy−cr⋅sp⋅sy
+                # y = cr⋅sp⋅cy+sr⋅cp⋅sy
+                # z = cr⋅cp⋅sy−sr⋅sp⋅cy
+                
+                
+                
 
                 # Implement Gyro Prediction term of Madgwick Filter using Quaternion Rotation Matrix Mutiplication 
 
                 # predict_dot(k+1) = (1/2) q(k) * [0, wx, wy, wz] 
-                #predict = (1/2) q(k) + predict_dot * delta_t
+                #predict = q(k) + predict_dot * delta_t
 
-                # Implement Correction term of Madgwick Filter using Gradient Descent
+                predict_dot = np.zeros((4, OrientationFromGyro.shape[0]))
+                predict = np.zeros((4, OrientationFromGyro.shape[0]))
+                filtered = np.zeros((4, OrientationFromGyro.shape[0]))
 
-                     # correct =  - beta * delta_f / norm(delta_f)
+                filtered[:, 0] = R.from_euler('zxy', ViconNewRots[0].as_euler('zxy', degrees=True), degrees=True).as_quat(scalar_first=True)
+
+                mu = 1.0  # You can tune mu as needed
+                for i in range(0, predict_dot.shape[1]-1):
+                    predict_dot[:, i+1] = 0.5 * quat_multiply(filtered[:, i], np.array([0, Physw[1, i], Physw[2, i], Physw[0, i]]))
+                    predict[:, i+1] = filtered[:, i] + predict_dot[:, i+1] * dtar[i]
+                    # Normalize quaternion
+                    predict[:, i+1] = predict[:, i+1] / np.linalg.norm(predict[:, i+1])
+                    predict = predict / np.linalg.norm(predict, axis=0)
+                    # Correction term of Madgwick Filter using Gradient Descent
+                    q1 = predict[0, i+1]
+                    q2 = predict[1, i+1]
+                    q3 = predict[2, i+1]
+                    q4 = predict[3, i+1]
+
+                    f = np.array([
+                        2*(q2*q4-q1*q3)-PhysAcc[0,i],
+                        2*(q1*q2+q3*q4)-PhysAcc[1, i],
+                        2*(0.5-q2*q2-q3*q3)-PhysAcc[2, i]
+                    ])
+                    J = np.array([
+                        [-2*q3, 2*q4, -2*q1, 2*q2],
+                        [2*q2, 2*q1, 2*q4, 2*q3],
+                        [0, -4*q2, -4*q3, 0]
+                    ])
+                    delta_f = J.T @ f
+                    norm_delta_f = np.linalg.norm(delta_f)
+                    if norm_delta_f == 0:
+                        correct = np.zeros_like(delta_f)
+                    else:
+                        correct = -beta * delta_f / norm_delta_f
+
+                    # Tune gamma according to formula: gamma = beta / (mu/dt + beta)
+                    dt = dtar[i] if np.isscalar(dtar[i]) else dtar[i][0]
+                    gamma_t = beta / (mu/dt + beta)
+
+                    # Integrate
+                    filtered[:, i+1] = gamma_t * correct + (1-gamma_t) * predict[:, i+1]
+
                 
-                # f(q) = [2(q1​q3​−q0​q2​)−ax​;
-                #           2(q0​q1​+q2​q3​)−ay;
-                #           ​2(0.5−q12​−q22​)−az​​ ]
-
-                # J = [ −2q2 2q3 -2q0 2q1; 2q1 2q0 2q3 2q2; 0 -4q1 -4q2 0]
-
-                #delta_f = J^T * f(q)
-                
-
-                # Integrate
-                # q(k+1) = gamma*correct + (1-gamma)*predict
-
-
-            }
+                # Convert quaternion array to Euler angles for plotting
+                # filtered: shape (4, N), columns are [w, x, y, z]
+                filtered_quat = filtered.T  # shape (N, 4)
+                # Use scipy Rotation to convert to euler angles (zxy order, degrees)
+                eulers = R.from_quat(filtered_quat, scalar_first=True).as_euler('zxy', degrees=True)
+                return eulers
 
 
 
+        OrientationFromMadgwick = getOrientationFromMadgwickFilter(Physw, PhysAcc, ViconNewRots, ValidMask, dtar, beta=0.0001, gamma=0)
 
 
         comparison_save_path = os.path.join(orientation_plot_dir, f'orientation_comparison_{dataset_num}.png')
@@ -240,6 +291,8 @@ for dataset_num in range(1, 2):
         plt.plot(ValidIMU_ts, OrientationFromGyro[:, 0], label='Gyro Yaw', color='b', linestyle='--', alpha=0.7)
         plt.plot(ValidIMU_ts, OrientationFromAcc[:, 0], label='Acc Yaw', color='r', linestyle=':', alpha=0.7)
         plt.plot(ValidIMU_ts, OrientationFromComplementary[:, 0], label='Complementary Yaw', color='g', linewidth=1.5)
+        plt.plot(ValidIMU_ts, OrientationFromMadgwick[:, 0], label='Madgwick Yaw', color='m', linewidth=1.5)
+
         plt.ylabel('Yaw (deg)')
         plt.legend()
         plt.grid(True, alpha=0.3)
@@ -249,6 +302,7 @@ for dataset_num in range(1, 2):
         plt.plot(ValidIMU_ts, OrientationFromGyro[:, 1], label='Gyro Pitch', color='b', linestyle='--', alpha=0.7)
         plt.plot(ValidIMU_ts, OrientationFromAcc[:, 1], label='Acc Pitch', color='r', linestyle=':', alpha=0.7)
         plt.plot(ValidIMU_ts, OrientationFromComplementary[:, 1], label='Complementary Pitch', color='g', linewidth=1.5)
+        plt.plot(ValidIMU_ts, OrientationFromMadgwick[:, 1], label='Madgwick Yaw', color='m', linewidth=1.5)
         plt.ylabel('Pitch (deg)')
         plt.legend()
         plt.grid(True, alpha=0.3)
@@ -257,6 +311,7 @@ for dataset_num in range(1, 2):
         plt.plot(ValidIMU_ts, OrientationFromGyro[:, 2], label='Gyro Roll', color='b', linestyle='--', alpha=0.7)
         plt.plot(ValidIMU_ts, OrientationFromAcc[:, 2], label='Acc Roll', color='r', linestyle=':', alpha=0.7)
         plt.plot(ValidIMU_ts, OrientationFromComplementary[:, 2], label='Complementary Roll', color='g', linewidth=1.5)
+        plt.plot(ValidIMU_ts, OrientationFromMadgwick[:, 2], label='Madgwick Yaw', color='m', linewidth=1.5)
         plt.xlabel('Time (s)')
         plt.ylabel('Roll (deg)')
         plt.legend()
@@ -292,7 +347,9 @@ for dataset_num in range(1, 2):
             'Gyro': OrientationFromGyro,
             'Acc': OrientationFromAcc,
             'CF': OrientationFromComplementary,
+            'MG': OrientationFromMadgwick,
             'Vicon': OrientationFromVicon
+            
         }
         for method, orientation_array in methods.items():
             method_dir = os.path.join(base_dir, method)
