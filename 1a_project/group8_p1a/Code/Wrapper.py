@@ -6,7 +6,6 @@ import os
 import importlib.util
 import sys
 
-
 rotplot_path = '../rotplot.py'
 spec = importlib.util.spec_from_file_location('rotplot', rotplot_path)
 rotplot = importlib.util.module_from_spec(spec)
@@ -15,18 +14,8 @@ spec.loader.exec_module(rotplot)
 
 base_imu_path = "../Data/Train/IMU/"
 base_vicon_path = "../Data/Train/Vicon/"
+base_imu_test_path = "../Data/Test/IMU/"
 IMUParams = io.loadmat("../IMUParams.mat")
-
-
-'''
-ISSUE with params
-The provided IMUParams.mat file contained negative scale factors, requiring modification of the calibration formula to use absolute values of scale factors and subtract rather than add bias values to achieve correct accelerometer magnitudes of ~9.81 m/s²
-IMUParams
-array([[-0.00941012, -0.00944606,  0.00893549],
-       [ 4.81660203,  4.72727773, -4.42103827]])}
-       
-       
-'''
 
 def validate_rotation_matrix(matrix, tol=1e-6):
     identity_check = np.dot(matrix, matrix.T)
@@ -41,36 +30,36 @@ def validate_rotation_matrix(matrix, tol=1e-6):
     return matrix
 
 rotplot_base_dir = '../Code/Rotplot_frames'
-
 orientation_plot_dir = '../Code/OrientationPlots'
 os.makedirs(orientation_plot_dir, exist_ok=True)
 
-stride = 50  
+stride = 20  
 
-for dataset_num in range(1, 2):
+for dataset_num in range(1, 11):
     print(f"\nProcessing dataset {dataset_num}...")
     
     try:
         imu_file = f"imuRaw{dataset_num}.mat"
         vicon_file = f"viconRot{dataset_num}.mat"
         
-        IMUData = io.loadmat(os.path.join(base_imu_path, imu_file))
-        ViconData = io.loadmat(os.path.join(base_vicon_path, vicon_file))
+        is_test_data = dataset_num > 6
         
-        print("Data Imported.")
+        if is_test_data:
+            IMUData = io.loadmat(os.path.join(base_imu_test_path, imu_file))
+            ViconData = None
+            print("Test data imported (no Vicon).")
+        else:
+            IMUData = io.loadmat(os.path.join(base_imu_path, imu_file))
+            ViconData = io.loadmat(os.path.join(base_vicon_path, vicon_file))
+            print("Train data imported (with Vicon).")
 
         def Acc_To_PhysAcc(IMUData, IMUParams):
             PhysAcc = np.zeros((3, np.shape(IMUData['vals'])[1]))
             for i in range(3):
-                # PhysAcc[i,:] = (IMUData['vals'][i,:] - IMUParams['IMUParams'][1,i])/abs(IMUParams['IMUParams'][0,i]) 
                 PhysAcc[i,:] = ((IMUData['vals'][i,:] * IMUParams['IMUParams'][0,i]) + IMUParams['IMUParams'][1,i])
-            # print("PhysAcc = ", PhysAcc)
-                
             return PhysAcc
 
         PhysAcc = Acc_To_PhysAcc(IMUData, IMUParams)
-        
-
 
         def w_To_Physw(IMUData):
             n = np.shape(IMUData['vals'])[1]
@@ -86,72 +75,75 @@ for dataset_num in range(1, 2):
             return Physw
 
         Physw = w_To_Physw(IMUData)
-        
-
         IMU_ts = IMUData['ts'].flatten()
-        Vicon_ts = ViconData['ts'].flatten()
-        Vicon_Rot = ViconData['rots']
-        print("Data Calculated")
-
-        def synchronizeUsingSlerp(Vicon_Rot, Vicon_ts, IMU_ts):
-            valid_rotations = []
-            for i in range(Vicon_Rot.shape[2]):
-                rot_matrix = Vicon_Rot[:, :, i]
-                try:
-                    fixed_matrix = validate_rotation_matrix(rot_matrix)
-                    valid_rotations.append(fixed_matrix)
-                except:
-                    valid_rotations.append(np.eye(3))
+        
+        if not is_test_data:
+            Vicon_ts = ViconData['ts'].flatten()
+            Vicon_Rot = ViconData['rots']
             
-            Vicon_Rot_valid = np.stack(valid_rotations, axis=2)
+            def synchronizeUsingSlerp(Vicon_Rot, Vicon_ts, IMU_ts):
+                valid_rotations = []
+                for i in range(Vicon_Rot.shape[2]):
+                    rot_matrix = Vicon_Rot[:, :, i]
+                    try:
+                        fixed_matrix = validate_rotation_matrix(rot_matrix)
+                        valid_rotations.append(fixed_matrix)
+                    except:
+                        valid_rotations.append(np.eye(3))
+                
+                Vicon_Rot_valid = np.stack(valid_rotations, axis=2)
+                Orientation_Vicon = R.from_matrix(np.moveaxis(Vicon_Rot_valid, -1, 0))
+                slerp = Slerp(Vicon_ts, Orientation_Vicon)
+                ValidMask = (IMU_ts >= Vicon_ts[0]) & (IMU_ts <= Vicon_ts[-1])
+                ValidIMU_ts = IMU_ts[ValidMask]
+                ViconNewRots = slerp(ValidIMU_ts)
+                dtar = np.diff(ValidIMU_ts)
+                return ViconNewRots, ValidIMU_ts, ValidMask, dtar
             
-            Orientation_Vicon = R.from_matrix(np.moveaxis(Vicon_Rot_valid, -1, 0))
-            slerp = Slerp(Vicon_ts, Orientation_Vicon)
-            ValidMask = (IMU_ts >= Vicon_ts[0]) & (IMU_ts <= Vicon_ts[-1])
-            ValidIMU_ts = IMU_ts[ValidMask]
-            ViconNewRots = slerp(ValidIMU_ts)
+            ViconNewRots, ValidIMU_ts, ValidMask, dtar = synchronizeUsingSlerp(Vicon_Rot, Vicon_ts, IMU_ts)
+            
+            OrientationFromVicon = []
+            for i in range(len(ViconNewRots)):
+                rotation_object = ViconNewRots[i]
+                euler_angles = rotation_object.as_euler('zxy', degrees=True)
+                OrientationFromVicon.append(euler_angles)
+            OrientationFromVicon = np.array(OrientationFromVicon)
+            
+        else:
+            ValidMask = np.ones(len(IMU_ts), dtype=bool)
+            ValidIMU_ts = IMU_ts
             dtar = np.diff(ValidIMU_ts)
-            return ViconNewRots, ValidIMU_ts, ValidMask, dtar
+            initial_orientation = np.array([0.0, 0.0, 0.0])
+            ViconNewRots = None
+            OrientationFromVicon = None
 
-        ViconNewRots, ValidIMU_ts, ValidMask, dtar = synchronizeUsingSlerp(Vicon_Rot, Vicon_ts, IMU_ts)
-        print("Data Synchronized.")
+        print("Data Calculated and Synchronized.")
 
         dataset_folder = os.path.join(rotplot_base_dir, f'dataset_{dataset_num}')
         os.makedirs(dataset_folder, exist_ok=True)
 
-        OrientationFromVicon = []
-        for i in range(len(ViconNewRots)):
-            rotation_object = ViconNewRots[i]
-            euler_angles = rotation_object.as_euler('zxy', degrees=True)
-            OrientationFromVicon.append(euler_angles)
-        OrientationFromVicon = np.array(OrientationFromVicon)
-
-        
-        def getOrientationIMU_Gyro(Physw, ViconNewRots, ValidMask, dtar):
-
+        def getOrientationIMU_Gyro(Physw, ValidMask, dtar, initial_orientation=None):
             omega = Physw[:, ValidMask][[0 ,1, 2], :]  
             
-
-            initial_euler = ViconNewRots[0].as_euler('zxy', degrees=True)
+            if initial_orientation is None:
+                initial_euler = np.array([0.0, 0.0, 0.0]) 
+            else:
+                initial_euler = initial_orientation
+                
             current_euler = initial_euler.copy()
             orientations = [current_euler.copy()]
 
             for i, dt in enumerate(dtar):
-
                 angular_rates_deg = omega[:, i] * 180/np.pi
                 current_euler += angular_rates_deg * dt
                 orientations.append(current_euler.copy())
             
             return np.array(orientations)
 
-        OrientationFromGyro = getOrientationIMU_Gyro(Physw, ViconNewRots, ValidMask, dtar)
-        print("Orientation from Gyro calculated.")
-
-        def getOrientationIMU_Acc(PhysAcc, ViconNewRots, ValidMask):
+        def getOrientationIMU_Acc(PhysAcc, ValidMask, initial_yaw=0.0):
             acc = PhysAcc[:, ValidMask]
             n = acc.shape[1]
             OrientationFromAcc = np.zeros((n, 3))
-            initial_yaw = ViconNewRots[0].as_euler('zxy', degrees=True)[0]
             
             for i in range(n):
                 acc_norm = acc[:, i]/ np.linalg.norm(acc[:, i])
@@ -159,21 +151,16 @@ for dataset_num in range(1, 2):
                 pitch = np.arctan2(-acc_norm[0], np.sqrt(acc_norm[1]**2 + acc_norm[2]**2)) * 180/np.pi
                 roll = np.arctan2(acc_norm[1], acc_norm[2]) * 180/np.pi
                 yaw = initial_yaw
-
                 
                 OrientationFromAcc[i] = [yaw, roll, pitch]
             
             return OrientationFromAcc
 
-        OrientationFromAcc = getOrientationIMU_Acc(PhysAcc, ViconNewRots, ValidMask)
-        print("Orientation from Acceleration calculated.")
-
-        
-        def getOrientationFromComplementaryFilter(Physw, PhysAcc, ViconNewRots, ValidMask, dtar, alpha=0.98):
+        def getOrientationFromComplementaryFilter(Physw, PhysAcc, ValidMask, dtar, initial_orientation, alpha=0.99):
             omega = Physw[:, ValidMask][[0, 1, 2], :] 
             acc = PhysAcc[:, ValidMask]
             
-            current_orientation = ViconNewRots[0].as_euler('zxy', degrees=True) 
+            current_orientation = initial_orientation.copy()
             orientations = [current_orientation.copy()]
             
             for i, dt in enumerate(dtar):
@@ -186,15 +173,11 @@ for dataset_num in range(1, 2):
                 acc_measurement = np.array([current_orientation[0], acc_roll, acc_pitch])
 
                 complementary_euler = alpha * gyro_prediction + (1 - alpha) * acc_measurement
-                
                 current_orientation = complementary_euler
                 orientations.append(complementary_euler.copy())
             
             return np.array(orientations)
 
-        OrientationFromComplementary = getOrientationFromComplementaryFilter(Physw, PhysAcc, ViconNewRots, ValidMask, dtar, alpha=0.99)
-        print("Orientation from Complementary Filter calculated.")
-        
         def quaternion_multiplication(q1,q2):
             w1, x1, y1, z1 = q1
             w2, x2, y2, z2 = q2
@@ -206,14 +189,14 @@ for dataset_num in range(1, 2):
             
             return np.array([w, x, y, z])
         
-        def getOrientatiomfromMadgwickFilter(Physw, PhysAcc, ViconNewRots, ValidMask, dtar, beta=0.1):
-            q_current = ViconNewRots[0].as_quat(scalar_first=True)
+        def getOrientatiomfromMadgwickFilter(Physw, PhysAcc, ValidMask, dtar, initial_orientation, beta=0.01):
+            initial_quat = R.from_euler('zxy', initial_orientation, degrees=True).as_quat(scalar_first=True)
+            q_current = initial_quat
             orientations = []
-            orientations.append(ViconNewRots[0].as_euler('zxy', degrees=True))
+            orientations.append(initial_orientation)
             
             for i, dt in enumerate(dtar):
-                
-                omega = Physw[:, ValidMask][[1,2,0], i] # wx, wy, wz
+                omega = Physw[:, ValidMask][[1,2,0], i]
                 acc = PhysAcc[:, ValidMask][:, i]
                 acc_norm = acc / np.linalg.norm(acc)
                 
@@ -224,14 +207,12 @@ for dataset_num in range(1, 2):
                 2*(w*x + y*z) - acc_norm[1],       
                 2*(0.5 - x*x - y*y) - acc_norm[2]])
                 
-                
                 J = np.array([
                 [-2*y,  2*z, -2*w,  2*x], 
                 [ 2*x,  2*w,  2*z,  2*y],  
                 [ 0,   -4*x, -4*y,  0  ]])
                 
                 gradient = J.T @ f
-                
                 gradient_norm = np.linalg.norm(gradient)
                 gradient_normalized = gradient / gradient_norm if gradient_norm != 0 else np.zeros(4)
                 
@@ -243,18 +224,32 @@ for dataset_num in range(1, 2):
                 orientations.append(euler)
             
             return np.array(orientations)
+
+        if not is_test_data:
+            initial_orientation = ViconNewRots[0].as_euler('zxy', degrees=True)
+            initial_yaw = initial_orientation[0]
+        else:
+            initial_orientation = np.array([0.0, 0.0, 0.0])
+            initial_yaw = 0.0
+
+        OrientationFromGyro = getOrientationIMU_Gyro(Physw, ValidMask, dtar, initial_orientation)
+        print("Orientation from Gyro calculated.")
+
+        OrientationFromAcc = getOrientationIMU_Acc(PhysAcc, ValidMask, initial_yaw)
+        print("Orientation from Acceleration calculated.")
+
+        OrientationFromComplementary = getOrientationFromComplementaryFilter(Physw, PhysAcc, ValidMask, dtar, initial_orientation, alpha=0.99)
+        print("Orientation from Complementary Filter calculated.")
         
-        OrientationFromMadgwick = getOrientatiomfromMadgwickFilter(Physw, PhysAcc, ViconNewRots, ValidMask, dtar, beta=0.2)
+        OrientationFromMadgwick = getOrientatiomfromMadgwickFilter(Physw, PhysAcc, ValidMask, dtar, initial_orientation, beta=0.01)
         print("Orientation from Madgwick Filter calculated.")
-        # beta = 0.1 not that good
-        # beta = 0  works,  but no correction .. 
-        # beta = 0.9 
-        # beta = 0.001 is better
-        
+
         comparison_save_path = os.path.join(orientation_plot_dir, f'orientation_comparison_{dataset_num}.png')
         plt.figure(figsize=(15, 12))
+        
         plt.subplot(3, 1, 1)
-        plt.plot(ValidIMU_ts, OrientationFromVicon[:, 0], label='Vicon Yaw', color='k', linewidth=2)
+        if not is_test_data:
+            plt.plot(ValidIMU_ts, OrientationFromVicon[:, 0], label='Vicon Yaw', color='k', linewidth=2)
         plt.plot(ValidIMU_ts, OrientationFromGyro[:, 0], label='Gyro Yaw', color='b', linestyle='--', alpha=0.7)
         plt.plot(ValidIMU_ts, OrientationFromAcc[:, 0], label='Acc Yaw', color='r', linestyle=':', alpha=0.7)
         plt.plot(ValidIMU_ts, OrientationFromComplementary[:, 0], label='Complementary Yaw', color='g', linewidth=1.5)
@@ -262,9 +257,13 @@ for dataset_num in range(1, 2):
         plt.ylabel('Yaw (deg)')
         plt.legend()
         plt.grid(True, alpha=0.3)
-        plt.title(f'Orientation Comparison: Dataset {dataset_num}')
+        data_type = "Test" if is_test_data else "Train"
+        plt.title(f'Orientation Comparison: Dataset {dataset_num} ({data_type})')
+        
+        # Pitch subplot
         plt.subplot(3, 1, 2)
-        plt.plot(ValidIMU_ts, OrientationFromVicon[:, 1], label='Vicon Pitch', color='k', linewidth=2)
+        if not is_test_data:
+            plt.plot(ValidIMU_ts, OrientationFromVicon[:, 1], label='Vicon Pitch', color='k', linewidth=2)
         plt.plot(ValidIMU_ts, OrientationFromGyro[:, 1], label='Gyro Pitch', color='b', linestyle='--', alpha=0.7)
         plt.plot(ValidIMU_ts, OrientationFromAcc[:, 1], label='Acc Pitch', color='r', linestyle=':', alpha=0.7)
         plt.plot(ValidIMU_ts, OrientationFromComplementary[:, 1], label='Complementary Pitch', color='g', linewidth=1.5)
@@ -272,8 +271,11 @@ for dataset_num in range(1, 2):
         plt.ylabel('Pitch (deg)')
         plt.legend()
         plt.grid(True, alpha=0.3)
+        
+        # Roll subplot
         plt.subplot(3, 1, 3)
-        plt.plot(ValidIMU_ts, OrientationFromVicon[:, 2], label='Vicon Roll', color='k', linewidth=2)
+        if not is_test_data:
+            plt.plot(ValidIMU_ts, OrientationFromVicon[:, 2], label='Vicon Roll', color='k', linewidth=2)
         plt.plot(ValidIMU_ts, OrientationFromGyro[:, 2], label='Gyro Roll', color='b', linestyle='--', alpha=0.7)
         plt.plot(ValidIMU_ts, OrientationFromAcc[:, 2], label='Acc Roll', color='r', linestyle=':', alpha=0.7)
         plt.plot(ValidIMU_ts, OrientationFromComplementary[:, 2], label='Complementary Roll', color='g', linewidth=1.5)
@@ -282,40 +284,45 @@ for dataset_num in range(1, 2):
         plt.ylabel('Roll (deg)')
         plt.legend()
         plt.grid(True, alpha=0.3)
+        
         plt.tight_layout()
         plt.savefig(comparison_save_path)
         plt.close()
-        print(f'Saved orientation comparison for dataset {dataset_num} in {comparison_save_path}')
+        print(f'Saved orientation comparison for dataset {dataset_num}')
 
 
-        n_frames = len(ViconNewRots)
-        n_select = 3
-        if n_frames < n_select:
-            indices_to_save = list(range(n_frames))
-        else:
-            indices_to_save = np.linspace(0, n_frames-1, n_select, dtype=int)
-        import matplotlib.pyplot as plt
+        if not is_test_data:
+            n_frames = len(ViconNewRots)
+            n_select = 3
+            if n_frames < n_select:
+                indices_to_save = list(range(n_frames))
+            else:
+                indices_to_save = np.linspace(0, n_frames-1, n_select, dtype=int)
 
-        vicon_rotmat0 = ViconNewRots[indices_to_save[0]].as_matrix()
-        ax = rotplot.rotplot(vicon_rotmat0)
-        for idx in indices_to_save[1:]:
-            vicon_rotmat = ViconNewRots[idx].as_matrix()
-            rotplot.rotplot(vicon_rotmat, ax)
-        ax.set_title(f'Vicon Orientation  {dataset_num}')
-        save_path = os.path.join(dataset_folder, f'rotplot_overlapped.png')
-        plt.savefig(save_path)
-        plt.close(ax.figure)
-        print(f'Saved overlapped rotplot for dataset {dataset_num} in {save_path}')
-    
+            vicon_rotmat0 = ViconNewRots[indices_to_save[0]].as_matrix()
+            ax = rotplot.rotplot(vicon_rotmat0)
+            for idx in indices_to_save[1:]:
+                vicon_rotmat = ViconNewRots[idx].as_matrix()
+                rotplot.rotplot(vicon_rotmat, ax)
+            ax.set_title(f'Vicon Orientation Dataset {dataset_num}')
+            save_path = os.path.join(dataset_folder, f'rotplot_overlapped.png')
+            plt.savefig(save_path)
+            plt.close(ax.figure)
+            print(f'Saved overlapped rotplot for dataset {dataset_num}')
+
         base_dir = f'../Code/VideoFrames/dataset_{dataset_num}'
         os.makedirs(base_dir, exist_ok=True)
+        
         methods = {
             'Gyro': OrientationFromGyro,
             'Acc': OrientationFromAcc,
             'CF': OrientationFromComplementary,
             'Madgwick': OrientationFromMadgwick,
-            'Vicon': OrientationFromVicon
         }
+        
+        if not is_test_data:
+            methods['Vicon'] = OrientationFromVicon
+            
         for method, orientation_array in methods.items():
             method_dir = os.path.join(base_dir, method)
             os.makedirs(method_dir, exist_ok=True)
@@ -329,10 +336,11 @@ for dataset_num in range(1, 2):
                 plt.close(ax.figure)
         print(f'Frames for dataset {dataset_num} saved.')
 
-        rotplot.make_videos_for_dataset(base_dir)
+        rotplot.make_videos_for_dataset(base_dir, list(methods.keys()))
 
     except Exception as e:
         print(f"Error processing dataset {dataset_num}: {str(e)}")
         print(f"Skipping dataset {dataset_num} due to error.")
         continue
+
 plt.show()
