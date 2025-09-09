@@ -33,9 +33,9 @@ rotplot_base_dir = '../Code/Rotplot_frames'
 orientation_plot_dir = '../Code/OrientationPlots'
 os.makedirs(orientation_plot_dir, exist_ok=True)
 
-stride = 20  
+stride = 100  
 
-for dataset_num in range(1, 11):
+for dataset_num in range(1, 2):
     print(f"\nProcessing dataset {dataset_num}...")
     
     try:
@@ -224,6 +224,239 @@ for dataset_num in range(1, 11):
                 orientations.append(euler)
             
             return np.array(orientations)
+        
+        def quaternion_conjugate(q):
+            w,x,y,z = q 
+            return np.array([w, -x, -y, -z])
+        
+        def quaternion_normalize(q):
+            norm = np.linalg.norm(q)
+            if norm == 0:
+                return q
+            return q / norm
+        
+        def RotVectoQuaternion(rot_vec):
+            q = R.from_rotvec(rot_vec).as_quat(scalar_first=True)
+            return q
+        
+        # def RotVectoQuaternion(rot_vec):
+        #     # Paper implementation (equations 14-16) - for testing/verification
+        #     angle = np.linalg.norm(rot_vec)
+        #     if angle < 1e-8:
+        #         return np.array([1, 0, 0, 0])
+        #     axis = rot_vec / angle
+        #     return np.array([np.cos(angle/2), 
+        #                      axis[0]*np.sin(angle/2),
+        #                      axis[1]*np.sin(angle/2), 
+        #                      axis[2]*np.sin(angle/2)])
+        
+        def QuaterniontoRotVec(q):
+            rot = R.from_quat(q, scalar_first=True)
+            return rot.as_rotvec()
+        
+        # def QuaterniontoRotVec(q):
+        #     # Paper implementation (reverse of equations 14-16) - for testing
+        #     w, x, y, z = q
+        #     angle = 2 * np.arccos(np.abs(w))
+        #     if angle < 1e-8:
+        #         return np.array([0, 0, 0])
+        #     sin_half_angle = np.sin(angle/2)
+        #     axis = np.array([x, y, z]) / sin_half_angle
+        #     return axis * angle
+        
+        def generateSigmaPoints(x_mean, P, Q):
+            """
+            Generate sigma points for UKF
+            
+            Args:
+                x_mean: [7] current state [q0,q1,q2,q3,wx,wy,wz]
+                P: [6x6] current covariance matrix
+                Q: [6x6] process noise covariance
+                
+            Returns:
+                sigma_points: [12x7] array of sigma points
+            """
+            
+            # Step 1: Combine covariances (equation 35)
+            P_augmented = P + Q
+            
+
+            
+            # Step 2: Compute square root matrix (Cholesky decomposition)
+            S = np.linalg.cholesky(P_augmented)  # 6x6 matrix
+            S = S * np.sqrt(12)  # Scale by √(2n) where n=6
+            
+            # Step 3: Create 6D noise vectors (12 total: +/- each column)
+            sigma_points_6d = []
+            for i in range(6):
+                sigma_points_6d.append(S[:, i])   # +column_i
+                sigma_points_6d.append(-S[:, i])  # -column_i
+            
+            # Step 4: Convert each 6D vector to 7D state vector
+            sigma_points_7d = []
+            
+            # Extract current quaternion and angular velocity from x_mean
+            q_mean = x_mean[0:4]
+            w_mean = x_mean[4:7]
+            
+            for noise_6d in sigma_points_6d:
+                # Split 6D noise into rotation (3D) and angular velocity (3D)
+                rotation_noise = noise_6d[0:3]  # First 3 components
+                w_noise = noise_6d[3:6]         # Last 3 components
+                
+                # Convert rotation noise to quaternion (equation 34)
+                q_noise = RotVectoQuaternion(rotation_noise)
+                
+                # Apply noise to quaternion: q_new = q_mean * q_noise
+                q_new = quaternion_multiplication(q_mean, q_noise)
+                q_new = quaternion_normalize(q_new) 
+                
+                # Apply noise to angular velocity: w_new = w_mean + w_noise  
+                w_new = w_mean + w_noise
+                
+                # Combine into 7D state vector
+                x_new = np.concatenate([q_new, w_new])
+                sigma_points_7d.append(x_new)
+            
+            return np.array(sigma_points_7d)  # Shape: [12, 7]
+        
+        
+        def ukfPredict(sigma_points, dt):
+            """
+            Transform sigma points through process model
+            
+            Args:
+                sigma_points: [12x7] array from generateSigmaPoints
+                dt: time step
+                
+            Returns:
+                predicted_sigma_points: [12x7] array after process model
+            """
+            
+            predicted_points = []
+            
+            for i in range(12):
+                # Extract current state
+                x_current = sigma_points[i]
+                q_current = x_current[0:4]  # quaternion
+                w_current = x_current[4:7]  # angular velocity
+                
+                # Process model (equations 20-21):
+                
+                # 1. Angular velocity (trivial - stays same)
+                w_new = w_current  # equation (8): ωk+1 = ωk
+                
+                # 2. Orientation (quaternion integration)
+                # From equations (9-12):
+                alpha = np.linalg.norm(w_current) * dt      # total rotation angle
+                
+                if alpha < 1e-8:  # Handle near-zero rotation
+                    q_delta = np.array([1, 0, 0, 0])
+                else:
+                    axis = w_current / np.linalg.norm(w_current)  # rotation axis
+                    q_delta = np.array([np.cos(alpha/2), 
+                                    axis[0]*np.sin(alpha/2),
+                                    axis[1]*np.sin(alpha/2), 
+                                    axis[2]*np.sin(alpha/2)])
+                
+                # Apply rotation: q_new = q_current * q_delta
+                q_new = quaternion_multiplication(q_current, q_delta)
+                q_new = quaternion_normalize(q_new)
+                
+                # Combine new state
+                x_new = np.concatenate([q_new, w_new])
+                predicted_points.append(x_new)
+            
+            return np.array(predicted_points)
+        
+        
+        def computeQuaternionMean(quaternions, max_iterations=10, tolerance=1e-6):
+            """
+            Compute mean of quaternions using iterative algorithm (Section 3.4)
+            
+            Args:
+                quaternions: [12x4] array of quaternions from sigma points
+                max_iterations: maximum number of iterations
+                tolerance: convergence threshold
+                
+            Returns:
+                q_mean: [4] mean quaternion
+                error_vectors: [12x3] final error vectors (needed for covariance)
+            """
+            
+            # Step 1: Initial guess (use first quaternion)
+            q_mean = quaternions[0].copy()
+            
+            for _ in range(max_iterations):
+                error_vectors = []
+                
+                # Step 2: Compute error vectors for each quaternion (equation 52)
+                for qi in quaternions:
+                    # Relative rotation: ei = qi * q_mean^(-1)
+                    q_mean_conj = quaternion_conjugate(q_mean)
+                    q_relative = quaternion_multiplication(qi, q_mean_conj)
+                    
+                    if q_relative[0] < 0:  # Ensure positive scalar part
+                        q_relative = -q_relative
+                    
+                    # Convert to rotation vector
+                    error_vector = QuaterniontoRotVec(q_relative)
+                    error_vectors.append(error_vector)
+                
+                # Step 3: Average the error vectors (equation 54)
+                mean_error = np.mean(error_vectors, axis=0)
+                
+                # Step 4: Check convergence
+                if np.linalg.norm(mean_error) < tolerance:
+                    break
+                    
+                # Step 5: Update mean estimate (equation 55)
+                adjustment_quat = RotVectoQuaternion(mean_error)
+                q_mean = quaternion_multiplication(adjustment_quat, q_mean)
+                q_mean = quaternion_normalize(q_mean)
+            
+            return q_mean, np.array(error_vectors)
+        
+        
+        def computeCovariance6D(sigma_points_7d, mean_state_7d, error_vectors):
+            """
+            Compute 6D covariance from 7D sigma points (Section 3.5.1)
+            
+            Args:
+                sigma_points_7d: [12x7] predicted sigma points
+                mean_state_7d: [7] mean state [q_mean, w_mean]
+                error_vectors: [12x3] from computeQuaternionMean
+                
+            Returns:
+                P_6d: [6x6] covariance matrix in 6D space
+            """
+            
+            # q_mean = mean_state_7d[0:4]
+            w_mean = mean_state_7d[4:7]
+            
+            # Convert each 7D sigma point to 6D representation
+            W_vectors = []
+            
+            for i in range(12):
+                # Extract quaternion and angular velocity from sigma point
+                # qi = sigma_points_7d[i, 0:4]
+                wi = sigma_points_7d[i, 4:7]
+                
+                # Angular velocity difference (simple subtraction)
+                w_diff = wi - w_mean
+                
+                # Rotation difference (use error vectors from quaternion mean)
+                rotation_vector = error_vectors[i]  # Already computed!
+                
+                # Combine into 6D vector [rotation(3D), angular_vel(3D)]
+                Wi = np.concatenate([rotation_vector, w_diff])
+                W_vectors.append(Wi)
+            
+            # Compute 6D covariance matrix (equation 64)
+            W_matrix = np.array(W_vectors)  # [12x6]
+            P_6d = (1/12) * W_matrix.T @ W_matrix
+            
+            return P_6d
 
         if not is_test_data:
             initial_orientation = ViconNewRots[0].as_euler('zxy', degrees=True)
