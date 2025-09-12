@@ -63,7 +63,7 @@ rotplot(RTurn, myAxis)
 plt.show()
 
 
-def make_videos_for_dataset(dataset_dir, methods=['Gyro', 'Acc', 'CF', 'Vicon', 'Madgwick'], framerate=10):
+def make_videos_for_dataset(dataset_dir, methods=['Gyro', 'Acc', 'CF', 'Vicon', 'Madgwick', 'UKF'], framerate=10):
     """
     Create individual videos for each method and combine them into a grid layout.
     
