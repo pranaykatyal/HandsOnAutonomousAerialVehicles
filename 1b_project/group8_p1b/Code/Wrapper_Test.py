@@ -646,15 +646,26 @@ for dataset_num in range(1, 2):
             print(f"Initial quaternion: {initial_quat}")
             print(f"UKF state angular velocity: {x_current[4:7]}")      # Should match
 
-            
+            Q = np.diag([15.0, 15.0, 15.0, 15.0, 15.0, 15.0])  # Process noise [rotation, angular_vel]
+            #compute sensor's measured covariance
+            gyro_sample = omega[:,0:400]
+            accel_sample = acc[:,0:400]
+
+            gyro_sample = gyro_sample - gyro_sample.mean(axis=1, keepdims=True)
+            accel_sample = accel_sample - accel_sample.mean(axis=1, keepdims=True)
+
+            R_gyro = np.diag(np.var(gyro_sample, axis=1, ddof=1))
+            R_accel = np.diag(np.var(accel_sample, axis=1, ddof=1))
+
+            print(f'Gyro sensor noise: {R_gyro}, Accel sensor noise {R_accel}')
             # Define noise covariances
             # Q = np.diag([0.01, 0.01, 0.01, 0.3, 0.3, 0.3])  # Process noise [rotation, angular_vel]
             # R_gyro = np.diag([0.5, 0.5, 0.5])               # Gyro measurement noise
             # R_accel = np.diag([0.9, 0.9, 0.9])              # Accel measurement noise
             
-            Q = np.diag([1.0, 1.0, 1.0, 10.0, 10.0, 10.0])
-            R_gyro = np.diag([100.0, 100.0, 100.0])
-            R_accel = np.diag([100.0, 100.0, 100.0])
+            # Q = np.diag([1.0, 1.0, 1.0, 10.0, 10.0, 10.0])
+            # R_gyro = np.diag([10.0, 10.0, 10.0])
+            # R_accel = np.diag([10.0, 10.0, 10.0])
             
             # Q = np.diag([0.1, 0.1, 0.1, 1.0, 1.0, 1.0])      # Keep process noise moderate
             # R_gyro = np.diag([1.0, 1.0, 1.0])                # Much lower - trust gyro measurements
