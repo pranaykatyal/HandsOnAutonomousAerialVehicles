@@ -279,15 +279,23 @@ for dataset_num in range(1, 2):
             
             # Step 1: Combine covariances (equation 35)
             P_augmented = P + Q
-            # Step 2: Compute square root matrix with error handling
+            
+            # Step 2: More robust error handling
             try:
-                S = np.linalg.cholesky(P_augmented) # (Cholesky decomposition)
-            except np.linalg.LinAlgError:
-                # Add small regularization to diagonal if matrix is not positive definite
-                regularization = 1e-6
-                P_augmented = P_augmented + regularization * np.eye(6)
                 S = np.linalg.cholesky(P_augmented)
-                print(f"Warning: Added regularization {regularization} to covariance matrix")
+            except np.linalg.LinAlgError:
+                # print("First Cholesky failed, trying regularization...")
+                regularization = 1e-3  # Increase regularization
+                P_augmented = P_augmented + regularization * np.eye(6)
+                try:
+                    S = np.linalg.cholesky(P_augmented)
+                    # print(f"Success with regularization {regularization}")
+                except np.linalg.LinAlgError:
+                    # print("Cholesky still failing, using SVD decomposition instead")
+                    # Fallback to SVD
+                    U, s, Vt = np.linalg.svd(P_augmented)
+                    s = np.maximum(s, 1e-6)  # Ensure positive eigenvalues
+                    S = U @ np.diag(np.sqrt(s))
             S = S * np.sqrt(12)  # Scale by √(2n) where n=6
             
             # Step 3: Create 6D noise vectors (12 total: +/- each column)
@@ -364,7 +372,8 @@ for dataset_num in range(1, 2):
                                     axis[2]*np.sin(alpha/2)])
                 
                 # Apply rotation: q_new = q_current * q_delta
-                q_new = quaternion_multiplication(q_current, q_delta)
+                # q_new = quaternion_multiplication(q_current, q_delta)
+                q_new = quaternion_multiplication(q_delta, q_current)
                 q_new = quaternion_normalize(q_new)
                 
                 # Combine new state
@@ -499,7 +508,8 @@ for dataset_num in range(1, 2):
                 
                 # Accelerometer measurement model (equations 27, 29)
                 # Transform gravity from global to body frame
-                g_global = np.array([0, 0, 0, -9.81])  # Gravity as quaternion
+                # g_global = np.array([0, 0, 0, -9.81])  # Gravity as quaternion
+                g_global = np.array([0, 0, 0, 9.81])
                 
                 # g_body = q * g_global * q^(-1)
                 q_conj = quaternion_conjugate(q)
@@ -622,26 +632,40 @@ for dataset_num in range(1, 2):
             # Initialize UKF state and parameters
             omega = Physw[:, ValidMask]
             acc = PhysAcc[:, ValidMask]
-            
-            
+            print(f"Madgwick uses: {Physw[:, ValidMask][[1,2,0], 0]}")  # First timestep
+
+            print(f"Initial orientation input: {initial_orientation}")
+
             initial_quat = R.from_euler('zxy', initial_orientation, degrees=True).as_quat(scalar_first=True)
             x_current = np.array([initial_quat[0], initial_quat[1], initial_quat[2], initial_quat[3], 
-                         omega[0,0], omega[1,0], omega[2,0]])
-            
-            P_current = np.eye(6) * 1.0  # Initial uncertainty
+                         omega[1,0], omega[2,0], omega[0,0]])
             
             
+            P_current = np.eye(6) * 1.0 # Initial uncertainty
+            
+            print(f"Initial quaternion: {initial_quat}")
+            print(f"UKF state angular velocity: {x_current[4:7]}")      # Should match
+
             
             # Define noise covariances
-            Q = np.diag([0.01, 0.01, 0.01, 0.1, 0.1, 0.1])  # Process noise [rotation, angular_vel]
-            R_gyro = np.diag([0.1, 0.1, 0.1])               # Gyro measurement noise
-            R_accel = np.diag([0.5, 0.5, 0.5])              # Accel measurement noise
+            # Q = np.diag([0.01, 0.01, 0.01, 0.3, 0.3, 0.3])  # Process noise [rotation, angular_vel]
+            # R_gyro = np.diag([0.5, 0.5, 0.5])               # Gyro measurement noise
+            # R_accel = np.diag([0.9, 0.9, 0.9])              # Accel measurement noise
+            
+            Q = np.diag([1.0, 1.0, 1.0, 10.0, 10.0, 10.0])
+            R_gyro = np.diag([100.0, 100.0, 100.0])
+            R_accel = np.diag([100.0, 100.0, 100.0])
+            
+            # Q = np.diag([0.1, 0.1, 0.1, 1.0, 1.0, 1.0])      # Keep process noise moderate
+            # R_gyro = np.diag([1.0, 1.0, 1.0])                # Much lower - trust gyro measurements
+            # R_accel = np.diag([10.0, 10.0, 10.0])            # Higher than gyro but still reasonable
             
             orientations = [initial_orientation.copy()]
             # Main UKF loop calling all your functions in sequence
             
             for i, dt in enumerate(dtar):
                 
+
                 # 1. Generate sigma points
                 sigma_points = generateSigmaPoints(x_current, P_current, Q)
                 # 2. Predict step
@@ -655,9 +679,19 @@ for dataset_num in range(1, 2):
                 P_predicted,W_vectors_6d = computeCovariance6D(predicted_sigma_points, x_predicted, error_vectors)
                 
                 # 4. Update with gyro measurement
-                z_gyro_actual = omega[:, i+1] if i+1 < omega.shape[1] else omega[:, i]
+                z_gyro_actual = omega[[1,2,0], i] 
                 z_gyro_sigma = transformSigmaPointsGyro(predicted_sigma_points)
                 z_gyro_mean, P_gyro_zz = computeMeasurementStatistics(z_gyro_sigma)
+                
+                if i == 4:
+                    print(f"UKF quaternion at step 4: {x_current[0:4]}")
+                    expected_quat = R.from_euler('zxy', OrientationFromVicon[4], degrees=True).as_quat(scalar_first=True)
+                    print(f"Expected quaternion: {expected_quat}")
+                # Modify your existing debug prints
+                if i < 5:  # Only print first few steps
+                    print(f"Step {i}: z_gyro_actual = {z_gyro_actual}")
+                    print(f"Step {i}: z_gyro_predicted = {z_gyro_mean}")
+                    print(f"Step {i}: Innovation gyro = {z_gyro_actual - z_gyro_mean}")
                 
                 # Compute gyro measurement deviations and cross-covariance
                 gyro_deviations = z_gyro_sigma - z_gyro_mean
@@ -668,7 +702,7 @@ for dataset_num in range(1, 2):
                 x_current, P_current = ukfUpdate(x_predicted, P_predicted, z_gyro_actual, z_gyro_mean, K_gyro, P_gyro_zz, R_gyro)
                 
                 # 5. Update with accel measurement  
-                z_accel_actual = acc[:, i+1] if i+1 < acc.shape[1] else acc[:, i]
+                z_accel_actual = acc[:, i]
                 z_accel_sigma = transformSigmaPointsAccel(predicted_sigma_points)
                 z_accel_mean, P_accel_zz = computeMeasurementStatistics(z_accel_sigma)
                 
@@ -682,7 +716,7 @@ for dataset_num in range(1, 2):
                 
                 # 6. Store result and convert to Euler angles
                 quat = x_current[0:4] / np.linalg.norm(x_current[0:4])  # Normalize
-                euler = R.from_quat(quat, scalar_first=True).as_euler('zxy', degrees=True)
+                euler = -R.from_quat(quat, scalar_first=True).as_euler('zxy', degrees=True)
                 orientations.append(euler)
 
             return np.array(orientations)
@@ -709,6 +743,11 @@ for dataset_num in range(1, 2):
         
         OrientationFromUKF = getOrientationFromUKF(Physw, PhysAcc, ValidMask, dtar, initial_orientation)
         print("Orientation from UKF calculated.")
+        
+        print(f"Gyro orientations: {len(OrientationFromGyro)}")
+        print(f"Vicon orientations: {len(OrientationFromVicon)}")
+        print(f"Madgwick orientations: {len(OrientationFromMadgwick)}")
+        print(f"UKF orientations: {len(OrientationFromUKF)}")
 
         comparison_save_path = os.path.join(orientation_plot_dir, f'orientation_comparison_{dataset_num}.png')
         plt.figure(figsize=(15, 12))
@@ -735,7 +774,7 @@ for dataset_num in range(1, 2):
         plt.plot(ValidIMU_ts, OrientationFromAcc[:, 1], label='Acc Pitch', color='r', linestyle=':', alpha=0.7)
         plt.plot(ValidIMU_ts, OrientationFromComplementary[:, 1], label='Complementary Pitch', color='g', linewidth=1.5)
         plt.plot(ValidIMU_ts, OrientationFromMadgwick[:, 1], label='Madgwick Pitch', color='m', linewidth=1.5)
-        plt.plot(ValidIMU_ts, OrientationFromUKF[:, 1], label='UKF Yaw', color='c', linewidth=1.5)
+        plt.plot(ValidIMU_ts, OrientationFromUKF[:, 1], label='UKF Pitch', color='c', linewidth=1.5)
         plt.ylabel('Pitch (deg)')
         plt.legend()
         plt.grid(True, alpha=0.3)
@@ -748,7 +787,7 @@ for dataset_num in range(1, 2):
         plt.plot(ValidIMU_ts, OrientationFromAcc[:, 2], label='Acc Roll', color='r', linestyle=':', alpha=0.7)
         plt.plot(ValidIMU_ts, OrientationFromComplementary[:, 2], label='Complementary Roll', color='g', linewidth=1.5)
         plt.plot(ValidIMU_ts, OrientationFromMadgwick[:, 2], label='Madgwick Roll', color='m', linewidth=1.5)
-        plt.plot(ValidIMU_ts, OrientationFromUKF[:, 2], label='UKF Yaw', color='c', linewidth=1.5)
+        plt.plot(ValidIMU_ts, OrientationFromUKF[:, 2], label='UKF Roll', color='c', linewidth=1.5)
         plt.xlabel('Time (s)')
         plt.ylabel('Roll (deg)')
         plt.legend()
@@ -813,4 +852,4 @@ for dataset_num in range(1, 2):
         print(f"Skipping dataset {dataset_num} due to error.")
         continue
 
-plt.show()
+plt.show() 
