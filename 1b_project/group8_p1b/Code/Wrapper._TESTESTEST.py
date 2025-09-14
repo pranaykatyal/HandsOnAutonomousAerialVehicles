@@ -35,7 +35,7 @@ os.makedirs(orientation_plot_dir, exist_ok=True)
 
 stride = 50  
 
-for dataset_num in range(1, 2):
+for dataset_num in range(4, 5):
     print(f"\nProcessing dataset {dataset_num}...")
     
     try:
@@ -637,9 +637,9 @@ for dataset_num in range(1, 2):
             omega = omega[[0, 1, 2], :]  # xyz
             acc = PhysAcc[:, ValidMask] # xyz
             # acc = PhysAcc[[2, 0, 1], :][:, ValidMask] # Zxy
-            print(f"Madgwick uses: {Physw[:, ValidMask][[1,2,0], 0]}")  # First timestep
+            # print(f"Madgwick uses: {Physw[:, ValidMask][[1,2,0], 0]}")  # First timestep
 
-            print(f"Initial orientation input: {initial_orientation}")
+            # print(f"Initial orientation input: {initial_orientation}")
 
             initial_quat = R.from_euler('zxy', initial_orientation, degrees=True).as_quat(scalar_first=True)
             # initial_quat = R.from_euler('xyz', initial_orientation, degrees=True).as_quat(scalar_first=True)
@@ -652,8 +652,8 @@ for dataset_num in range(1, 2):
             
             P_current = np.eye(6) * 1.0 # Initial uncertainty
             
-            print(f"Initial quaternion: {initial_quat}")
-            print(f"UKF state angular velocity: {x_current[4:7]}")      # Should match
+            # print(f"Initial quaternion: {initial_quat}")
+            # print(f"UKF state angular velocity: {x_current[4:7]}")      # Should match
 
             # Q = np.diag([15.0, 15.0, 15.0, 7.0, 7.0, 7.0])  # Process noise [rotation, angular_vel]
             # #compute sensor's measured covariance
@@ -665,19 +665,39 @@ for dataset_num in range(1, 2):
 
             # R_gyro = np.diag(np.var(gyro_sample, axis=1, ddof=1))
             # R_accel = np.diag(np.var(accel_sample, axis=1, ddof=1))
+            # Tune for Dataset 1
+            # Q = np.diag([10, 10, 10, 0.5, 0.5, 0.5])
+            # R_gyro = np.diag([0.05, 0.05, 0.05])
+            # R_accel = np.diag([5.0, 5.0, 5.0])
+            # Tune for Dataset 2
+            # Q = np.diag([9, 9, 9, 0.5, 0.5, 0.5])
+            # R_gyro = np.diag([0.05, 0.05, 0.05])
+            # R_accel = np.diag([6.0, 6.0, 6.0])   
+            # Tune for Dataset 3
+            # Q = np.diag([1, 1, 1, 0.0005, 0.0005, 0.0005])
+            # R_gyro = np.diag([0.05, 0.05, 0.05])
+            # R_accel = np.diag([1000, 1000, 1000])
+            # Tune for Dataset 4            
+            Q = np.diag([10,10,10, 9,9,9])
+            R_gyro = np.diag([0.1, 0.1, 0.1])
+            R_accel = np.diag([0.001, 0.001, 0.001])
+            # Tune for Dataset 5            
+            # Q = np.diag([32,32,32, 0.15,0.15,15])
+            # R_gyro = np.diag([0.05, 0.05, 0.05])
+            # R_accel = np.diag([90, 90, 90])
+            # Q = np.diag([15, 10, 10, 0.15, 0.15, 0.15])
+            # R_gyro = np.diag([1, 1, 1])
+            # R_accel = np.diag([350, 350, 350])
+            # Tune for Dataset 6
+            # Q = np.diag([32,32,32, 0.15,0.15,15])
+            # R_gyro = np.diag([0.005, 0.005, 0.005])
+            # R_accel = np.diag([900, 900, 900])
             
-            Q = np.diag([10, 10, 10, 0.5, 0.5, 0.5])
-            R_gyro = np.diag([0.05, 0.05, 0.05])
-            R_accel = np.diag([5.0, 5.0, 5.0])
-
-
-            
+                  
             orientations = [initial_orientation.copy()]
             # Main UKF loop calling all your functions in sequence
             
             for i, dt in enumerate(dtar):
-                
-
                 # 1. Generate sigma points
                 sigma_points = generateSigmaPoints(x_current, P_current, Q)
                 # 2. Predict step
@@ -695,15 +715,15 @@ for dataset_num in range(1, 2):
                 z_gyro_sigma = transformSigmaPointsGyro(predicted_sigma_points)
                 z_gyro_mean, P_gyro_zz = computeMeasurementStatistics(z_gyro_sigma)
                 
-                if i == 4:
-                    print(f"UKF quaternion at step 4: {x_current[0:4]}")
-                    expected_quat = R.from_euler('zxy', OrientationFromVicon[4], degrees=True).as_quat(scalar_first=True)
-                    print(f"Expected quaternion: {expected_quat}")
+                # if i == 4:
+                #     # print(f"UKF quaternion at step 4: {x_current[0:4]}")
+                #     expected_quat = R.from_euler('zxy', OrientationFromVicon[4], degrees=True).as_quat(scalar_first=True)
+                    # print(f"Expected quaternion: {expected_quat}")
 
-                if i < 5:  # Only print first few steps
-                    print(f"Step {i}: z_gyro_actual = {z_gyro_actual}")
-                    print(f"Step {i}: z_gyro_predicted = {z_gyro_mean}")
-                    print(f"Step {i}: Innovation gyro = {z_gyro_actual - z_gyro_mean}")
+                # if i < 5:  # Only print first few steps
+                #     print(f"Step {i}: z_gyro_actual = {z_gyro_actual}")
+                #     print(f"Step {i}: z_gyro_predicted = {z_gyro_mean}")
+                #     print(f"Step {i}: Innovation gyro = {z_gyro_actual - z_gyro_mean}")
                 
                 # Compute gyro measurement deviations and cross-covariance
                 gyro_deviations = z_gyro_sigma - z_gyro_mean
@@ -729,8 +749,8 @@ for dataset_num in range(1, 2):
                 # 6. Store result and convert to Euler angles
                 quat = x_current[0:4] / np.linalg.norm(x_current[0:4])  # Normalize
                 euler = R.from_quat(quat, scalar_first=True).as_euler('zxy', degrees=True)
-                euler[1] = -euler[1]  # Adjust pitch sign if needed
-                euler[2] = -euler[2]  # Adjust roll sign if needed
+                euler[1] = -euler[1]  # Comment out for Dataset3, Dataset5, Dataset6
+                euler[2] = -euler[2]  # Comment out for Dataset3, Dataset5, Dataset6
                 orientations.append(euler)
 
             return np.array(orientations)
@@ -764,20 +784,16 @@ for dataset_num in range(1, 2):
         OrientationFromUKF = getOrientationFromUKF(Physw, PhysAcc, ValidMask, dtar, initial_orientation)
         print("Orientation from UKF calculated.")
         
-        stride = 50  # or 50, adjust as needed
-        print("Frame | Vicon Yaw | UKF Yaw | Vicon Pitch | UKF Pitch | Vicon Roll | UKF Roll")
-        for i in range(0, min(len(OrientationFromVicon), len(OrientationFromUKF)), stride):
-            v_yaw = OrientationFromVicon[i, 0]
-            ukf_yaw = OrientationFromUKF[i, 0]
-            v_pitch = OrientationFromVicon[i, 1]
-            ukf_pitch = OrientationFromUKF[i, 1]
-            v_roll = OrientationFromVicon[i, 2]
-            ukf_roll = OrientationFromUKF[i, 2]
-            print(f"{i:5d} | {v_yaw:9.4f} | {ukf_yaw:7.4f} | {v_pitch:11.4f} | {ukf_pitch:9.4f} | {v_roll:10.4f} | {ukf_roll:8.4f}")
-
-
-
-        
+        stride = 150  # or 50, adjust as needed
+        # print("Frame | Vicon Yaw | UKF Yaw | Vicon Pitch | UKF Pitch | Vicon Roll | UKF Roll")
+        # for i in range(0, min(len(OrientationFromVicon), len(OrientationFromUKF)), stride):
+        #     v_yaw = OrientationFromVicon[i, 0]
+        #     ukf_yaw = OrientationFromUKF[i, 0]
+        #     v_pitch = OrientationFromVicon[i, 1]
+        #     ukf_pitch = OrientationFromUKF[i, 1]
+        #     v_roll = OrientationFromVicon[i, 2]
+        #     ukf_roll = OrientationFromUKF[i, 2]
+        #     print(f"{i:5d} | {v_yaw:9.4f} | {ukf_yaw:7.4f} | {v_pitch:11.4f} | {ukf_pitch:9.4f} | {v_roll:10.4f} | {ukf_roll:8.4f}")
         # print(f"Gyro orientations: {len(OrientationFromGyro)}")
         # print(f"Vicon orientations: {len(OrientationFromVicon)}")
         # print(f"Madgwick orientations: {len(OrientationFromMadgwick)}")
