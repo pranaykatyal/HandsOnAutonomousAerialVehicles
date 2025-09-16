@@ -1,4 +1,4 @@
-# RBE595 - Project 1a README.md HoAAV Madgwick Filter
+# RBE595 - Project 1b README.md HoAAV Unscented Kalman Filter
 
 ## Requirements
 
@@ -27,12 +27,12 @@ On other systems, see: https://ffmpeg.org/download.html
 ## How to Run Wrapper.py from the Command Line
 
 1. **Run the main script:**
-- Navigate to: `/group9_p1a/Code/`
+- Navigate to: `/group8_p1b/Code/`
 - Use:
   ```bash
   python3 Wrapper.py
   ```
-- It will  take about 10  minutes to complete for a smaller stride value, You can make the Stride size 100 for a faster ( shorter ) video production. 
+- It will  take about 5  minutes to complete for a smaller stride value, You can make the Stride size 100 for a faster ( shorter ) video production. 
 
 ## Output Locations
 
@@ -41,12 +41,12 @@ On other systems, see: https://ffmpeg.org/download.html
   - Each dataset gets its own folder with the overlapped 3D orientation plot.
 
 - **Orientation Comparison Plots (Yaw, Pitch, Roll vs Time):**
-  - Saved in: `Phase1/Code/OrientationPlots/orientation_comparison_<dataset_num>.png`
-  - Each dataset gets a separate comparison plot showing Vicon, Gyro, Accel, and Complementary Filter results.
+  - Saved in: `group8_p1b/Code/OrientationPlots/orientation_comparison_<dataset_num>.png`
+  - Each dataset gets a separate comparison plot showing Vicon, Gyro, Accel, Complementary Filter, Madgwick Filter, and Unscented Kalman Filter results.
 
 - **VideoFrames (3D orientation videos for each method):**
-  - Saved in: `Phase1/Code/VideoFrames/dataset_<dataset_num>/`
-  - Each dataset folder contains videos for Gyro, Acc, CF, Vicon, and a combined 2x2 grid video if ffmpeg is installed.
+  - Saved in: `group8_p1b/Code/VideoFrames/dataset_<dataset_num>/`
+  - Each dataset folder contains videos for Gyro, Acc, CF, Vicon, MF, UKF and a combined 6x1 grid video if ffmpeg is installed.
 
 ## Notes
 - All output folders are created automatically if they do not exist.
