@@ -1,5 +1,7 @@
 # RBE595 - Project 1b README.md HoAAV Unscented Kalman Filter
 
+## Authors : Pranay Katyal, Anirudh Ramanathan, Hudson Kortus
+
 ## Requirements
 
 To run `Wrapper.py` seamlessly, you need the following:
