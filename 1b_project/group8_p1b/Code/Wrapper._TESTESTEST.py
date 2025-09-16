@@ -33,9 +33,9 @@ rotplot_base_dir = '../Code/Rotplot_frames'
 orientation_plot_dir = '../Code/OrientationPlots'
 os.makedirs(orientation_plot_dir, exist_ok=True)
 
-stride = 50  
+stride = 75  
 
-for dataset_num in range(4, 5):
+for dataset_num in range(1, 11):
     print(f"\nProcessing dataset {dataset_num}...")
     
     try:
@@ -678,9 +678,9 @@ for dataset_num in range(4, 5):
             # R_gyro = np.diag([0.05, 0.05, 0.05])
             # R_accel = np.diag([1000, 1000, 1000])
             # Tune for Dataset 4            
-            Q = np.diag([10,10,10, 9,9,9])
-            R_gyro = np.diag([0.1, 0.1, 0.1])
-            R_accel = np.diag([0.001, 0.001, 0.001])
+            # Q = np.diag([10,10,10, 9,9,9])
+            # R_gyro = np.diag([0.1, 0.1, 0.1])
+            # R_accel = np.diag([0.001, 0.001, 0.001])
             # Tune for Dataset 5            
             # Q = np.diag([32,32,32, 0.15,0.15,15])
             # R_gyro = np.diag([0.05, 0.05, 0.05])
@@ -692,6 +692,10 @@ for dataset_num in range(4, 5):
             # Q = np.diag([32,32,32, 0.15,0.15,15])
             # R_gyro = np.diag([0.005, 0.005, 0.005])
             # R_accel = np.diag([900, 900, 900])
+            # Tune for Test Sets 7,8,9,10
+            Q = np.diag([3.4, 3.4, 3.4, 0.5, 0.5, 0.5])
+            R_gyro = np.diag([15, 15, 15])
+            R_accel = np.diag([15, 15, 25])
             
                   
             orientations = [initial_orientation.copy()]
@@ -749,8 +753,8 @@ for dataset_num in range(4, 5):
                 # 6. Store result and convert to Euler angles
                 quat = x_current[0:4] / np.linalg.norm(x_current[0:4])  # Normalize
                 euler = R.from_quat(quat, scalar_first=True).as_euler('zxy', degrees=True)
-                euler[1] = -euler[1]  # Comment out for Dataset3, Dataset5, Dataset6
-                euler[2] = -euler[2]  # Comment out for Dataset3, Dataset5, Dataset6
+                # euler[1] = -euler[1]  # Comment out for Dataset3, Dataset5, Dataset6, Test Sets
+                # euler[2] = -euler[2]  # Comment out for Dataset3, Dataset5, Dataset6, Test Sets
                 orientations.append(euler)
 
             return np.array(orientations)
@@ -784,7 +788,7 @@ for dataset_num in range(4, 5):
         OrientationFromUKF = getOrientationFromUKF(Physw, PhysAcc, ValidMask, dtar, initial_orientation)
         print("Orientation from UKF calculated.")
         
-        stride = 150  # or 50, adjust as needed
+        # stride = 150  # or 50, adjust as needed
         # print("Frame | Vicon Yaw | UKF Yaw | Vicon Pitch | UKF Pitch | Vicon Roll | UKF Roll")
         # for i in range(0, min(len(OrientationFromVicon), len(OrientationFromUKF)), stride):
         #     v_yaw = OrientationFromVicon[i, 0]
