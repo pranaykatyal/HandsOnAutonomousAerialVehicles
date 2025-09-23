@@ -76,51 +76,49 @@ class Environment3D:
     ##############################################
     #### TODO - Implement line - collision checking #####
     ##############################################
-    def is_line_collision_free(self, p1, p2, num_checks=20):
-        print("is collisoin free")
-        """
-        Check if a line segment between two points is collision-free
-        Used for RRT* edge validation
-        return True if free, False if in collision
-        """
-        zero = 1e-12
+    def is_line_collision_free(self, p1, p2, eps=1e-12):
+        Ax, Ay, Az = p1
+        Bx, By, Bz = p2
+        dx, dy, dz = Bx - Ax, By - Ay, Bz - Az
+
         for block in self.blocks:
-            # print("run twice")
-            block_coords = block[0]
-            t0, t1 = 0.0, 1.0
+            coords = block[0]
+            mn = (coords[0], coords[1], coords[2])
+            mx = (coords[3], coords[4], coords[5])
 
-            for axis in range(0,3):
-                block_max = block_coords[2+axis]
-                block_min = block_coords[axis]
-                delta = p1[axis] - p2[axis]
-                start = p1[axis]
+            t0, t1 = 0.0, 1.0  # clamp to SEGMENT
 
-                if abs(delta) < zero: #if line is parralel to plane
-                    if block_min <= start <= block_max:
-                        #line is within block
-                        print("parralel line")
-                        return False
-                ta = (block_min - start) / delta
-                tb = (block_max - start) / delta
+            for a, d, lo, hi in (
+                (Ax, dx, mn[0], mx[0]),
+                (Ay, dy, mn[1], mx[1]),
+                (Az, dz, mn[2], mx[2]),
+            ):
+                if abs(d) < eps:
+                    # Parallel to this axis: must already be inside its slab
+                    if a < lo or a > hi:
+                        # No intersection with THIS block; move to next block
+                        t0, t1 = 1.0, 0.0  # mark empty to skip post-check
+                        break
+                    # inside slab → no constraint from this axis
+                    continue
 
-                #make sure ta <= tb
-                if ta > tb:
-                    temp = ta
-                    ta = tb
-                    tb = temp
+                tA = (lo - a) / d
+                tB = (hi - a) / d
+                if tA > tB:
+                    tA, tB = tB, tA
 
-
-                if ta > t0:
-                    t0 = ta
-                if tb < t1:
-                    t1 = tb
-
+                if tA > t0: t0 = tA
+                if tB < t1: t1 = tB
                 if t0 > t1:
-                    print("collision")
-                    return False
-                else:
-                    print("axis does not intersect", t0, t1)
-        return True    
+                    # No intersection with THIS block; try next block
+                    break
+
+            # If after all axes the window is non-empty, the segment hits this block
+            if t0 <= t1:
+                return False  # in collision with this block
+
+        return True  # free of all blocks
+
 
     
     def generate_random_free_point(self):
