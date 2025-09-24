@@ -30,6 +30,7 @@ class PathPlanner:
     
     ############################################################################################################
     #### TODO - Implement RRT* path planning algorithm in 3D (use the provided environment class) ##############
+    
     #### TODO - Store the final path in self.waypoints as a list of 3D points ##################################
     #### TODO - Add member functions as needed #################################################################
     ############################################################################################################
