@@ -73,9 +73,6 @@ class Environment3D:
                 return True
 
 
-    ##############################################
-    #### TODO - Implement line - collision checking #####
-    ##############################################
     def is_line_collision_free(self, p1, p2, eps=1e-12):
         Ax, Ay, Az = p1
         Bx, By, Bz = p2
