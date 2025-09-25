@@ -124,7 +124,7 @@ class LiveQuadrotorSimulator:
         tree = [start_node]
         
         # RRT* parameters - adjust based on environment size
-        max_iterations = min(3000, max(1000, int(distance * 150)))  # Scale with distance
+        max_iterations = 800# min(3000, max(1000, int(distance * 150)))  # Scale with distance
         step_size = min(1.5, distance / 10)  # Adaptive step size
         goal_radius = max(0.8, min(1.5, distance / 15))  # Adaptive goal radius
         search_radius = step_size * 2.5
@@ -172,7 +172,7 @@ class LiveQuadrotorSimulator:
             near_nodes = self.planner.find_near_nodes(tree, new_position, search_radius)
             new_node = self.planner.choose_parent(near_nodes, nearest_node, new_position)
             tree.append(new_node)
- 
+
             # Rewire tree
             self.planner.rewire_tree(new_node, near_nodes)
             # tree = self.planner.tree_nodes
@@ -180,8 +180,8 @@ class LiveQuadrotorSimulator:
             # Check if goal reached
             if self.planner.reached_goal(new_node):
                     goal_node = new_node
-                    print(f"Goal reached at iteration {iteration}! Final cost: {new_node.cost:.2f}")
-                    break
+                    # print(f"Goal reached at iteration {iteration}! Final cost: {new_node.cost:.2f}")
+                    # break
             
             # goal_distance = self.planner.distance(new_position, goal_point)
             # if goal_distance <= goal_radius:
@@ -208,10 +208,10 @@ class LiveQuadrotorSimulator:
         if goal_node is not None:
             self.planner.waypoints = self.planner.extract_path(goal_node)
             original_waypoints = len(self.planner.waypoints)
-
-            self.planner.waypoints = self.planner.extract_path(goal_node) # self.planner.waypoints = self.planner.simplify_path(self.planner.waypoints)
+            self.planner.waypoints = self.planner.extract_path(goal_node)
+            # self.planner.waypoints = self.planner.simplify_path(self.planner.waypoints)
             simplified_waypoints = len(self.planner.waypoints)
-            
+            self.planner.visualize_tree()
             print(f"   RRT* planning successful!")
             print(f"   Original path: {original_waypoints} waypoints")
             print(f"   Simplified path: {simplified_waypoints} waypoints")
