@@ -7,8 +7,8 @@ class Environment3D:
     def __init__(self):
         self.boundary = []
         self.blocks = []
-        self.start_point = [7.954360487979886, 6.822833826909669, 1.058209137433761]
-        self.goal_point = [44.304797815557095, 29.328280798754054, 4.454834705539382]
+        self.start_point = [6.0, 20.0, 6.0]
+        self.goal_point = [0.0, -5.0, 1.0]
         self.safety_margin = 0.5  # Safety margin around obstacles
 
 
