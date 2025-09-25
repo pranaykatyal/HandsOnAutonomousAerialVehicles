@@ -120,7 +120,7 @@ class PathPlanner:
         best_cost = nearest_node.cost + self.distance(nearest_node.position, new_position)
         for neighbor in neighbors:
             neighbor_to_position_distance = self.distance(neighbor.position, new_position)
-            if neighbor.cost + neighbor_to_position_distance <= best_cost:
+            if neighbor.cost + neighbor_to_position_distance <= best_cost and self.env.is_line_collision_free(p1=neighbor.position,p2=new_position):
                 best_parent = neighbor
                 best_cost = neighbor.cost + neighbor_to_position_distance
         new_node = RRTNode(position=new_position, parent=best_parent)
@@ -166,13 +166,31 @@ class PathPlanner:
         return np.linalg.norm(np.array(new_position) - np.array(goal_point))
     
     def simplify_path(self, path_waypoints: List[Position]):
-        if len(path_waypoints) <= 3:
+        if len(path_waypoints) <= 2:
             return path_waypoints
         
-        simplified_path = [path_waypoints[0]]
-        for i in range(len(path_waypoints) -1):
-            next_node = i+1
-            if self.env.is_line_collision_free(path_waypoints[i],path_waypoints[next_node])
+        simplified_path = [path_waypoints[0]]  # Always keep start
+        current_idx = 0
+        
+        while current_idx < len(path_waypoints) - 1:
+            # Try to connect current point to furthest visible point
+            furthest_visible_idx = current_idx + 1
+            
+            for i in range(current_idx + 2, len(path_waypoints)):
+                if self.env.is_line_collision_free(path_waypoints[current_idx], path_waypoints[i]):
+                    furthest_visible_idx = i
+                else:
+                    break  # Can't see further, stop checking
+            
+            # Move to the furthest visible point
+            current_idx = furthest_visible_idx
+            simplified_path.append(path_waypoints[current_idx])
+        
+        # Ensure goal is included
+        if not np.allclose(simplified_path[-1], path_waypoints[-1]):
+            simplified_path.append(path_waypoints[-1])
+        
+        return simplified_path
 
     ############################################################################################################
     def visualize_tree(self, ax=None):

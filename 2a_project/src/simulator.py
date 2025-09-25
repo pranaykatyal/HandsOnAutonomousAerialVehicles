@@ -26,6 +26,8 @@ class LiveQuadrotorSimulator:
     def __init__(self, map_file=None):
         # Initialize components
         self.env = Environment3D()
+        # self.env.start_point = np.array([5.0,18.0,4.0])
+        # self.env.goal_point = np.array([5.0, -5.0, 5.0])
         if map_file:
             success = self.env.parse_map_file(map_file)
             if not success:
@@ -107,8 +109,7 @@ class LiveQuadrotorSimulator:
         # Print environment information
         print(self.env.get_environment_info())
         
-
-        # Verify the points are well-separated
+                # Verify the points are well-separated
         start_point = self.env.start_point
         goal_point = self.env.goal_point
         distance = np.linalg.norm(np.array(goal_point) - np.array(start_point))
@@ -180,8 +181,8 @@ class LiveQuadrotorSimulator:
             # Check if goal reached
             if self.planner.reached_goal(new_node):
                     goal_node = new_node
-                    # print(f"Goal reached at iteration {iteration}! Final cost: {new_node.cost:.2f}")
-                    # break
+                    print(f"Goal reached at iteration {iteration}! Final cost: {new_node.cost:.2f}")
+                    break
             
             # goal_distance = self.planner.distance(new_position, goal_point)
             # if goal_distance <= goal_radius:

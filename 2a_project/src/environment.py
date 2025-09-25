@@ -7,8 +7,8 @@ class Environment3D:
     def __init__(self):
         self.boundary = []
         self.blocks = []
-        self.start_point = [7.954360487979886, 6.822833826909669, 1.058209137433761]
-        self.goal_point = [44.304797815557095, 29.328280798754054, 4.454834705539382]
+        self.start_point = [6.0,20.0,6.0]#[7.954360487979886, 6.822833826909669, 1.058209137433761]
+        self.goal_point = [0.0, -5.0, 1.0]#[44.304797815557095, 29.328280798754054, 4.454834705539382]
         self.safety_margin = 0.5  # Safety margin around obstacles
 
     def parse_map_file(self, filename):
@@ -60,10 +60,14 @@ class Environment3D:
         for block in self.blocks:
             block_coords = block[0]
             # print("block_coords", block_coords)
-            if block_coords[0] <= point[0] <= block_coords[3] and \
-               block_coords[1] <= point[1] <= block_coords[4] and \
-               block_coords[2] <= point[2] <= block_coords[5] \
+            if (block_coords[0] - self.safety_margin) <= point[0] <= (block_coords[3] + self.safety_margin) and \
+               (block_coords[1] - self.safety_margin) <= point[1] <= (block_coords[4] + self.safety_margin )and \
+               (block_coords[2] - self.safety_margin) <= point[2] <= (block_coords[5] + self.safety_margin) \
                :
+            # if (block_coords[0]) <= point[0] <= (block_coords[3]) and \
+            #    (block_coords[1]) <= point[1] <= (block_coords[4])and \
+            #    (block_coords[2]) <= point[2] <= (block_coords[5]) \
+            #    :
                 print("occupied point")
                 return False
             else:
@@ -78,11 +82,14 @@ class Environment3D:
 
         for block in self.blocks:
             coords = block[0]
-            mn = (coords[0], coords[1], coords[2])
-            mx = (coords[3], coords[4], coords[5])
+            mn = (coords[0] - self.safety_margin, coords[1] - self.safety_margin, coords[2] - self.safety_margin)
+            mx = (coords[3] + self.safety_margin, coords[4] + self.safety_margin, coords[5] + self.safety_margin)
+            # mn = (coords[0], coords[1], coords[2])
+            # mx = (coords[3], coords[4], coords[5])
 
             t0, t1 = 0.0, 1.0  # clamp to SEGMENT
-
+            intersects = True
+            
             for a, d, lo, hi in (
                 (Ax, dx, mn[0], mx[0]),
                 (Ay, dy, mn[1], mx[1]),
@@ -92,7 +99,7 @@ class Environment3D:
                     # Parallel to this axis: must already be inside its slab
                     if a < lo or a > hi:
                         # No intersection with THIS block; move to next block
-                        t0, t1 = 1.0, 0.0  # mark empty to skip post-check
+                        intersects = False
                         break
                     # inside slab → no constraint from this axis
                     continue
@@ -106,10 +113,11 @@ class Environment3D:
                 if tB < t1: t1 = tB
                 if t0 > t1:
                     # No intersection with THIS block; try next block
+                    intersects = False
                     break
 
             # If after all axes the window is non-empty, the segment hits this block
-            if t0 <= t1:
+            if intersects and t0 <= t1:
                 return False  # in collision with this block
 
         return True  # free of all blocks
