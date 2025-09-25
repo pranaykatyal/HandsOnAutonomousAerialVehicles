@@ -209,8 +209,8 @@ class LiveQuadrotorSimulator:
         if goal_node is not None:
             self.planner.waypoints = self.planner.extract_path(goal_node)
             original_waypoints = len(self.planner.waypoints)
-            self.planner.waypoints = self.planner.extract_path(goal_node)
-            # self.planner.waypoints = self.planner.simplify_path(self.planner.waypoints)
+            # self.planner.waypoints = self.planner.extract_path(goal_node)
+            self.planner.waypoints = self.planner.simplify_path(self.planner.waypoints)
             simplified_waypoints = len(self.planner.waypoints)
             self.planner.visualize_tree()
             print(f"   RRT* planning successful!")
