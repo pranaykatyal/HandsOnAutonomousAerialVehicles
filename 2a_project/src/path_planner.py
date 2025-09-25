@@ -25,34 +25,13 @@ class PathPlanner:
         
         # RRT* parameters
         self.max_iterations = 3000
-        self.simplify_iterations = 300
+        self.simplify_iterations = 1000
         self.step_size = 1.0
         self.goal_radius = 1.0
         self.search_radius = 2.5
         self.goal_bias = 0.15  # 15% bias towards goal
         
     
-    def simplify_path(self, path_waypoints: List[Position]):
-        for i in range(self.simplify_iterations):
-            if np.random.rand() < self.goal_bias:
-                random_point: Position = np.array(self.env.goal_point)
-            else:
-                random_point: Position = self.env.generate_random_free_point()
-            
-            nearest_node: RRTNode = self.find_nearest_node(node_list=self.tree_nodes, point=random_point)
-            node_position: Position = self.steer(start=nearest_node.position,end=random_point, step_size=self.step_size)
-            
-            if not self.env.is_line_collision_free(p1=nearest_node.position, p2=node_position):
-                continue
-
-            neighbors: List[RRTNode] = self.find_near_nodes(node_list=self.tree_nodes, point=node_position, search_radius=self.search_radius)
-            new_node:RRTNode = self.choose_parent(neighbors=neighbors,nearest_node=nearest_node,new_position=node_position)
-            self.tree_nodes.append(new_node)
-            self.rewire_tree(neighbors=neighbors, new_node=new_node)
-        
-        self.waypoints = self.extract_path(final_node=new_node)
-        return self.waypoints
-
     def plan(self):
         for i in range(self.max_iterations):
             if np.random.rand() < self.goal_bias:
@@ -149,16 +128,31 @@ class PathPlanner:
         best_parent.children.append(new_node)
         self.tree_nodes.append(new_node)
         return new_node
-
+    
     def rewire_tree(self, new_node: RRTNode, neighbors: List[RRTNode]) -> None:
         for neighbor in neighbors:
             if neighbor == new_node.parent:  # Skip parent
                 continue
             new_cost = new_node.cost + self.distance(neighbor.position, new_node.position)
-            if new_cost < new_node.cost and self.env.is_line_collision_free(p1=neighbor.position,p2=new_node.position):
+            # Fix: Compare with neighbor's current cost, not new_node's cost
+            if new_cost < neighbor.cost and self.env.is_line_collision_free(p1=neighbor.position, p2=new_node.position):
+                # Remove neighbor from its old parent's children list
+                if neighbor.parent is not None:
+                    neighbor.parent.children.remove(neighbor)
+                
+                # Set new parent
                 neighbor.parent = new_node
                 neighbor.cost = new_cost
-                new_node.children.insert(0,neighbor)
+                new_node.children.append(neighbor)
+                
+                # Propagate cost changes to all descendants
+                self._update_descendants_cost(neighbor)
+
+    def _update_descendants_cost(self, node: RRTNode) -> None:
+        """Recursively update costs for all descendants of a node"""
+        for child in node.children:
+            child.cost = node.cost + self.distance(node.position, child.position)
+            self._update_descendants_cost(child)
 
     def reached_goal(self, new_node: RRTNode) -> bool:
         distance_error = np.linalg.norm(new_node.position - self.env.goal_point)
@@ -169,7 +163,17 @@ class PathPlanner:
             return False
 
     def distance(self, new_position: Position, goal_point:Position):
-        return np.linalg.norm(new_position - goal_point)
+        return np.linalg.norm(np.array(new_position) - np.array(goal_point))
+    
+    def simplify_path(self, path_waypoints: List[Position]):
+        if len(path_waypoints) <= 3:
+            return path_waypoints
+        
+        simplified_path = [path_waypoints[0]]
+        for i in range(len(path_waypoints) -1):
+            next_node = i+1
+            if self.env.is_line_collision_free(path_waypoints[i],path_waypoints[next_node])
+
     ############################################################################################################
     def visualize_tree(self, ax=None):
         """Visualize the RRT* tree"""
