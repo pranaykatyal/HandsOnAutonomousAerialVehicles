@@ -55,22 +55,40 @@ class Environment3D:
     def is_point_in_free_space(self, point):
         """
         Check if a point is in free space (not inside any obstacle)
-        Complete implementation with collision checking
-        return True if free, False if in collision
+        
+        Current issue: Your implementation has a logic error - it returns True 
+        immediately when checking ANY block, instead of checking ALL blocks
         """
-
-        for block in self.blocks:
-            block_coords = block[0]
-            print("block_coords", block_coords)
-            if block_coords[0] <= point[0] <= block_coords[3] and \
-               block_coords[1] <= point[1] <= block_coords[4] and \
-               block_coords[2] <= point[2] <= block_coords[5] \
-               :
-                print("occupied point")
+        x, y, z = point
+        
+        # Check if point is within boundary
+        if not self.boundary:
+            return False
+        
+        xmin, ymin, zmin, xmax, ymax, zmax = self.boundary
+        if not (xmin <= x <= xmax and ymin <= y <= ymax and zmin <= z <= zmax):
+            return False
+        
+        # Check if point is inside any obstacle (with safety margin)
+        for block_coords, _ in self.blocks:
+            bxmin, bymin, bzmin, bxmax, bymax, bzmax = block_coords
+            
+            # Add safety margin
+            bxmin -= self.safety_margin
+            bymin -= self.safety_margin  
+            bzmin -= self.safety_margin
+            bxmax += self.safety_margin
+            bymax += self.safety_margin
+            bzmax += self.safety_margin
+            
+            # If point is inside this block, it's NOT free
+            if (bxmin <= x <= bxmax and 
+                bymin <= y <= bymax and 
+                bzmin <= z <= bzmax):
                 return False
-            else:
-                print("free point")
-                return True
+        
+        # Point is free if it's not inside any obstacle
+        return True
 
 
     def is_line_collision_free(self, p1, p2, eps=1e-12):
@@ -116,7 +134,7 @@ class Environment3D:
 
         return True  # free of all blocks
 
-
+    
     
     def generate_random_free_point(self):
         """

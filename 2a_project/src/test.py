@@ -41,13 +41,7 @@ def main():
         print(f"Path cost: {stats['best_cost']:.2f}")
         print(f"Waypoints: {stats['waypoints_count']}")
         print(f"Tree size: {stats['tree_size']}")
-        
-        # Enhanced visualization with better interaction
-        print("\nShowing visualization...")
-        print("Mouse controls:")
-        print("  - Left click + drag: Rotate view")
-        print("  - Right click + drag: Pan")
-        print("  - Mouse wheel: Zoom")
+
         
         # Enable interactive mode
         plt.ion()
