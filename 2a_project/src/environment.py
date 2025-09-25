@@ -11,8 +11,6 @@ class Environment3D:
         self.goal_point = [44.304797815557095, 29.328280798754054, 4.454834705539382]
         self.safety_margin = 0.5  # Safety margin around obstacles
 
-
-
     def parse_map_file(self, filename):
         """
         Parse the map file and extract boundary and blocks
