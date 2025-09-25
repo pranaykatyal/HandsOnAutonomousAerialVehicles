@@ -25,38 +25,59 @@ class PathPlanner:
         
         # RRT* parameters
         self.max_iterations = 3000
+        self.simplify_iterations = 300
         self.step_size = 1.0
         self.goal_radius = 1.0
         self.search_radius = 2.5
         self.goal_bias = 0.15  # 15% bias towards goal
         
     
-    def plan(self):
-        root=RRTNode(self.env.start_point)
-        self.tree_nodes.append(root)
+    def simplify_path(self, path_waypoints: List[Position]):
+        for i in range(self.simplify_iterations):
+            if np.random.rand() < self.goal_bias:
+                random_point: Position = np.array(self.env.goal_point)
+            else:
+                random_point: Position = self.env.generate_random_free_point()
+            
+            nearest_node: RRTNode = self.find_nearest_node(node_list=self.tree_nodes, point=random_point)
+            node_position: Position = self.steer(start=nearest_node.position,end=random_point, step_size=self.step_size)
+            
+            if not self.env.is_line_collision_free(p1=nearest_node.position, p2=node_position):
+                continue
 
+            neighbors: List[RRTNode] = self.find_near_nodes(node_list=self.tree_nodes, point=node_position, search_radius=self.search_radius)
+            new_node:RRTNode = self.choose_parent(neighbors=neighbors,nearest_node=nearest_node,new_position=node_position)
+            self.tree_nodes.append(new_node)
+            self.rewire_tree(neighbors=neighbors, new_node=new_node)
+        
+        self.waypoints = self.extract_path(final_node=new_node)
+        return self.waypoints
+
+    def plan(self):
         for i in range(self.max_iterations):
             if np.random.rand() < self.goal_bias:
                 random_point: Position = self.env.goal_point
             else:
                 random_point: Position = self.env.generate_random_free_point()
             
-            nearest_node: RRTNode = self.get_nearest_node(node_list=self.tree_nodes, point=random_point)
-            node_position: Position = self.step(start=nearest_node.position,end=random_point)
+            nearest_node: RRTNode = self.find_nearest_node(node_list=self.tree_nodes, point=random_point)
+            node_position: Position = self.steer(start=nearest_node.position,end=random_point, step_size=self.step_size)
             
-            if self.env.is_line_collision_free(p1=nearest_node.position, p2=node_position):
-                neighbors: List[RRTNode] = self.get_neighbors(node_list=self.tree_nodes, point=node_position)
-                new_node:RRTNode = self.set_best_parent(neighbors=neighbors,nearest_node=nearest_node,new_position=node_position)
-                self.tree_nodes.append(new_node)
-                self.rewire(neighbors=neighbors, new_node=new_node)
+            if not self.env.is_line_collision_free(p1=nearest_node.position, p2=node_position):
+                continue
 
-                if self.reached_goal(new_node=new_node):
-                    self.save_path_to_waypoint(final_node=new_node)
-                    self.waypoints = self.save_path_to_waypoint(final_node=new_node)
-                    return True
+            neighbors: List[RRTNode] = self.find_near_nodes(node_list=self.tree_nodes, point=node_position, search_radius=self.search_radius)
+            new_node:RRTNode = self.choose_parent(neighbors=neighbors,nearest_node=nearest_node,new_position=node_position)
+           
+            self.rewire_tree(neighbors=neighbors, new_node=new_node)
+
+            if self.reached_goal(new_node=new_node):
+                # self.extract_path(final_node=new_node)
+                self.waypoints = self.extract_path(final_node=new_node)
+                return True
 
     #### TODO - Store the final path in self.waypoints as a list of 3D points ##################################
-    def save_path_to_waypoint(self, final_node:RRTNode):
+    def extract_path(self, final_node:RRTNode):
         final_path:List[Position] = []
         node:RRTNode = final_node
         while node is not None:
@@ -64,58 +85,91 @@ class PathPlanner:
             node = node.parent
         return final_path[::-1]
 
-    #### TODO - Add member functions as needed #################################################################
+    #### TODO - Add is_path_valid by taking the dot product and rejecting large angles #################################################################
 
-    def get_nearest_node(self, node_list: List[RRTNode], point: Position):
+
+
+    def find_nearest_node(self, 
+                        node_list: List[RRTNode], 
+                        point: Position
+                        ) -> RRTNode:
+        
         distances = []
         for node in node_list:
             distance = np.linalg.norm(node.position - point)
+            # print(f"got distance {distance}")
             distances.append(distance)
-        nearest_idx = np.argmin(distances)
-        return node_list[nearest_idx]
+        #     print("distance list", distances)
+        # print("lengin of node list", len(distances))
+        if len(distances) > 1:
+            nearest_idx = np.argmin(distances)
+            return node_list[nearest_idx]
+        else:
+            return node_list[0]
 
-    def step(self, start: Position, end: Position):
+    def steer(self, 
+            start: Position, 
+            end: Position, 
+            step_size) -> Position:
+        
         direction = end - start
         distance = np.linalg.norm(direction)
-        if distance <= self.step_size:
+        if distance <= step_size:
             return end
         unit_direction = direction / distance
-        node_position = start + self.step_size * unit_direction
+        node_position = start + step_size * unit_direction
         return node_position
     
-    def get_neighbors(self, node_list: List[RRTNode], point: Position):
+    def find_near_nodes(self, 
+                        node_list: List[RRTNode], 
+                        point: Position, 
+                        search_radius
+                        ) -> List[RRTNode]:
         neighbors: List[RRTNode] = []
         for node in node_list:
-            if np.linalg.norm(node.position - point) <= self.search_radius:
+            if np.linalg.norm(node.position - point) <= search_radius:
                 neighbors.append(node)
         return neighbors
 
-    def set_best_parent(self, neighbors: List[RRTNode], nearest_node: RRTNode, new_position: Position):
+    def choose_parent(self, 
+                    neighbors: List[RRTNode], 
+                    nearest_node: RRTNode, 
+                    new_position: Position
+                    ) -> RRTNode:
+        
         best_parent: RRTNode = nearest_node
-        best_cost = nearest_node.cost + np.linalg.norm(nearest_node.position - new_position)
+        best_cost = nearest_node.cost + self.distance(nearest_node.position, new_position)
         for neighbor in neighbors:
-            neighbor_to_position_distance = np.linalg.norm(neighbor.position - new_position)
+            neighbor_to_position_distance = self.distance(neighbor.position, new_position)
             if neighbor.cost + neighbor_to_position_distance <= best_cost:
                 best_parent = neighbor
                 best_cost = neighbor.cost + neighbor_to_position_distance
         new_node = RRTNode(position=new_position, parent=best_parent)
         new_node.cost = best_cost
+        best_parent.children.append(new_node)
+        self.tree_nodes.append(new_node)
         return new_node
 
-    def rewire(self, neighbors: List[RRTNode], new_node: RRTNode):
+    def rewire_tree(self, new_node: RRTNode, neighbors: List[RRTNode]) -> None:
         for neighbor in neighbors:
             if neighbor == new_node.parent:  # Skip parent
                 continue
-            new_cost = new_node.cost + np.linalg.norm(neighbor.position - new_node.position)
+            new_cost = new_node.cost + self.distance(neighbor.position, new_node.position)
             if new_cost < new_node.cost and self.env.is_line_collision_free(p1=neighbor.position,p2=new_node.position):
                 neighbor.parent = new_node
                 neighbor.cost = new_cost
+                new_node.children.insert(0,neighbor)
 
-    def reached_goal(self, new_node: RRTNode):
+    def reached_goal(self, new_node: RRTNode) -> bool:
         distance_error = np.linalg.norm(new_node.position - self.env.goal_point)
         if distance_error <= self.goal_radius:
+            new_node.position = self.env.goal_point
             return True
+        else:
+            return False
 
+    def distance(self, new_position: Position, goal_point:Position):
+        return np.linalg.norm(new_position - goal_point)
     ############################################################################################################
     def visualize_tree(self, ax=None):
         """Visualize the RRT* tree"""

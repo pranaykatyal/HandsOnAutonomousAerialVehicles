@@ -154,6 +154,7 @@ class LiveQuadrotorSimulator:
             # Find nearest node
             nearest_node = self.planner.find_nearest_node(tree, sample_point)
             if nearest_node is None:
+                print("failed to get node")
                 continue
             
             # Steer towards sample
@@ -161,42 +162,37 @@ class LiveQuadrotorSimulator:
             
             # Check validity
             if not self.env.is_point_in_free_space(new_position):
+                print("point in occuoied space")
                 continue
             if not self.env.is_line_collision_free(nearest_node.position, new_position):
+                print("line in occuoied space")
                 continue
             
             # Find near nodes and choose best parent
             near_nodes = self.planner.find_near_nodes(tree, new_position, search_radius)
-            best_parent, best_cost = self.planner.choose_parent(near_nodes, new_position)
-            
-            if best_parent is None:
-                if self.planner.is_path_valid(nearest_node.position, new_position):
-                    best_parent = nearest_node
-                    best_cost = nearest_node.cost + self.planner.distance(nearest_node.position, new_position)
-                else:
-                    continue
-            
-            # Create new node
-            new_node = RRTNode(new_position)
-            new_node.parent = best_parent
-            new_node.cost = best_cost
-            best_parent.children.append(new_node)
+            new_node = self.planner.choose_parent(near_nodes, nearest_node, new_position)
             tree.append(new_node)
-            
+ 
             # Rewire tree
-            self.planner.rewire_tree(tree, new_node, near_nodes)
-            
+            self.planner.rewire_tree(new_node, near_nodes)
+            # tree = self.planner.tree_nodes
+
             # Check if goal reached
-            goal_distance = self.planner.distance(new_position, goal_point)
-            if goal_distance <= goal_radius:
-                if self.planner.is_path_valid(new_position, goal_point):
-                    goal_node = RRTNode(goal_point)
-                    goal_node.parent = new_node
-                    goal_node.cost = new_node.cost + goal_distance
-                    new_node.children.append(goal_node)
-                    tree.append(goal_node)
-                    print(f"Goal reached at iteration {iteration}! Final cost: {goal_node.cost:.2f}")
+            if self.planner.reached_goal(new_node):
+                    goal_node = new_node
+                    print(f"Goal reached at iteration {iteration}! Final cost: {new_node.cost:.2f}")
                     break
+            
+            # goal_distance = self.planner.distance(new_position, goal_point)
+            # if goal_distance <= goal_radius:
+            #     if True: #self.planner.is_path_valid(new_position, goal_point):
+            #         goal_node = RRTNode(goal_point)
+            #         goal_node.parent = new_node
+            #         goal_node.cost = new_node.cost + goal_distance
+            #         new_node.children.append(goal_node)
+            #         tree.append(goal_node)
+            #         print(f"Goal reached at iteration {iteration}! Final cost: {goal_node.cost:.2f}")
+            #         break
             
             # Update visualization periodically
             if iteration % update_interval == 0:
@@ -212,7 +208,8 @@ class LiveQuadrotorSimulator:
         if goal_node is not None:
             self.planner.waypoints = self.planner.extract_path(goal_node)
             original_waypoints = len(self.planner.waypoints)
-            self.planner.waypoints = self.planner.simplify_path(self.planner.waypoints)
+
+            self.planner.waypoints = self.planner.extract_path(goal_node) # self.planner.waypoints = self.planner.simplify_path(self.planner.waypoints)
             simplified_waypoints = len(self.planner.waypoints)
             
             print(f"   RRT* planning successful!")
@@ -457,52 +454,52 @@ class LiveQuadrotorSimulator:
         if not self.animated_rrt_planning(start, goal):
             return False
         
-        # Phase 2: B-spline Trajectory Generation
-        if not self.show_bspline_trajectory():
-            return False
+        # # Phase 2: B-spline Trajectory Generation
+        # if not self.show_bspline_trajectory():
+        #     return False
         
-        # Phase 3: Trajectory Execution
-        self.initialize_execution_phase()
+        # # Phase 3: Trajectory Execution
+        # self.initialize_execution_phase()
         
-        # Start execution
-        self.simulation_active = True
+        # # Start execution
+        # self.simulation_active = True
         
-        print("\nExecuting trajectory...")
-        print("Close the plot window to stop simulation")
+        # print("\nExecuting trajectory...")
+        # print("Close the plot window to stop simulation")
         
-        execution_update_rate = 25  # Hz
-        update_interval = 1.0 / execution_update_rate
-        last_update_time = time.time()
+        # execution_update_rate = 25  # Hz
+        # update_interval = 1.0 / execution_update_rate
+        # last_update_time = time.time()
         
-        try:
-            while self.simulation_active and plt.get_fignums():
-                # Run simulation step
-                continue_sim = self.simulation_step()
+        # try:
+        #     while self.simulation_active and plt.get_fignums():
+        #         # Run simulation step
+        #         continue_sim = self.simulation_step()
                 
-                # Update visualization at specified rate
-                current_time = time.time()
-                if current_time - last_update_time >= update_interval:
-                    self.update_execution_visualization()
-                    last_update_time = current_time
+        #         # Update visualization at specified rate
+        #         current_time = time.time()
+        #         if current_time - last_update_time >= update_interval:
+        #             self.update_execution_visualization()
+        #             last_update_time = current_time
                 
-                # Control real-time execution
-                time.sleep(max(0, self.dt - (time.time() - current_time)))
+        #         # Control real-time execution
+        #         time.sleep(max(0, self.dt - (time.time() - current_time)))
                 
-                if not continue_sim:
-                    break
+        #         if not continue_sim:
+        #             break
                     
-        except KeyboardInterrupt:
-            print("\nSimulation stopped by user")
-        except Exception as e:
-            print(f"\nSimulation error: {e}")
-        finally:
-            self.simulation_active = False
+        # except KeyboardInterrupt:
+        #     print("\nSimulation stopped by user")
+        # except Exception as e:
+        #     print(f"\nSimulation error: {e}")
+        # finally:
+        #     self.simulation_active = False
         
-        # Final update
-        self.update_execution_visualization()
+        # # Final update
+        # self.update_execution_visualization()
         
-        # Print results
-        self._print_simulation_results()
+        # # Print results
+        # self._print_simulation_results()
         
         # Keep plot open
         print("\n Simulation complete. Close plot window to continue...")

@@ -59,7 +59,7 @@ class Environment3D:
 
         for block in self.blocks:
             block_coords = block[0]
-            print("block_coords", block_coords)
+            # print("block_coords", block_coords)
             if block_coords[0] <= point[0] <= block_coords[3] and \
                block_coords[1] <= point[1] <= block_coords[4] and \
                block_coords[2] <= point[2] <= block_coords[5] \
@@ -67,7 +67,7 @@ class Environment3D:
                 print("occupied point")
                 return False
             else:
-                print("free point")
+                # print("free point")
                 return True
 
 
@@ -132,7 +132,7 @@ class Environment3D:
             y = np.random.uniform(ymin + self.safety_margin, ymax - self.safety_margin)
             z = np.random.uniform(zmin + self.safety_margin, zmax - self.safety_margin)
             
-            point = [x, y, z]
+            point = np.array([x, y, z])
             if self.is_point_in_free_space(point):
                 return point
         
