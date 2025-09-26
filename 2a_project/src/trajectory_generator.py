@@ -36,10 +36,47 @@ splines
         """
         print("Generating spline trajectory...")
 
+        for i in range(len(self.waypoints) - 1):
+            po = self.waypoints[i]
+            pf = self.waypoints[i + 1]
+
+            to = 0
+            tf = 2
+            qo = po
+            qf = pf
+            vo = 0
+            vf = 0
+            ao = 0
+            af = 0
+
+            time_points = np.linspace(to, tf, num_points)
+
+            A = np.array([[1, to, to**2, to**3, to**4, to**5],
+                          [0, 1, 2*to, 3*to**2, 4*to**3, 5*to**4],
+                          [0, 0, 2, 6*to, 12*to**2, 20*to**3],  
+                            [1, tf, tf**2, tf**3, tf**4, tf**5],
+                            [0, 1, 2*tf, 3*tf**2, 4*tf**3, 5*tf**4],
+                            [0, 0, 2, 6*tf, 12*tf**2, 20*tf**3]])    
+            
+            b = np.array(qo, vo, ao, qf, vf, af)
+
+            x = np.linalg.solve(A, b)
+
+            trajectory_points = x[1] + x[2]*time_points + x[3]*time_points**2 + \
+                                x[4]*time_points**3 + x[5]*time_points**4 + x[6]*time_points**5
+            
+            velocities = x[2] + 2*x[3]*time_points + 3*x[4]*time_points**2 + \
+                                4*x[5]*time_points**3 + 5*x[6]*time_points**4
+            
+            accelerations = 2*x[3] + 6*x[4]*time_points + 12*x[5]*time_points**2 + \
+                                20*x[6]*time_points**3
+
         trajectory_points = None
         time_points = None
         velocities = None
         accelerations = None
+
+        self.visualize_trajectory(trajectory_points, velocities, accelerations)
 
         ############## IMPLEMENTATION STARTS HERE ##############
             
