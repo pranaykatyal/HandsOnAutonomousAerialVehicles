@@ -297,8 +297,9 @@ class LiveQuadrotorSimulator:
         self.traj_gen.trajectory_duration = min(20.0, len(self.planner.waypoints) * 2.0)
         
         num_points = int(self.traj_gen.trajectory_duration / self.dt)
-        result = self.traj_gen.generate_bspline_trajectory(num_points=num_points)
-        
+        # result = self.traj_gen.generate_bspline_trajectory(num_points=num_points)
+        result = self.traj_gen.generate_spline_trajectory(num_points=num_points)
+
         if result[0] is not None:
             trajectory_points, time_points, velocities, accelerations = result
             self.controller.set_trajectory(trajectory_points, time_points, velocities, accelerations)
@@ -455,9 +456,9 @@ class LiveQuadrotorSimulator:
         if not self.animated_rrt_planning(start, goal):
             return False
         
-        # # Phase 2: B-spline Trajectory Generation
-        # if not self.show_bspline_trajectory():
-        #     return False
+        # Phase 2: B-spline Trajectory Generation
+        if not self.show_bspline_trajectory():
+            return False
         
         # # Phase 3: Trajectory Execution
         # self.initialize_execution_phase()

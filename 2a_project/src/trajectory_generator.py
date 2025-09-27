@@ -19,6 +19,7 @@ splines
     #### TODO - Implement spline trajectory generation ###########
     
     #### TODO - Ensure velocity and acceleration constraints #####
+    
     #### TODO - Add member functions as needed ###################
     ##############################################################
     def generate_spline_trajectory(self, num_points=None):
