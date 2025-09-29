@@ -117,7 +117,7 @@ splines
         for i in range(n_segments):
             distance = np.linalg.norm(self.waypoints[i+1] - self.waypoints[i])
             # Time proportional to distance (average speed ~2 m/s)
-            time = max(0.8, distance / 3.5) # changed from 2.0  to 5.0 to decrease time to next point.
+            time = max(80, distance / 80) # changed from 2.0  to 5.0 to decrease time to next point.
             segment_times.append(time)
         
         return np.array(segment_times)
