@@ -125,7 +125,7 @@ class LiveQuadrotorSimulator:
         tree = [start_node]
         
         # RRT* parameters - adjust based on environment size
-        max_iterations = 800# min(3000, max(1000, int(distance * 150)))  # Scale with distance
+        max_iterations =  min(3000, max(1000, int(distance * 150)))  # Scale with distance
         step_size = min(1.5, distance / 10)  # Adaptive step size
         goal_radius = max(0.8, min(1.5, distance / 15))  # Adaptive goal radius
         search_radius = step_size * 2.5
@@ -297,7 +297,7 @@ class LiveQuadrotorSimulator:
         self.traj_gen.trajectory_duration = min(20.0, len(self.planner.waypoints) * 2.0)
         
         num_points = int(self.traj_gen.trajectory_duration / self.dt)
-        result = self.traj_gen.generate_spline_trajectory(num_points=num_points)
+        result = self.traj_gen.generate_bspline_trajectory(num_points=num_points)
         
         
         if result[0] is not None:
