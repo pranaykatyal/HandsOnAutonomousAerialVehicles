@@ -62,17 +62,17 @@ Examples:
 
         """)
     
-    parser.add_argument('map_file', help='Path to the map file (e.g., map1.txt)')
+    #parser.add_argument('map_file', help='Path to the map file (e.g., map1.txt)')
 
     # Options
-    parser.add_argument('--save-data', action='store_true',
-                       help='Save simulation data to files')
+    #parser.add_argument('--save-data', action='store_true',
+    #                  help='Save simulation data to files')
     
-    args = parser.parse_args()
+    #args = parser.parse_args()
     
     print("Quadrotor Simulation Framework")
     print("=" * 50)
-    print(f"Map file: {args.map_file}")
+    #print(f"Map file: {args.map_file}")
     
     print("=" * 50)
     
@@ -80,10 +80,10 @@ Examples:
     try:
         # Default: Live real-time simulation
         success = run_live_simulation(
-            args.map_file,
+            './maps/map1.txt',  #args.map_file,
             start=None,
             goal=None,
-            save_data=args.save_data
+            #save_data=args.save_data
         )
     
         if success:
