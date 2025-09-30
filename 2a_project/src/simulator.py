@@ -125,7 +125,7 @@ class LiveQuadrotorSimulator:
         tree = [start_node]
         
         # RRT* parameters - adjust based on environment size
-        max_iterations = 800# min(3000, max(1000, int(distance * 150)))  # Scale with distance
+        max_iterations = min(3000, max(1000, int(distance * 150)))  # Scale with distance
         step_size = min(1.5, distance / 10)  # Adaptive step size
         goal_radius = max(0.8, min(1.5, distance / 15))  # Adaptive goal radius
         search_radius = step_size * 2.5
@@ -212,7 +212,7 @@ class LiveQuadrotorSimulator:
             # self.planner.waypoints = self.planner.extract_path(goal_node)
             self.planner.waypoints = self.planner.simplify_path(self.planner.waypoints)
             simplified_waypoints = len(self.planner.waypoints)
-            self.planner.visualize_tree()
+            # self.planner.visualize_tree()
             print(f"   RRT* planning successful!")
             print(f"   Original path: {original_waypoints} waypoints")
             print(f"   Simplified path: {simplified_waypoints} waypoints")
@@ -297,11 +297,19 @@ class LiveQuadrotorSimulator:
         self.traj_gen.trajectory_duration = min(20.0, len(self.planner.waypoints) * 2.0)
         
         num_points = int(self.traj_gen.trajectory_duration / self.dt)
-        # result = self.traj_gen.generate_bspline_trajectory(num_points=num_points)
         result = self.traj_gen.generate_spline_trajectory(num_points=num_points)
-
-        if result[0] is not None:
+        
+        
+        if True: # result[0] is not None:
             trajectory_points, time_points, velocities, accelerations = result
+            # hover_point = np.array(self.env.start_point)
+            # hover_duration = 120.0  # Hover for 60 seconds
+            # num_points = int(hover_duration / self.dt)
+            # trajectory_points = np.tile(hover_point, (num_points, 1))
+            # time_points = np.linspace(0, hover_duration, num_points)
+            # velocities = np.zeros((num_points, 3))
+            # accelerations = np.zeros((num_points, 3))
+
             self.controller.set_trajectory(trajectory_points, time_points, velocities, accelerations)
             self.max_sim_time = self.traj_gen.trajectory_duration + 5.0
             
@@ -456,52 +464,52 @@ class LiveQuadrotorSimulator:
         if not self.animated_rrt_planning(start, goal):
             return False
         
-        # Phase 2: B-spline Trajectory Generation
+        # # Phase 2: B-spline Trajectory Generation
         if not self.show_bspline_trajectory():
             return False
         
-        # # Phase 3: Trajectory Execution
-        # self.initialize_execution_phase()
+        # Phase 3: Trajectory Execution
+        self.initialize_execution_phase()
         
-        # # Start execution
-        # self.simulation_active = True
+        # Start execution
+        self.simulation_active = True
         
-        # print("\nExecuting trajectory...")
-        # print("Close the plot window to stop simulation")
+        print("\nExecuting trajectory...")
+        print("Close the plot window to stop simulation")
         
-        # execution_update_rate = 25  # Hz
-        # update_interval = 1.0 / execution_update_rate
-        # last_update_time = time.time()
+        execution_update_rate = 25  # Hz
+        update_interval = 1.0 / execution_update_rate
+        last_update_time = time.time()
         
-        # try:
-        #     while self.simulation_active and plt.get_fignums():
-        #         # Run simulation step
-        #         continue_sim = self.simulation_step()
+        try:
+            while self.simulation_active and plt.get_fignums():
+                # Run simulation step
+                continue_sim = self.simulation_step()
                 
-        #         # Update visualization at specified rate
-        #         current_time = time.time()
-        #         if current_time - last_update_time >= update_interval:
-        #             self.update_execution_visualization()
-        #             last_update_time = current_time
+                # Update visualization at specified rate
+                current_time = time.time()
+                if current_time - last_update_time >= update_interval:
+                    self.update_execution_visualization()
+                    last_update_time = current_time
                 
-        #         # Control real-time execution
-        #         time.sleep(max(0, self.dt - (time.time() - current_time)))
+                # Control real-time execution
+                time.sleep(max(0, self.dt - (time.time() - current_time)))
                 
-        #         if not continue_sim:
-        #             break
+                if not continue_sim:
+                    break
                     
-        # except KeyboardInterrupt:
-        #     print("\nSimulation stopped by user")
-        # except Exception as e:
-        #     print(f"\nSimulation error: {e}")
-        # finally:
-        #     self.simulation_active = False
+        except KeyboardInterrupt:
+            print("\nSimulation stopped by user")
+        except Exception as e:
+            print(f"\nSimulation error: {e}")
+        finally:
+            self.simulation_active = False
         
-        # # Final update
-        # self.update_execution_visualization()
+        # Final update
+        self.update_execution_visualization()
         
-        # # Print results
-        # self._print_simulation_results()
+        # Print results
+        self._print_simulation_results()
         
         # Keep plot open
         print("\n Simulation complete. Close plot window to continue...")

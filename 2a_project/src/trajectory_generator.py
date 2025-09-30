@@ -36,15 +36,93 @@ splines
         - accelerations: numpy array of accelerations (num_points, 3)
         """
         print("Generating spline trajectory...")
+        all_trajectory_points = []
+        all_velocities = []
+        all_accelerations = []
+        
 
-        trajectory_points = None
-        time_points = None
-        velocities = None
-        accelerations = None
+        for i in range(len(self.waypoints) - 1):
+            po = self.waypoints[i]
+            pf = self.waypoints[i + 1]
+            
+            # if i == 0 or i == len(self.waypoints) - 1:
+            #     to = 0
+            #     tf = 5
+            #     qo = po
+            #     qf = pf
+            #     vo = np.ones_like(qo) * 0     
+            #     vf = np.ones_like(qf) * 0      
+            #     ao = np.ones_like(qo) * 0.0      
+            #     af = np.ones_like(qf) * 0.00 
+            # else:   
+            #     to = 0
+            #     tf = 5
+            #     qo = po
+            #     qf = pf
+            #     vo = np.ones_like(qo) * 0     
+            #     vf = np.ones_like(qf) * 0      
+            #     ao = np.ones_like(qo) * 0.0      
+            #     af = np.ones_like(qf) * 0.00     
+            to = 0
+            tf = 1
+            qo = po
+            qf = pf
+            vo = np.ones_like(qo) * 0     
+            vf = np.ones_like(qf) * 0      
+            ao = np.ones_like(qo) * 0.0      
+            af = np.ones_like(qf) * 0.00 
+
+            time_points = np.linspace(to, tf, num_points)
+
+            A = np.array([
+                            [1, to, to**2, to**3, to**4, to**5],
+                            [0, 1, 2*to, 3*to**2, 4*to**3, 5*to**4],
+                            [0, 0, 2, 6*to, 12*to**2, 20*to**3],  
+                            [1, tf, tf**2, tf**3, tf**4, tf**5],
+                            [0, 1, 2*tf, 3*tf**2, 4*tf**3, 5*tf**4],
+                            [0, 0, 2, 6*tf, 12*tf**2, 20*tf**3]])    
+            
+            b = np.array([qo, vo, ao, qf, vf, af])
+            
+            x = np.linalg.solve(A, b)
+
+            trajectory_points = []
+            velocities = []
+            accelerations = []
+
+            for dim in range(len(qo)):
+                b = np.array([qo[dim], vo[dim], ao[dim], qf[dim], vf[dim], af[dim]])
+                x = np.linalg.solve(A, b)
+                
+                traj = x[0] + x[1]*time_points + x[2]*time_points**2 + \
+                       x[3]*time_points**3 + x[4]*time_points**4 + x[5]*time_points**5
+                vel = x[1] + 2*x[2]*time_points + 3*x[3]*time_points**2 + \
+                      4*x[4]*time_points**3 + 5*x[5]*time_points**4
+                acc = 2*x[2] + 6*x[3]*time_points + 12*x[4]*time_points**2 + \
+                      20*x[5]*time_points**3
+
+
+                trajectory_points.append(traj)
+                velocities.append(vel)
+                accelerations.append(acc)
+
+            trajectory_points = np.stack(trajectory_points, axis=-1)  # shape (num_points, 3)
+            velocities = np.stack(velocities, axis=-1)
+            accelerations = np.stack(accelerations, axis=-1)
+
+            all_trajectory_points.append(trajectory_points)
+            all_velocities.append(velocities)
+            all_accelerations.append(accelerations)
+
 
         ############## IMPLEMENTATION STARTS HERE ##############
+        traj_points = np.concatenate(all_trajectory_points, axis=0)
+        velocities = np.concatenate(all_velocities, axis=0)
+        accelerations = np.concatenate(all_accelerations, axis=0)
             
-        return trajectory_points, time_points, velocities, accelerations
+        self.visualize_trajectory(traj_points, velocities, accelerations)
+
+        return traj_points, time_points, velocities, accelerations
             
 
  
@@ -91,8 +169,9 @@ splines
             time_points = np.linspace(0, self.trajectory_duration, len(velocities))
             vel_magnitudes = np.linalg.norm(velocities, axis=1)
             ax2.plot(time_points, vel_magnitudes, 'g-', linewidth=2)
-            ax2.axhline(y=self.max_velocity, color='r', linestyle='--', 
-                       label=f'Max Vel: {self.max_velocity} m/s')
+            if self.max_velocity is not None:
+                ax2.axhline(y=self.max_velocity, color='r', linestyle='--', 
+                           label=f'Max Vel: {self.max_velocity} m/s')
             ax2.set_xlabel('Time (s)')
             ax2.set_ylabel('Velocity (m/s)')
             ax2.set_title('Velocity Profile')
@@ -102,8 +181,9 @@ splines
             # Plot acceleration magnitude over time
             acc_magnitudes = np.linalg.norm(accelerations, axis=1)
             ax3.plot(time_points, acc_magnitudes, 'm-', linewidth=2)
-            ax3.axhline(y=self.max_acceleration, color='r', linestyle='--', 
-                       label=f'Max Acc: {self.max_acceleration} m/s²')
+            if self.max_acceleration is not None:
+                ax3.axhline(y=self.max_acceleration, color='r', linestyle='--', 
+                           label=f'Max Acc: {self.max_acceleration} m/s²')
             ax3.set_xlabel('Time (s)')
             ax3.set_ylabel('Acceleration (m/s²)')
             ax3.set_title('Acceleration Profile')

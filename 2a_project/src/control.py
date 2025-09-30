@@ -83,8 +83,8 @@ class quad_control:
     def __init__(self):
 
         # TODO - SET CONTROLLER PROPERTIES AND GAINS 
-        dt = None 
-        filter_tau = None
+        dt = .02 
+        filter_tau = .7
         self.dt = dt
 
         # tello params
@@ -107,17 +107,17 @@ class quad_control:
         ########################### TODO - SET GAINS HERE ###########################
         # EDIT PID GAINS HERE! (kp, ki, kd, filter_tau, dt, dim = 1, minVal = -1, maxVal = 1)
         # NED position controller. EDIT GAINS HERE
-        self.x_pid = pid(0.0, 0.0, 0.0, filter_tau, dt, minVal = minVel, maxVal=maxVel)
-        self.y_pid = pid(0.0, 0.0, 0.0, filter_tau, dt, minVal = minVel, maxVal=maxVel)
-        self.z_pid = pid(0.0, 0.0, 0.0, filter_tau, dt, minVal = minVel, maxVal=maxVel)
+        self.x_pid = pid(.1, 0.005, 0.005, filter_tau, dt, minVal = minVel, maxVal=maxVel)
+        self.y_pid = pid(.1, 0.0050, 0.005, filter_tau, dt, minVal = minVel, maxVal=maxVel)
+        self.z_pid = pid(.1, 0.005, 0.005, filter_tau, dt, minVal = minVel, maxVal=maxVel)
 
 
         ########################## TODO - SET GAINS HERE ##############################
         ###############################################################################
         # NED velocity controller. EDIT GAINS HERE
-        self.vx_pid = pid(0, 0.0, 0.0, filter_tau, dt, minVal = minAcc, maxVal=maxAcc)
-        self.vy_pid = pid(0.0, 0.0, 0.0, filter_tau, dt, minVal = minAcc, maxVal=maxAcc)
-        self.vz_pid = pid(0, 0, 0, filter_tau, dt, minVal = minAcc, maxVal = maxAcc)
+        self.vx_pid = pid(0.2, 0.050, 0.001, filter_tau, dt, minVal = minAcc, maxVal=maxAcc)
+        self.vy_pid = pid(0.2, 0.050, 0.001, filter_tau, dt, minVal = minAcc, maxVal=maxAcc)
+        self.vz_pid = pid(0.1, 0.050, 0.001, filter_tau, dt, minVal = minAcc, maxVal = maxAcc)
         ##############################################################################
         ##############################################################################
 
@@ -231,6 +231,8 @@ class quad_control:
         
         scipy.io.savemat('./log/control.mat', loggedDict)
 
+        print(f"throttle: {throttle}, tau_x: {tau_x}, tau_y: {tau_y}, tau_z: {tau_z}")
+
         return U
 
 class QuadrotorController:
@@ -297,9 +299,15 @@ class QuadrotorController:
     
     def compute_control(self, current_state, t):
         """Main control computation"""
+        print("computeing control", self.get_performance_summary())
+        
         # Get desired trajectory state
         pos_des, vel_des, acc_des = self.get_desired_state(t)
-        
+        # pos_des = [0,0,0]
+        # vel_des = [0,0,0]
+        # acc_des = [0,0,0]
+        print(f"pos_des: {pos_des}, vel_des: {vel_des}, acc_des: {acc_des}")
+
         # Create waypoint [x, y, z, yaw]
         waypoint = np.append(pos_des, 0.0)  # Zero yaw
         
@@ -335,9 +343,9 @@ class QuadrotorController:
             return "No performance data"
         
         return f"""
-Performance Summary:
-  Mean Position Error: {np.mean(self.position_errors):.3f} m
-  Max Position Error:  {np.max(self.position_errors):.3f} m
-  Mean Velocity Error: {np.mean(self.velocity_errors):.3f} m/s
-  Max Velocity Error:  {np.max(self.velocity_errors):.3f} m/s
-"""
+            Performance Summary:
+            Mean Position Error: {np.mean(self.position_errors):.3f} m
+            Max Position Error:  {np.max(self.position_errors):.3f} m
+            Mean Velocity Error: {np.mean(self.velocity_errors):.3f} m/s
+            Max Velocity Error:  {np.max(self.velocity_errors):.3f} m/s
+            """

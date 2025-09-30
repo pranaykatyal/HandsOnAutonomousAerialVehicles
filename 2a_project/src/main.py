@@ -66,7 +66,7 @@ Examples:
 
     # Options
     parser.add_argument('--save-data', action='store_true',
-                       help='Save simulation data to files')
+                     help='Save simulation data to files')
     
     args = parser.parse_args()
     
@@ -80,10 +80,10 @@ Examples:
     try:
         # Default: Live real-time simulation
         success = run_live_simulation(
-            args.map_file,
+            args.map_file, #'./maps/map1.txt',  #
             start=None,
             goal=None,
-            save_data=args.save_data
+            #save_data=args.save_data
         )
     
         if success:
