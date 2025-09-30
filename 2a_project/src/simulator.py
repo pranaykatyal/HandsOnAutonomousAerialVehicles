@@ -57,7 +57,7 @@ class LiveQuadrotorSimulator:
         
         # Simulation status
         self.goal_reached = False
-        self.goal_tolerance = 0.8  # meters
+        self.goal_tolerance = 0.025  # meters
         self.simulation_active = False
         
         # Visualization elements
@@ -127,7 +127,7 @@ class LiveQuadrotorSimulator:
         # RRT* parameters - adjust based on environment size
         max_iterations =  min(3000, max(1000, int(distance * 150)))  # Scale with distance
         step_size = min(1.5, distance / 10)  # Adaptive step size
-        goal_radius = max(0.8, min(1.5, distance / 15))  # Adaptive goal radius
+        goal_radius = max(0.25, min(1.5, distance / 15))  # Adaptive goal radius
         search_radius = step_size * 2.5
         goal_bias = 0.15
         
@@ -405,7 +405,7 @@ class LiveQuadrotorSimulator:
         # Check goal reached
         if self.env.goal_point is not None:
             goal_distance = np.linalg.norm(current_pos - np.array(self.env.goal_point))
-            if goal_distance < self.goal_tolerance and not self.goal_reached:
+            if goal_distance <= self.goal_tolerance and not self.goal_reached:
                 self.goal_reached = True
                 print(f"\n GOAL REACHED at time {self.sim_time:.2f}s!")
                 print(f"Final distance to goal: {goal_distance:.3f}m")

@@ -27,7 +27,7 @@ class PathPlanner:
         self.max_iterations = 3000
         self.simplify_iterations = 1000
         self.step_size = 1.0
-        self.goal_radius = 1.0
+        self.goal_radius = 0.25
         self.search_radius = 2.5
         self.goal_bias = 0.15  # 15% bias towards goal
         
