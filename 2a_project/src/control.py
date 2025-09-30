@@ -83,8 +83,8 @@ class quad_control:
     def __init__(self):
 
         # TODO - SET CONTROLLER PROPERTIES AND GAINS 
-        dt = 1e-2 * 2
-        filter_tau = 1e-2 * 5
+        dt = 0.02
+        filter_tau = 0.1
         self.dt = dt
 
         # tello params
@@ -107,17 +107,17 @@ class quad_control:
         ########################### TODO - SET GAINS HERE ###########################
         # EDIT PID GAINS HERE! (kp, ki, kd, filter_tau, dt, dim = 1, minVal = -1, maxVal = 1)
         # NED position controller. EDIT GAINS HERE
-        self.x_pid = pid(100.0, 1.0, 1.0, filter_tau, dt, minVal = minVel, maxVal=maxVel)
-        self.y_pid = pid(100.0, 1.0, 1.0, filter_tau, dt, minVal = minVel, maxVal=maxVel)
-        self.z_pid = pid(100.0, 1.0, 1.0, filter_tau, dt, minVal = minVel, maxVal=maxVel)
+        self.x_pid = pid(0.5, 0.0, 0.1, filter_tau, dt, minVal = minVel, maxVal=maxVel)
+        self.y_pid = pid(0.5, 0.0, 0.1, filter_tau, dt, minVal = minVel, maxVal=maxVel)
+        self.z_pid = pid(0.8, 0.0, 0.15, filter_tau, dt, minVal = minVel, maxVal=maxVel)
 
 
         ########################## TODO - SET GAINS HERE ##############################
         ###############################################################################
         # NED velocity controller. EDIT GAINS HERE
-        self.vx_pid = pid(1000, 1, 100, filter_tau, dt, minVal = minAcc, maxVal=maxAcc)
-        self.vy_pid = pid(1000, 1, 100, filter_tau, dt, minVal = minAcc, maxVal=maxAcc)
-        self.vz_pid = pid(1000, 1, 100, filter_tau, dt, minVal = minAcc, maxVal = maxAcc)
+        self.vx_pid = pid(1.5, 0.1, 0.3, filter_tau, dt, minVal = minAcc, maxVal=maxAcc)
+        self.vy_pid = pid(1.5, 0.1, 0.3, filter_tau, dt, minVal = minAcc, maxVal=maxAcc)
+        self.vz_pid = pid(2.0, 0.2, 0.4, filter_tau, dt, minVal = minAcc, maxVal=maxAcc)
         ##############################################################################
         ##############################################################################
 
@@ -126,7 +126,7 @@ class quad_control:
         self.angle_sf = np.array((1, 1, 0.4)) # deprioritize yaw control using this scale factor
 
         # Angular velocity controller
-        kp_angvel = 6.
+        kp_angvel = 6.0
         self.p_pid = pid(kp_angvel, 0, kp_angvel/15., filter_tau, dt, minVal = minAct, maxVal = maxAct)
         self.q_pid = pid(kp_angvel, 0, kp_angvel/15., filter_tau, dt, minVal = minAct, maxVal = maxAct)
         self.r_pid = pid(kp_angvel, 0, kp_angvel/15, filter_tau, dt, minVal = minAct, maxVal = maxAct)
@@ -211,7 +211,10 @@ class quad_control:
 
         thrustPerRotor = netThrust/4.
         throttle = thrustPerRotor/self.linearThrustToU
-
+        if self.current_time < 0.5:  # Only print first 0.5 seconds
+            print(f"t={self.current_time:.3f}: Z_des={WP[2]:.2f}, Z_curr={xyz[2]:.2f}, "
+              f"Vz_des={vz_ned_sp:.2f}, Vz_curr={vxyz[2]:.2f}, "
+              f"acc_z_sp={acc_z_sp:.2f}, throttle={throttle:.3f}")
         # MIXER
         u1 = throttle - tau_x + tau_y + tau_z
         u2 = throttle + tau_x - tau_y + tau_z
