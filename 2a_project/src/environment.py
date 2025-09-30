@@ -7,8 +7,10 @@ class Environment3D:
     def __init__(self):
         self.boundary = []
         self.blocks = []
-        self.start_point = [6.0,20.0,6.0]#[7.954360487979886, 6.822833826909669, 1.058209137433761]
-        self.goal_point = [0.0, -5.0, 1.0]#[44.304797815557095, 29.328280798754054, 4.454834705539382]
+        self.start_point = [6.0,20.0,6.0]#[7.954360487979886, 6.822833826909669, 1.058209137433761] # map1.txt
+        # self.start_point = [7.954360487979886, 6.822833826909669, 1.058209137433761] # map4.txt
+        self.goal_point = [0.0, -5.0, 1.0]#[44.304797815557095, 29.328280798754054, 4.454834705539382] # map1.txt
+        # self.goal_point = [44.304797815557095, 29.328280798754054, 4.454834705539382] # map4.txt
         self.safety_margin = 0.5  # Safety margin around obstacles
 
     def parse_map_file(self, filename):
@@ -52,30 +54,44 @@ class Environment3D:
 
     def is_point_in_free_space(self, point):
         """
-        Check if a point is in free space (not inside any obstacle)
-        Complete implementation with collision checking
-        return True if free, False if in collision
+        Check if a point is in free space (not inside any obstacle AND within boundaries)
+        return True if free, False if in collision or out of bounds
         """
-
+        # FIRST: Check if point is within boundaries
+        if self.boundary:
+            xmin, ymin, zmin, xmax, ymax, zmax = self.boundary
+            if not (xmin <= point[0] <= xmax and 
+                    ymin <= point[1] <= ymax and 
+                    zmin <= point[2] <= zmax):
+                # print(f"Point {point} is outside boundary")
+                return False
+        
+        # SECOND: Check if point collides with any obstacle
         for block in self.blocks:
             block_coords = block[0]
-            # print("block_coords", block_coords)
-            if (block_coords[0] - self.safety_margin) <= point[0] <= (block_coords[3] + self.safety_margin) and \
-               (block_coords[1] - self.safety_margin) <= point[1] <= (block_coords[4] + self.safety_margin )and \
-               (block_coords[2] - self.safety_margin) <= point[2] <= (block_coords[5] + self.safety_margin) \
-               :
-            # if (block_coords[0]) <= point[0] <= (block_coords[3]) and \
-            #    (block_coords[1]) <= point[1] <= (block_coords[4])and \
-            #    (block_coords[2]) <= point[2] <= (block_coords[5]) \
-            #    :
-                print("occupied point")
+            if ((block_coords[0] - self.safety_margin) <= point[0] <= (block_coords[3] + self.safety_margin) and
+                (block_coords[1] - self.safety_margin) <= point[1] <= (block_coords[4] + self.safety_margin) and
+                (block_coords[2] - self.safety_margin) <= point[2] <= (block_coords[5] + self.safety_margin)):
+                # print("occupied point")
                 return False
-            else:
-                # print("free point")
-                return True
+        
+        return True 
 
 
     def is_line_collision_free(self, p1, p2, eps=1e-12):
+        """Check if line segment is collision-free AND stays within boundaries"""
+        
+        # FIRST: Check if both endpoints are within boundaries
+        if self.boundary:
+            xmin, ymin, zmin, xmax, ymax, zmax = self.boundary
+            
+            for point in [p1, p2]:
+                if not (xmin <= point[0] <= xmax and 
+                        ymin <= point[1] <= ymax and 
+                        zmin <= point[2] <= zmax):
+                    return False  # Endpoint outside boundary
+        
+        # SECOND: Check collision with obstacles (your existing code)
         Ax, Ay, Az = p1
         Bx, By, Bz = p2
         dx, dy, dz = Bx - Ax, By - Ay, Bz - Az
@@ -84,10 +100,8 @@ class Environment3D:
             coords = block[0]
             mn = (coords[0] - self.safety_margin, coords[1] - self.safety_margin, coords[2] - self.safety_margin)
             mx = (coords[3] + self.safety_margin, coords[4] + self.safety_margin, coords[5] + self.safety_margin)
-            # mn = (coords[0], coords[1], coords[2])
-            # mx = (coords[3], coords[4], coords[5])
 
-            t0, t1 = 0.0, 1.0  # clamp to SEGMENT
+            t0, t1 = 0.0, 1.0
             intersects = True
             
             for a, d, lo, hi in (
@@ -96,12 +110,9 @@ class Environment3D:
                 (Az, dz, mn[2], mx[2]),
             ):
                 if abs(d) < eps:
-                    # Parallel to this axis: must already be inside its slab
                     if a < lo or a > hi:
-                        # No intersection with THIS block; move to next block
                         intersects = False
                         break
-                    # inside slab → no constraint from this axis
                     continue
 
                 tA = (lo - a) / d
@@ -112,15 +123,13 @@ class Environment3D:
                 if tA > t0: t0 = tA
                 if tB < t1: t1 = tB
                 if t0 > t1:
-                    # No intersection with THIS block; try next block
                     intersects = False
                     break
 
-            # If after all axes the window is non-empty, the segment hits this block
             if intersects and t0 <= t1:
-                return False  # in collision with this block
+                return False
 
-        return True  # free of all blocks
+        return True
 
 
     

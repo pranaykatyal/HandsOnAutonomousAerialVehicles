@@ -297,6 +297,7 @@ class LiveQuadrotorSimulator:
         self.traj_gen.trajectory_duration = min(20.0, len(self.planner.waypoints) * 2.0)
         
         num_points = int(self.traj_gen.trajectory_duration / self.dt)
+        print(f"num points : {num_points}")
         result = self.traj_gen.generate_bspline_trajectory(num_points=num_points)
         
         
