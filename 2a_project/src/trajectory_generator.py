@@ -2,7 +2,7 @@ import numpy as np
 from scipy.interpolate import splprep, splev, BSpline
 import matplotlib.pyplot as plt
 import math
-from environment import Environment3D
+
 
 class TrajectoryGenerator:
     """
@@ -60,7 +60,88 @@ class TrajectoryGenerator:
         
         print(f"  Trajectory is collision-free! ({total_checks} checks passed)")
         return True
+    
+    def _clamp_waypoints_to_boundaries(self):
+        """Ensure all waypoints are safely within boundaries"""
+        if self.environment is None or not self.environment.boundary:
+            return
+        
+        xmin, ymin, zmin, xmax, ymax, zmax = self.environment.boundary
+        margin = 1.5  # Stay 0.8m away from boundaries
+        
+        clamped_count = 0
+        for i in range(len(self.waypoints)):
+            original = self.waypoints[i].copy()
+            self.waypoints[i][0] = np.clip(self.waypoints[i][0], xmin + margin, xmax - margin)
+            self.waypoints[i][1] = np.clip(self.waypoints[i][1], ymin + margin, ymax - margin)
+            self.waypoints[i][2] = np.clip(self.waypoints[i][2], zmin + margin, zmax - margin)
+            
+            if not np.allclose(original, self.waypoints[i]):
+                clamped_count += 1
+        
+        if clamped_count > 0:
+            print(f"  Clamped {clamped_count} waypoints to stay {margin}m within boundaries")
 
+
+    def _build_boundary_constraints(self, dimension, segment_times, poly_order, samples_per_segment=5):
+        """
+        Add inequality constraints to keep trajectory within boundaries
+        
+        Returns: A_ineq, b_lower, b_upper for inequality constraints
+        """
+        if self.environment is None or not self.environment.boundary:
+            return None, None
+        
+        xmin, ymin, zmin, xmax, ymax, zmax = self.environment.boundary
+        bounds_dim = [
+            (xmin, xmax),  # X dimension
+            (ymin, ymax),  # Y dimension
+            (zmin, zmax)   # Z dimension
+        ]
+        
+        lower_bound, upper_bound = bounds_dim[dimension]
+        
+        n_segments = len(segment_times)
+        n_coeffs = poly_order + 1
+        n_vars = n_segments * n_coeffs
+        
+        def get_poly_coeffs(t, derivative=0):
+            coeffs = np.zeros(n_coeffs)
+            for i in range(n_coeffs):
+                if i >= derivative:
+                    deriv_factor = 1
+                    for k in range(derivative):
+                        deriv_factor *= (i - k)
+                    coeffs[i] = deriv_factor * (t ** (i - derivative))
+            return coeffs
+        
+        constraints_upper = []
+        constraints_lower = []
+        
+        # Sample points along each segment
+        for seg in range(n_segments):
+            T = segment_times[seg]
+            t_samples = np.linspace(0, T, samples_per_segment)
+            
+            for t in t_samples:
+                row = np.zeros(n_vars)
+                row[seg * n_coeffs:(seg + 1) * n_coeffs] = get_poly_coeffs(t, derivative=0)
+                
+                # Upper bound: p(t) <= upper_bound
+                constraints_upper.append(row)
+                
+                # Lower bound: p(t) >= lower_bound  =>  -p(t) <= -lower_bound
+                constraints_lower.append(-row)
+        
+        # Combine into standard form: A_ineq * x <= b_ineq
+        A_ineq = np.vstack([np.array(constraints_upper), np.array(constraints_lower)])
+        b_ineq = np.concatenate([
+            np.full(len(constraints_upper), upper_bound),
+            np.full(len(constraints_lower), -lower_bound)
+        ])
+        
+        return A_ineq, b_ineq
+    
     def generate_bspline_trajectory(self, num_points=None):
         """
         Generate minimum snap trajectory (B-spline-like smooth trajectory)
@@ -78,7 +159,7 @@ class TrajectoryGenerator:
         - accelerations: numpy array of accelerations (total_points, 3)
         """
         print("Generating minimum snap trajectory...")
-        
+        self._clamp_waypoints_to_boundaries()
         n = len(self.waypoints)
         n_segments = n - 1
         
@@ -152,7 +233,7 @@ class TrajectoryGenerator:
         print(f"  Duration: {self.trajectory_duration:.2f} seconds")
         print(f"  Max velocity: {np.max(np.linalg.norm(final_velocities, axis=1)):.2f} m/s")
         print(f"  Max acceleration: {np.max(np.linalg.norm(final_accelerations, axis=1)):.2f} m/s²")
-        print(f"  Collision-free: {'YES ✓' if is_safe else 'NO ✗'}")
+        print(f"  Collision-free: {'YES ' if is_safe else 'NO '}")
         
         # Visualize
         self.visualize_trajectory(final_trajectory, final_velocities, final_accelerations)
@@ -160,62 +241,136 @@ class TrajectoryGenerator:
         return final_trajectory, final_time_points, final_velocities, final_accelerations
     def _allocate_segment_times(self):
         """
-        Allocate time for each segment based on distance
+        Adaptive time allocation based on distance, curvature, and boundary proximity
         """
         n_segments = len(self.waypoints) - 1
         segment_times = []
         
         for i in range(n_segments):
             distance = np.linalg.norm(self.waypoints[i+1] - self.waypoints[i])
-            # Time proportional to distance (average speed ~2 m/s)
-            time = max(1.0, distance / 2.0)
+            
+            # Base time: distance / desired_speed
+            base_speed = 1  # m/s - adjust this for overall speed
+            base_time = distance / base_speed
+            
+            # Factor 1: Curvature - slow down at sharp turns
+            curvature_factor = 10
+            if i > 0:  # Can calculate curvature
+                v_in = self.waypoints[i] - self.waypoints[i-1]
+                v_out = self.waypoints[i+1] - self.waypoints[i]
+                
+                # Normalize
+                v_in_norm = v_in / (np.linalg.norm(v_in) + 1e-6)
+                v_out_norm = v_out / (np.linalg.norm(v_out) + 1e-6)
+                
+                # Angle between segments (dot product)
+                cos_angle = np.dot(v_in_norm, v_out_norm)
+                cos_angle = np.clip(cos_angle, -1, 1)
+                
+                # Sharp turn (cos_angle near -1) → increase time
+                # Straight (cos_angle near 1) → normal time
+                # Map cos_angle from [-1, 1] to curvature_factor [1.0, 2.0]
+                curvature_factor = 1.0 + 0.5 * (1 - cos_angle)
+            
+            # Factor 2: Boundary proximity - reduce time near boundaries to tighten curves
+            boundary_factor = 5
+            if self.environment and self.environment.boundary:
+                xmin, ymin, zmin, xmax, ymax, zmax = self.environment.boundary
+                
+                # Check distance to all 6 boundaries for segment midpoint
+                mid_point = (self.waypoints[i] + self.waypoints[i+1]) / 2
+                
+                distances_to_boundaries = [
+                    mid_point[0] - xmin,
+                    xmax - mid_point[0],
+                    mid_point[1] - ymin,
+                    ymax - mid_point[1],
+                    mid_point[2] - zmin,
+                    zmax - mid_point[2]
+                ]
+                
+                min_boundary_dist = min(distances_to_boundaries)
+                
+                # If close to boundary (< 2m), reduce time to tighten curve
+                if min_boundary_dist < 2.0:
+                    boundary_factor = 0.6 + 0.4 * (min_boundary_dist / 2.0)  # Range: [0.6, 1.0]
+            
+            # Calculate final time
+            time = base_time * curvature_factor * boundary_factor
+            
+            # Clamp to reasonable range
+            time = np.clip(time, 0.2, 2.0)  # Min 0.4s, max 4.0s per segment
+            
             segment_times.append(time)
         
         return np.array(segment_times)
 
     def _solve_minimum_snap_qp(self, dimension, segment_times, poly_order):
         """
-        Solve the minimum snap QP problem for one dimension
-        
-        Minimizes: ∫(snap²)dt subject to waypoint and continuity constraints
+        Solve minimum snap QP with boundary inequality constraints
         """
+        from scipy.optimize import minimize
+        
         n_segments = len(segment_times)
         n_coeffs = poly_order + 1
-        
-        # Build cost matrix Q (minimizes integral of snap squared)
-        Q = self._build_snap_cost_matrix(segment_times, poly_order)
-        
-        # Build constraint matrices
-        A_eq, b_eq = self._build_equality_constraints(
-            dimension, segment_times, poly_order
-        )
-        
-        # Solve QP using KKT system: minimize (1/2)x^T Q x subject to A_eq x = b_eq
         n_vars = n_segments * n_coeffs
-        n_constraints = A_eq.shape[0]
         
-        # Build KKT matrix: [Q    A_eq^T] [x]   [0   ]
-        #                   [A_eq   0   ] [λ] = [b_eq]
+        # Build cost and constraint matrices
+        Q = self._build_snap_cost_matrix(segment_times, poly_order)
+        A_eq, b_eq = self._build_equality_constraints(dimension, segment_times, poly_order)
+        A_ineq, b_ineq = self._build_boundary_constraints(dimension, segment_times, poly_order, samples_per_segment=25)
+        
+        # Get initial guess by solving without inequality constraints
+        n_constraints = A_eq.shape[0]
         KKT = np.zeros((n_vars + n_constraints, n_vars + n_constraints))
-        KKT[:n_vars, :n_vars] = Q + np.eye(n_vars) * 1e-6  # Add small regularization
+        KKT[:n_vars, :n_vars] = Q + np.eye(n_vars) * 1e-6
         KKT[:n_vars, n_vars:] = A_eq.T
         KKT[n_vars:, :n_vars] = A_eq
         
         rhs = np.zeros(n_vars + n_constraints)
         rhs[n_vars:] = b_eq
         
-        # Solve the system
         try:
             solution = np.linalg.solve(KKT, rhs)
-            coeffs = solution[:n_vars]
+            x0 = solution[:n_vars]
         except np.linalg.LinAlgError:
-            print("  Warning: KKT solve failed, using least squares")
-            coeffs, _, _, _ = np.linalg.lstsq(A_eq, b_eq, rcond=None)
+            print("  Warning: Initial guess failed, using zeros")
+            x0 = np.zeros(n_vars)
         
-        # Reshape to (n_segments, n_coeffs)
-        coeffs = coeffs.reshape(n_segments, n_coeffs)
+        # If no boundary constraints, return initial solution
+        if A_ineq is None:
+            return x0.reshape(n_segments, n_coeffs)
         
-        return coeffs
+        # Solve with boundary constraints using SLSQP
+        def objective(x):
+            return 0.5 * x @ Q @ x
+        
+        def objective_jac(x):
+            return Q @ x
+        
+        # Constraints for scipy.optimize
+        constraints = [
+            {'type': 'eq', 'fun': lambda x: A_eq @ x - b_eq, 'jac': lambda x: A_eq},
+            {'type': 'ineq', 'fun': lambda x: b_ineq - A_ineq @ x, 'jac': lambda x: -A_ineq}
+        ]
+        
+        result = minimize(
+            objective,
+            x0,
+            method='SLSQP',
+            jac=objective_jac,
+            constraints=constraints,
+            options={'maxiter': 2000, 'ftol': 1e-8}
+        )
+        
+        if result.success:
+            coeffs = result.x
+        else:
+            print(f"  Warning: Optimization didn't fully converge: {result.message}")
+            print(f"  Using best available solution")
+            coeffs = result.x  # Use it anyway, often still good
+        
+        return coeffs.reshape(n_segments, n_coeffs)
 
     def _build_snap_cost_matrix(self, segment_times, poly_order):
         """
