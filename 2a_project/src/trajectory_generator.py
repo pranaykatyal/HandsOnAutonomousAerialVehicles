@@ -204,6 +204,7 @@ class TrajectoryGenerator:
         final_velocities = np.stack(all_velocities, axis=-1)
         final_accelerations = np.stack(all_accelerations, axis=-1)
         
+        
         # STEP 4: COLLISION CHECK - uses your environment's methods!
         is_safe = self._check_trajectory_collisions(final_trajectory, check_every_n=10)
         
@@ -225,6 +226,8 @@ class TrajectoryGenerator:
             final_time_points.append(seg_times + current_time)
             current_time += seg_time
         final_time_points = np.concatenate(final_time_points)
+        
+        final_velocities, final_accelerations = self._limit_trajectory_dynamics(final_trajectory, final_velocities, final_accelerations, final_time_points)
         
         self.trajectory_duration = final_time_points[-1]
         
@@ -248,7 +251,7 @@ class TrajectoryGenerator:
             distance = np.linalg.norm(self.waypoints[i+1] - self.waypoints[i])
             
             # Base time: distance / desired_speed
-            base_speed = 2.0  # m/s - reasonable cruising speed
+            base_speed = 1.0  # m/s - reasonable cruising speed
             base_time = distance / base_speed
             
             # Factor 1: Curvature - slow down at sharp turns
@@ -296,7 +299,22 @@ class TrajectoryGenerator:
             segment_times.append(time)
         
         return np.array(segment_times)
-
+    def _limit_trajectory_dynamics(self, positions, velocities, accelerations, time_points):
+        """Limit velocities and accelerations to physical constraints"""
+        max_vel = 4.0  # m/s
+        max_acc = 4.0  # m/s² (leave margin below controller limit)
+        
+        # Limit velocities
+        vel_magnitudes = np.linalg.norm(velocities, axis=1)
+        vel_scale = np.minimum(1.0, max_vel / (vel_magnitudes + 1e-6))
+        velocities = velocities * vel_scale[:, np.newaxis]
+        
+        # Limit accelerations
+        acc_magnitudes = np.linalg.norm(accelerations, axis=1)
+        acc_scale = np.minimum(1.0, max_acc / (acc_magnitudes + 1e-6))
+        accelerations = accelerations * acc_scale[:, np.newaxis]
+        
+        return velocities, accelerations
     def _solve_minimum_snap_qp(self, dimension, segment_times, poly_order):
         """
         Solve minimum snap QP with boundary inequality constraints
