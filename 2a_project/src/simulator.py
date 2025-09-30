@@ -325,7 +325,10 @@ class LiveQuadrotorSimulator:
             self.ax.legend()
             self.fig.canvas.draw()
             self.fig.canvas.flush_events()
-            
+            # After generating trajectory
+            print(f"Trajectory start: {trajectory_points[0]}")
+            print(f"Drone start: {self.env.start_point}")
+            print(f"Mismatch: {np.linalg.norm(trajectory_points[0] - self.env.start_point)}")
             time.sleep(2)  # Show trajectory
             self.trajectory_complete = True
             return True
