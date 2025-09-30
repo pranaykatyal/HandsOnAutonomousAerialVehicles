@@ -2,26 +2,65 @@ import numpy as np
 from scipy.interpolate import splprep, splev, BSpline
 import matplotlib.pyplot as plt
 import math
+from environment import Environment3D
 
 class TrajectoryGenerator:
     """
-    Generate smooth trajectory from waypoints using  
-splines
+    Generate smooth trajectory from waypoints using splines
     Complete implementation with velocity and acceleration profiles
     """
     
-    def __init__(self, waypoints):
+    def __init__(self, waypoints, environment=None):
         self.waypoints = np.array(waypoints)
         self.trajectory_duration = None  # seconds
         self.max_velocity = None  # m/s
         self.max_acceleration = None  # m/s^2
+        self.environment = environment  # Environment3D object for collision checking
 
-    ##############################################################
-    #### TODO - Implement spline trajectory generation ###########
-    
-    #### TODO - Ensure velocity and acceleration constraints #####
-    #### TODO - Add member functions as needed ###################
-    ##############################################################
+    def _check_trajectory_collisions(self, trajectory_points, check_every_n=5):
+        """
+        Check if trajectory collides with obstacles using environment's methods
+        
+        Parameters:
+        - trajectory_points: numpy array of shape (N, 3)
+        - check_every_n: check every nth point (for efficiency)
+        
+        Returns: True if collision-free, False if collision detected
+        """
+        if self.environment is None:
+            print("  No environment provided - skipping collision check")
+            return True
+        
+        print("  Checking trajectory for collisions...")
+        
+        collision_count = 0
+        total_checks = 0
+        
+        # Check points along trajectory
+        for i in range(0, len(trajectory_points), check_every_n):
+            point = trajectory_points[i]
+            total_checks += 1
+            
+            if not self.environment.is_point_in_free_space(point):
+                collision_count += 1
+                if collision_count == 1:  # Print first collision
+                    print(f"    COLLISION at point {i}: [{point[0]:.2f}, {point[1]:.2f}, {point[2]:.2f}]")
+            
+            # Also check line segments between consecutive checked points
+            if i > 0 and i >= check_every_n:
+                prev_point = trajectory_points[i - check_every_n]
+                if not self.environment.is_line_collision_free(prev_point, point):
+                    collision_count += 1
+                    if collision_count == 1:
+                        print(f"    COLLISION on segment from {prev_point} to {point}")
+        
+        if collision_count > 0:
+            print(f"  Found {collision_count} collision(s) out of {total_checks} checks")
+            return False
+        
+        print(f"  Trajectory is collision-free! ({total_checks} checks passed)")
+        return True
+
     def generate_bspline_trajectory(self, num_points=None):
         """
         Generate minimum snap trajectory (B-spline-like smooth trajectory)
@@ -84,6 +123,19 @@ splines
         final_velocities = np.stack(all_velocities, axis=-1)
         final_accelerations = np.stack(all_accelerations, axis=-1)
         
+        # STEP 4: COLLISION CHECK - uses your environment's methods!
+        is_safe = self._check_trajectory_collisions(final_trajectory, check_every_n=10)
+        
+        if not is_safe:
+            print("\n" + "="*60)
+            print("WARNING: Trajectory collides with obstacles!")
+            print("Suggestions:")
+            print("  1. Use more waypoints (less simplification in RRT*)")
+            print("  2. Increase segment times (slower trajectory)")
+            print("  3. Check if waypoints are too close to obstacles")
+            print("  4. Increase safety margin in environment")
+            print("="*60 + "\n")
+        
         # Create cumulative time points
         final_time_points = []
         current_time = 0.0
@@ -95,18 +147,17 @@ splines
         
         self.trajectory_duration = final_time_points[-1]
         
-        print(f"Generated minimum snap trajectory:")
+        print(f"\nGenerated minimum snap trajectory:")
         print(f"  Total points: {len(final_trajectory)}")
         print(f"  Duration: {self.trajectory_duration:.2f} seconds")
         print(f"  Max velocity: {np.max(np.linalg.norm(final_velocities, axis=1)):.2f} m/s")
         print(f"  Max acceleration: {np.max(np.linalg.norm(final_accelerations, axis=1)):.2f} m/s²")
+        print(f"  Collision-free: {'YES ✓' if is_safe else 'NO ✗'}")
         
         # Visualize
         self.visualize_trajectory(final_trajectory, final_velocities, final_accelerations)
         
         return final_trajectory, final_time_points, final_velocities, final_accelerations
-
-
     def _allocate_segment_times(self):
         """
         Allocate time for each segment based on distance
@@ -117,11 +168,10 @@ splines
         for i in range(n_segments):
             distance = np.linalg.norm(self.waypoints[i+1] - self.waypoints[i])
             # Time proportional to distance (average speed ~2 m/s)
-            time = max(80, distance / 80) # changed from 2.0  to 5.0 to decrease time to next point.
+            time = max(1.0, distance / 2.0)
             segment_times.append(time)
         
         return np.array(segment_times)
-
 
     def _solve_minimum_snap_qp(self, dimension, segment_times, poly_order):
         """
@@ -167,7 +217,6 @@ splines
         
         return coeffs
 
-
     def _build_snap_cost_matrix(self, segment_times, poly_order):
         """
         Build the cost matrix Q for minimizing snap
@@ -208,7 +257,6 @@ splines
             Q[idx_start:idx_end, idx_start:idx_end] = Q_seg
         
         return Q
-
 
     def _build_equality_constraints(self, dimension, segment_times, poly_order):
         """
@@ -303,7 +351,6 @@ splines
         
         return A_eq, b_eq
 
-
     def _evaluate_polynomial_trajectory(self, coeffs, segment_times, poly_order, num_points):
         """
         Evaluate the polynomial trajectory at discrete time points
@@ -344,9 +391,7 @@ splines
         return (np.concatenate(all_positions),
                 np.concatenate(all_velocities),
                 np.concatenate(all_accelerations))
-            
 
- 
     def visualize_trajectory(self, trajectory_points=None, velocities=None, 
                            accelerations=None, ax=None):
         """Visualize the trajectory with velocity and acceleration vectors"""
