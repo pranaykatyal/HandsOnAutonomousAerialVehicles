@@ -240,9 +240,7 @@ class TrajectoryGenerator:
         
         return final_trajectory, final_time_points, final_velocities, final_accelerations
     def _allocate_segment_times(self):
-        """
-        Adaptive time allocation based on distance, curvature, and boundary proximity
-        """
+        """Adaptive time allocation based on distance, curvature, and boundary proximity"""
         n_segments = len(self.waypoints) - 1
         segment_times = []
         
@@ -250,34 +248,28 @@ class TrajectoryGenerator:
             distance = np.linalg.norm(self.waypoints[i+1] - self.waypoints[i])
             
             # Base time: distance / desired_speed
-            base_speed = 1  # m/s - adjust this for overall speed
+            base_speed = 2.0  # m/s - reasonable cruising speed
             base_time = distance / base_speed
             
             # Factor 1: Curvature - slow down at sharp turns
-            curvature_factor = 10
-            if i > 0:  # Can calculate curvature
+            curvature_factor = 1.0  # FIXED: default to 1.0, not 10
+            if i > 0:
                 v_in = self.waypoints[i] - self.waypoints[i-1]
                 v_out = self.waypoints[i+1] - self.waypoints[i]
                 
-                # Normalize
                 v_in_norm = v_in / (np.linalg.norm(v_in) + 1e-6)
                 v_out_norm = v_out / (np.linalg.norm(v_out) + 1e-6)
                 
-                # Angle between segments (dot product)
                 cos_angle = np.dot(v_in_norm, v_out_norm)
                 cos_angle = np.clip(cos_angle, -1, 1)
                 
-                # Sharp turn (cos_angle near -1) → increase time
-                # Straight (cos_angle near 1) → normal time
-                # Map cos_angle from [-1, 1] to curvature_factor [1.0, 2.0]
+                # Sharp turn → increase time (1.0 to 1.5×)
                 curvature_factor = 1.0 + 0.5 * (1 - cos_angle)
             
-            # Factor 2: Boundary proximity - reduce time near boundaries to tighten curves
-            boundary_factor = 5
+            # Factor 2: Boundary proximity
+            boundary_factor = 1.0  # FIXED: default to 1.0, not 5
             if self.environment and self.environment.boundary:
                 xmin, ymin, zmin, xmax, ymax, zmax = self.environment.boundary
-                
-                # Check distance to all 6 boundaries for segment midpoint
                 mid_point = (self.waypoints[i] + self.waypoints[i+1]) / 2
                 
                 distances_to_boundaries = [
@@ -291,15 +283,15 @@ class TrajectoryGenerator:
                 
                 min_boundary_dist = min(distances_to_boundaries)
                 
-                # If close to boundary (< 2m), reduce time to tighten curve
+                # Near boundary → reduce time slightly (0.7 to 1.0×)
                 if min_boundary_dist < 2.0:
-                    boundary_factor = 0.6 + 0.4 * (min_boundary_dist / 2.0)  # Range: [0.6, 1.0]
+                    boundary_factor = 0.7 + 0.3 * (min_boundary_dist / 2.0)
             
             # Calculate final time
             time = base_time * curvature_factor * boundary_factor
             
             # Clamp to reasonable range
-            time = np.clip(time, 0.2, 2.0)  # Min 0.4s, max 4.0s per segment
+            time = np.clip(time, 0.8, 5.0)  # FIXED: min 0.8s, max 5.0s
             
             segment_times.append(time)
         
