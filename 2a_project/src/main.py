@@ -80,7 +80,7 @@ Examples:
     try:
         # Default: Live real-time simulation
         success = run_live_simulation(
-            './maps/map1.txt',  #args.map_file,
+            './maps/map4.txt',  #args.map_file,
             start=None,
             goal=None,
             #save_data=args.save_data
