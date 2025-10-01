@@ -2,16 +2,34 @@ import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
-
+import tello
 class Environment3D:
     def __init__(self):
         self.boundary = []
         self.blocks = []
-        self.start_point = [6.0,20.0,6.0]#[7.954360487979886, 6.822833826909669, 1.058209137433761] # map1.txt
+        
+        
+        # self.start_point = [6.0,20.0,6.0]#[7.954360487979886, 6.822833826909669, 1.058209137433761] # map1.txt
+        # self.start_point = [0.0, 20.0, 2.0] # map2.txt
+        self.start_point = [0.0, 3.0, 2.0] # map3.txt
         # self.start_point = [7.954360487979886, 6.822833826909669, 1.058209137433761] # map4.txt
-        self.goal_point = [0.0, -5.0, 1.0]#[44.304797815557095, 29.328280798754054, 4.454834705539382] # map1.txt
+        
+        
+        # self.goal_point = [0.0, -5.0, 1.0]#[44.304797815557095, 29.328280798754054, 4.454834705539382] # map1.txt
+        # self.goal_point = [10.0, 20.0, 3.0] # map2.txt
+        self.goal_point = [20.0, 2.0, 4.0] # map3.txt
         # self.goal_point = [44.304797815557095, 29.328280798754054, 4.454834705539382] # map4.txt
-        self.safety_margin = 0.5  # Safety margin around obstacles
+        
+        
+        
+        
+        self.robotmarginxy = tello.margin_xy  # Robot margin for obstacle bloating
+        print("robot margin xy:", self.robotmarginxy)
+        
+        self.robotmarginz = tello.margin_z    # Robot margin for obstacle bloating
+        print("robot margin z:", self.robotmarginz)
+        
+        self.safety_margin = 0.2  # Safety margin around obstacles
 
     def parse_map_file(self, filename):
         """
@@ -69,9 +87,9 @@ class Environment3D:
         # SECOND: Check if point collides with any obstacle
         for block in self.blocks:
             block_coords = block[0]
-            if ((block_coords[0] - self.safety_margin) <= point[0] <= (block_coords[3] + self.safety_margin) and
-                (block_coords[1] - self.safety_margin) <= point[1] <= (block_coords[4] + self.safety_margin) and
-                (block_coords[2] - self.safety_margin) <= point[2] <= (block_coords[5] + self.safety_margin)):
+            if ((block_coords[0] - self.robotmarginxy) <= point[0] <= (block_coords[3] + self.robotmarginxy) and
+                (block_coords[1] - self.robotmarginxy) <= point[1] <= (block_coords[4] + self.robotmarginxy) and
+                (block_coords[2] - self.robotmarginz) <= point[2] <= (block_coords[5] + self.robotmarginz)):
                 # print("occupied point")
                 return False
         
@@ -98,8 +116,8 @@ class Environment3D:
 
         for block in self.blocks:
             coords = block[0]
-            mn = (coords[0] - self.safety_margin, coords[1] - self.safety_margin, coords[2] - self.safety_margin)
-            mx = (coords[3] + self.safety_margin, coords[4] + self.safety_margin, coords[5] + self.safety_margin)
+            mn = (coords[0] - self.robotmarginxy, coords[1] - self.robotmarginxy, coords[2] - self.robotmarginz)
+            mx = (coords[3] + self.robotmarginxy, coords[4] + self.robotmarginxy, coords[5] + self.robotmarginz)
 
             t0, t1 = 0.0, 1.0
             intersects = True
