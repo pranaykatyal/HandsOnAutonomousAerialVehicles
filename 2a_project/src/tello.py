@@ -33,10 +33,10 @@ Dimensions: 98Ã—92.5Ã—41 mm - as found on : https://www.ryzerobotics.com/t
 # Robot dimensions (cuboid) - tall vertical profile
 robot_width = 0.1   # meters (X direction)
 robot_length = 0.1  # meters (Y direction)
-robot_height = 0.05  # meters (Z direction) -  made it taller as coz of assignment 
+robot_height = 0.2  # meters (Z direction) -  made it taller as coz of assignment 
 
 # Safety buffer beyond physical dimensions
-safety_buffer = 0.025  # Additional clearance
+safety_buffer = 0.2  # Additional clearance
 
 # Total margins for obstacle bloating
 margin_xy = (robot_width / 2) + safety_buffer  
