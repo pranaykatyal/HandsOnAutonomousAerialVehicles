@@ -206,7 +206,7 @@ class TrajectoryGenerator:
         
         
         # STEP 4: COLLISION CHECK - uses your environment's methods!
-        is_safe = self._check_trajectory_collisions(final_trajectory, check_every_n=10)
+        is_safe = self._check_trajectory_collisions(final_trajectory, check_every_n=1)
         
         if not is_safe:
             print("\n" + "="*60)
@@ -288,7 +288,7 @@ class TrajectoryGenerator:
                 
                 # Near boundary → reduce time slightly (0.7 to 1.0×)
                 if min_boundary_dist < 2.0:
-                    boundary_factor = 0.7 + 0.3 * (min_boundary_dist / 2.0)
+                    boundary_factor = 1.5 + 0.3 * (min_boundary_dist / 2.0)
             
             # Calculate final time
             time = base_time * curvature_factor * boundary_factor
@@ -328,7 +328,7 @@ class TrajectoryGenerator:
         # Build cost and constraint matrices
         Q = self._build_snap_cost_matrix(segment_times, poly_order)
         A_eq, b_eq = self._build_equality_constraints(dimension, segment_times, poly_order)
-        A_ineq, b_ineq = self._build_boundary_constraints(dimension, segment_times, poly_order, samples_per_segment=25)
+        A_ineq, b_ineq = self._build_boundary_constraints(dimension, segment_times, poly_order, samples_per_segment=50)
         
         # Get initial guess by solving without inequality constraints
         n_constraints = A_eq.shape[0]
