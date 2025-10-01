@@ -138,7 +138,7 @@ class LiveQuadrotorSimulator:
             step_size = 0.5  # Smaller to fit through gaps
             goal_radius = 0.5  # Tighter
             search_radius = 2.5  # Larger for better rewiring
-            goal_bias = 0.10  
+            goal_bias = 0.1  
         else:  # Simple map (like map1)
             max_iterations = min(3000, max(1000, int(distance * 150)))
             step_size = min(1.5, distance / 10)
