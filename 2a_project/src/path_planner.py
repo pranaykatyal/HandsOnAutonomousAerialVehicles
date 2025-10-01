@@ -165,8 +165,7 @@ class PathPlanner:
     def distance(self, new_position: Position, goal_point:Position):
         return np.linalg.norm(np.array(new_position) - np.array(goal_point))
     
-    def simplify_path(self, path_waypoints: List[Position], 
-                    max_skip_distance=3.0, boundary_threshold=2.0):
+    def simplify_path(self, path_waypoints: List[Position], max_skip_distance=3.0, boundary_threshold=2.0):
         if len(path_waypoints) <= 2:
             return path_waypoints
         
@@ -181,6 +180,39 @@ class PathPlanner:
                     ymax - point[1] < boundary_threshold or
                     point[2] - zmin < boundary_threshold or
                     zmax - point[2] < boundary_threshold)
+    
+        def is_safe_shortcut(p1, p2):
+            """Check if shortcut maintains safe clearance"""
+            # Check line collision
+            if not self.env.is_line_collision_free(p1, p2):
+                return False
+            
+            # Sample intermediate points along the shortcut
+            num_samples = max(3, int(np.linalg.norm(p2 - p1) / 0.3))
+            for i in range(1, num_samples):
+                t = i / num_samples
+                intermediate = p1 + t * (p2 - p1)
+                
+                # Verify intermediate point is in free space
+                if not self.env.is_point_in_free_space(intermediate):
+                    return False
+                
+                # Extra check: ensure minimum clearance from obstacles
+                # Sample a small sphere around the point
+                clearance_samples = [
+                    intermediate + np.array([0.15, 0, 0]),
+                    intermediate + np.array([-0.15, 0, 0]),
+                    intermediate + np.array([0, 0.15, 0]),
+                    intermediate + np.array([0, -0.15, 0]),
+                    intermediate + np.array([0, 0, 0.15]),
+                    intermediate + np.array([0, 0, -0.15])
+                ]
+                
+                for sample in clearance_samples:
+                    if not self.env.is_point_in_free_space(sample):
+                        return False
+            
+            return True
         
         simplified_path = [path_waypoints[0]]
         current_idx = 0
@@ -200,7 +232,8 @@ class PathPlanner:
                 if distance > max_skip_distance:
                     break
                 
-                if self.env.is_line_collision_free(path_waypoints[current_idx], path_waypoints[i]):
+                # Use safer collision checking
+                if is_safe_shortcut(path_waypoints[current_idx], path_waypoints[i]):
                     furthest_visible_idx = i
                 else:
                     break

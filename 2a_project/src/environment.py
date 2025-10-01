@@ -10,14 +10,14 @@ class Environment3D:
         
         
         # self.start_point = [6.0,20.0,6.0]#[7.954360487979886, 6.822833826909669, 1.058209137433761] # map1.txt
-        # self.start_point = [0.0, 20.0, 2.0] # map2.txt
-        self.start_point = [0.0, 3.0, 5.0] # map3.txt
+        self.start_point = [0.0, 20.0, 2.0] # map2.txt
+        # self.start_point = [0.0, 3.0, 2.0] # map3.txt
         # self.start_point = [7.954360487979886, 6.822833826909669, 1.058209137433761] # map4.txt
         
         
         # self.goal_point = [0.0, -5.0, 1.0]#[44.304797815557095, 29.328280798754054, 4.454834705539382] # map1.txt
-        # self.goal_point = [10.0, 20.0, 3.0] # map2.txt
-        self.goal_point = [20.0, 2.0, 4.0] # map3.txt
+        self.goal_point = [10.0, 20.0, 3.0] # map2.txt
+        # self.goal_point = [20.0, 2.0, 4.0] # map3.txt
         # self.goal_point = [44.304797815557095, 29.328280798754054, 4.454834705539382] # map4.txt
         
         
