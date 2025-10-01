@@ -165,28 +165,49 @@ class PathPlanner:
     def distance(self, new_position: Position, goal_point:Position):
         return np.linalg.norm(np.array(new_position) - np.array(goal_point))
     
-    def simplify_path(self, path_waypoints: List[Position]):
+    def simplify_path(self, path_waypoints: List[Position], 
+                    max_skip_distance=3.0, boundary_threshold=2.0):
         if len(path_waypoints) <= 2:
             return path_waypoints
         
-        simplified_path = [path_waypoints[0]]  # Always keep start
+        def is_near_boundary(point):
+            """Check if point is close to map boundaries"""
+            if not self.env.boundary:
+                return False
+            xmin, ymin, zmin, xmax, ymax, zmax = self.env.boundary
+            return (point[0] - xmin < boundary_threshold or
+                    xmax - point[0] < boundary_threshold or
+                    point[1] - ymin < boundary_threshold or
+                    ymax - point[1] < boundary_threshold or
+                    point[2] - zmin < boundary_threshold or
+                    zmax - point[2] < boundary_threshold)
+        
+        simplified_path = [path_waypoints[0]]
         current_idx = 0
         
         while current_idx < len(path_waypoints) - 1:
-            # Try to connect current point to furthest visible point
             furthest_visible_idx = current_idx + 1
             
             for i in range(current_idx + 2, len(path_waypoints)):
+                # If waypoint is near boundary, don't skip it
+                if is_near_boundary(path_waypoints[i]):
+                    if i - current_idx > 1:  # Keep at least this waypoint
+                        furthest_visible_idx = i
+                    break
+                
+                # Check distance constraint
+                distance = np.linalg.norm(path_waypoints[current_idx] - path_waypoints[i])
+                if distance > max_skip_distance:
+                    break
+                
                 if self.env.is_line_collision_free(path_waypoints[current_idx], path_waypoints[i]):
                     furthest_visible_idx = i
                 else:
-                    break  # Can't see further, stop checking
+                    break
             
-            # Move to the furthest visible point
             current_idx = furthest_visible_idx
             simplified_path.append(path_waypoints[current_idx])
         
-        # Ensure goal is included
         if not np.allclose(simplified_path[-1], path_waypoints[-1]):
             simplified_path.append(path_waypoints[-1])
         

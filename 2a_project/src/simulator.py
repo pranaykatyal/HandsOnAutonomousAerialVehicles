@@ -112,6 +112,11 @@ class LiveQuadrotorSimulator:
                 # Verify the points are well-separated
         start_point = self.env.start_point
         goal_point = self.env.goal_point
+        print(f"Start point: {self.env.start_point}")
+        print(f"Goal point: {self.env.goal_point}")
+        print(f"Start valid: {self.env.is_point_in_free_space(self.env.start_point)}")
+        print(f"Goal valid: {self.env.is_point_in_free_space(self.env.goal_point)}")
+
         distance = np.linalg.norm(np.array(goal_point) - np.array(start_point))
         
         print(f"📏 Start-to-goal distance: {distance:.2f} meters")
@@ -123,13 +128,23 @@ class LiveQuadrotorSimulator:
         from path_planner import RRTNode
         start_node = RRTNode(start_point)
         tree = [start_node]
-        
+        n_obstacles = len(self.env.blocks)
+
+    
+
         # RRT* parameters - adjust based on environment size
-        max_iterations =  min(3000, max(1000, int(distance * 150)))  # Scale with distance
-        step_size = min(1.5, distance / 10)  # Adaptive step size
-        goal_radius = max(0.25, min(1.5, distance / 15))  # Adaptive goal radius
-        search_radius = step_size * 2.5
-        goal_bias = 0.15
+        if n_obstacles >= 2:  # Complex map
+            max_iterations = 10000  # Much more exploration needed
+            step_size = 0.5  # Smaller to fit through gaps
+            goal_radius = 0.5  # Tighter
+            search_radius = 2.5  # Larger for better rewiring
+            goal_bias = 0.10  
+        else:  # Simple map (like map1)
+            max_iterations = min(3000, max(1000, int(distance * 150)))
+            step_size = min(1.5, distance / 10)
+            goal_radius = max(0.25, min(1.5, distance / 15))
+            search_radius = step_size * 2.5
+            goal_bias = 0.15
         
         print(f"🔧 RRT* Parameters:")
         print(f"   Max iterations: {max_iterations}")
@@ -163,10 +178,10 @@ class LiveQuadrotorSimulator:
             
             # Check validity
             if not self.env.is_point_in_free_space(new_position):
-                print("point in occuoied space")
+                # print("point in occuoied space")
                 continue
             if not self.env.is_line_collision_free(nearest_node.position, new_position):
-                print("line in occuoied space")
+                # print("line in occuoied space")
                 continue
             
             # Find near nodes and choose best parent
@@ -210,7 +225,7 @@ class LiveQuadrotorSimulator:
             self.planner.waypoints = self.planner.extract_path(goal_node)
             original_waypoints = len(self.planner.waypoints)
             # self.planner.waypoints = self.planner.extract_path(goal_node)
-            self.planner.waypoints = self.planner.simplify_path(self.planner.waypoints)
+            self.planner.waypoints = self.planner.simplify_path(self.planner.waypoints, max_skip_distance=5.0, boundary_threshold=0.05)
             simplified_waypoints = len(self.planner.waypoints)
             self.planner.visualize_tree()
             print(f"   RRT* planning successful!")
@@ -467,6 +482,7 @@ class LiveQuadrotorSimulator:
         # # Phase 3: Trajectory Execution
         self.initialize_execution_phase()
         
+        self.controller.plot_tracking()
         # # Start execution
         self.simulation_active = True
         

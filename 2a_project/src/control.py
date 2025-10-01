@@ -95,7 +95,7 @@ class quad_control:
         maxVel = 10.
         # maxAng = 30.*3.14159/180.
         self.maxRate = 1.5
-        maxAct = 0.3
+        maxAct = 0.5
 
         minAcc = -maxAcc
         minVel = -maxVel
@@ -107,9 +107,9 @@ class quad_control:
         ########################### TODO - SET GAINS HERE ###########################
         # EDIT PID GAINS HERE! (kp, ki, kd, filter_tau, dt, dim = 1, minVal = -1, maxVal = 1)
         # NED position controller. EDIT GAINS HERE
-        self.x_pid = pid(0.5, 0.0, 0.1, filter_tau, dt, minVal = minVel, maxVal=maxVel)
-        self.y_pid = pid(0.5, 0.0, 0.1, filter_tau, dt, minVal = minVel, maxVal=maxVel)
-        self.z_pid = pid(0.8, 0.0, 0.15, filter_tau, dt, minVal = minVel, maxVal=maxVel)
+        self.x_pid = pid(0.8, 0.0, 0.2, filter_tau, dt, minVal = minVel, maxVal=maxVel)
+        self.y_pid = pid(0.8, 0.0, 0.2, filter_tau, dt, minVal = minVel, maxVal=maxVel)
+        self.z_pid = pid(1.0, 0.0, 0.25, filter_tau, dt, minVal = minVel, maxVal=maxVel)
 
 
         ########################## TODO - SET GAINS HERE ##############################
@@ -211,10 +211,7 @@ class quad_control:
 
         thrustPerRotor = netThrust/4.
         throttle = thrustPerRotor/self.linearThrustToU
-        if self.current_time < 0.5:  # Only print first 0.5 seconds
-            print(f"t={self.current_time:.3f}: Z_des={WP[2]:.2f}, Z_curr={xyz[2]:.2f}, "
-              f"Vz_des={vz_ned_sp:.2f}, Vz_curr={vxyz[2]:.2f}, "
-              f"acc_z_sp={acc_z_sp:.2f}, throttle={throttle:.3f}")
+
         # MIXER
         u1 = throttle - tau_x + tau_y + tau_z
         u2 = throttle + tau_x - tau_y + tau_z
@@ -244,16 +241,20 @@ class QuadrotorController:
     def __init__(self, drone_params):
         self.params = drone_params
         self.controller = quad_control()
-        
         # Trajectory tracking
         self.trajectory_points = None
         self.trajectory_velocities = None
         self.trajectory_accelerations = None
         self.time_points = None
-        
         # Performance metrics
         self.position_errors = []
         self.velocity_errors = []
+        # Real-time logging for plotting
+        self.current_positions = []
+        self.desired_positions = []
+        self.current_velocities = []
+        self.desired_velocities = []
+        self.time_log = []
         
     def set_trajectory(self, trajectory_points, time_points, velocities, accelerations):
         """Set the reference trajectory"""
@@ -302,10 +303,8 @@ class QuadrotorController:
         """Main control computation"""
         # Get desired trajectory state
         pos_des, vel_des, acc_des = self.get_desired_state(t)
-        
         # Create waypoint [x, y, z, yaw]
         waypoint = np.append(pos_des, 0.0)  # Zero yaw
-        
         # Use the controller
         try:
             control_input = self.controller.step(current_state, waypoint, vel_des, acc_des)
@@ -314,18 +313,67 @@ class QuadrotorController:
             # Emergency hover
             hover_thrust = self.params.mass * 9.81 / 4.0 / self.params.linearThrustToU
             control_input = np.array([hover_thrust] * 4)
-        
         # Track performance
         current_pos = current_state[0:3]
         current_vel = current_state[3:6]
-        
         pos_error = np.linalg.norm(current_pos - pos_des)
         vel_error = np.linalg.norm(current_vel - vel_des)
-        
         self.position_errors.append(pos_error)
         self.velocity_errors.append(vel_error)
-        
+        # Real-time logging for plotting
+        self.current_positions.append(current_pos)
+        self.desired_positions.append(pos_des)
+        self.current_velocities.append(current_vel)
+        self.desired_velocities.append(vel_des)
+        self.time_log.append(t)
         return control_input
+    def plot_tracking(self):
+        import matplotlib.pyplot as plt
+        times = np.array(self.time_log)
+        curr_pos = np.array(self.current_positions)
+        des_pos = np.array(self.desired_positions)
+        curr_vel = np.array(self.current_velocities)
+        des_vel = np.array(self.desired_velocities)
+
+        
+        if times.size == 0 or curr_pos.size == 0 or des_pos.size == 0 or curr_vel.size == 0 or des_vel.size == 0:
+            print("No tracking data to plot.")
+            return
+
+        
+        if curr_pos.ndim == 1:
+            curr_pos = curr_pos.reshape(1, -1)
+        if des_pos.ndim == 1:
+            des_pos = des_pos.reshape(1, -1)
+        if curr_vel.ndim == 1:
+            curr_vel = curr_vel.reshape(1, -1)
+        if des_vel.ndim == 1:
+            des_vel = des_vel.reshape(1, -1)
+
+        fig, axs = plt.subplots(2, 1, figsize=(12, 8))
+
+        # Position
+        for i, label in enumerate(['x', 'y', 'z']):
+            axs[0].plot(times, curr_pos[:, i], label=f'Current {label}')
+            axs[0].plot(times, des_pos[:, i], '--', label=f'Desired {label}')
+        axs[0].set_title('Position Tracking')
+        axs[0].set_xlabel('Time (s)')
+        axs[0].set_ylabel('Position (m)')
+        axs[0].legend()
+        axs[0].grid(True)
+
+        # Velocity
+        for i, label in enumerate(['vx', 'vy', 'vz']):
+            axs[1].plot(times, curr_vel[:, i], label=f'Current {label}')
+            axs[1].plot(times, des_vel[:, i], '--', label=f'Desired {label}')
+        axs[1].set_title('Velocity Tracking')
+        axs[1].set_xlabel('Time (s)')
+        axs[1].set_ylabel('Velocity (m/s)')
+        axs[1].legend()
+        axs[1].grid(True)
+
+        plt.tight_layout()
+        plt.show()
     
     def reset_metrics(self):
         """Reset performance tracking"""
