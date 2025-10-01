@@ -107,17 +107,17 @@ class quad_control:
         ########################### TODO - SET GAINS HERE ###########################
         # EDIT PID GAINS HERE! (kp, ki, kd, filter_tau, dt, dim = 1, minVal = -1, maxVal = 1)
         # NED position controller. EDIT GAINS HERE
-        self.x_pid = pid(0.8, 0.0, 0.2, filter_tau, dt, minVal = minVel, maxVal=maxVel)
-        self.y_pid = pid(0.8, 0.0, 0.2, filter_tau, dt, minVal = minVel, maxVal=maxVel)
-        self.z_pid = pid(1.0, 0.0, 0.25, filter_tau, dt, minVal = minVel, maxVal=maxVel)
+        self.x_pid = pid(0.4, 0.0, 0.2, filter_tau, dt, minVal = minVel, maxVal=maxVel)
+        self.y_pid = pid(0.4, 0.0, 0.2, filter_tau, dt, minVal = minVel, maxVal=maxVel)
+        self.z_pid = pid(0.8, 0.0, 0.25, filter_tau, dt, minVal = minVel, maxVal=maxVel)
 
 
         ########################## TODO - SET GAINS HERE ##############################
         ###############################################################################
         # NED velocity controller. EDIT GAINS HERE
-        self.vx_pid = pid(1.5, 0.1, 0.3, filter_tau, dt, minVal = minAcc, maxVal=maxAcc)
-        self.vy_pid = pid(1.5, 0.1, 0.3, filter_tau, dt, minVal = minAcc, maxVal=maxAcc)
-        self.vz_pid = pid(2.0, 0.2, 0.4, filter_tau, dt, minVal = minAcc, maxVal=maxAcc)
+        self.vx_pid = pid(0.5, 0.0, 0.3, filter_tau, dt, minVal = minAcc, maxVal=maxAcc)
+        self.vy_pid = pid(0.5, 0.0, 0.3, filter_tau, dt, minVal = minAcc, maxVal=maxAcc)
+        self.vz_pid = pid(1.0, 0.0, 0.4, filter_tau, dt, minVal = minAcc, maxVal=maxAcc)
         ##############################################################################
         ##############################################################################
 
@@ -334,6 +334,53 @@ class QuadrotorController:
         des_pos = np.array(self.desired_positions)
         curr_vel = np.array(self.current_velocities)
         des_vel = np.array(self.desired_velocities)
+
+        if times.size == 0 or curr_pos.size == 0:
+            print("No tracking data to plot.")
+            return
+
+        if curr_pos.ndim == 1:
+            curr_pos = curr_pos.reshape(1, -1)
+        if des_pos.ndim == 1:
+            des_pos = des_pos.reshape(1, -1)
+        if curr_vel.ndim == 1:
+            curr_vel = curr_vel.reshape(1, -1)
+        if des_vel.ndim == 1:
+            des_vel = des_vel.reshape(1, -1)
+
+        # Create 2x3 subplot grid
+        fig, axs = plt.subplots(2, 3, figsize=(18, 10))
+        
+        # Position plots (top row)
+        labels = ['X', 'Y', 'Z']
+        colors_curr = ['blue', 'green', 'red']
+        colors_des = ['cyan', 'lime', 'orange']
+        
+        for i, label in enumerate(labels):
+            axs[0, i].plot(times, curr_pos[:, i], color=colors_curr[i], 
+                        linewidth=2, label=f'Current {label}')
+            axs[0, i].plot(times, des_pos[:, i], '--', color=colors_des[i], 
+                        linewidth=2, label=f'Desired {label}')
+            axs[0, i].set_title(f'{label} Position Tracking', fontsize=12, fontweight='bold')
+            axs[0, i].set_xlabel('Time (s)')
+            axs[0, i].set_ylabel(f'{label} Position (m)')
+            axs[0, i].legend()
+            axs[0, i].grid(True, alpha=0.3)
+        
+        # Velocity plots (bottom row)
+        for i, label in enumerate(['Vx', 'Vy', 'Vz']):
+            axs[1, i].plot(times, curr_vel[:, i], color=colors_curr[i], 
+                        linewidth=2, label=f'Current {label}')
+            axs[1, i].plot(times, des_vel[:, i], '--', color=colors_des[i], 
+                        linewidth=2, label=f'Desired {label}')
+            axs[1, i].set_title(f'{label} Velocity Tracking', fontsize=12, fontweight='bold')
+            axs[1, i].set_xlabel('Time (s)')
+            axs[1, i].set_ylabel(f'{label} Velocity (m/s)')
+            axs[1, i].legend()
+            axs[1, i].grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        plt.show()
 
         
         if times.size == 0 or curr_pos.size == 0 or des_pos.size == 0 or curr_vel.size == 0 or des_vel.size == 0:

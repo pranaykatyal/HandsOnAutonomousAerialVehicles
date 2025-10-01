@@ -354,7 +354,7 @@ class LiveQuadrotorSimulator:
     def initialize_execution_phase(self):
         """Initialize the execution phase"""
         print("🚁 Starting execution phase...")
-        
+        self.setup_live_tracking_plots()
         # Set initial state
         self.state[0:3] = self.env.start_point
         self.state[3:6] = 0  # Zero initial velocity
@@ -502,6 +502,7 @@ class LiveQuadrotorSimulator:
                 current_time = time.time()
                 if current_time - last_update_time >= update_interval:
                     self.update_execution_visualization()
+                    self.update_live_tracking_plots()
                     last_update_time = current_time
                 
                 # Control real-time execution
@@ -563,6 +564,74 @@ class LiveQuadrotorSimulator:
         if self.env.goal_point:
             self.ax.scatter(*self.env.goal_point, c='gold', s=150, marker='*', 
                            edgecolors='black', linewidth=2, label='Goal')
+    
+    def setup_live_tracking_plots(self):
+        """Setup live tracking plots that update during simulation"""
+        self.tracking_fig, self.tracking_axs = plt.subplots(2, 3, figsize=(18, 10))
+        plt.ion()
+        
+        # Initialize empty lines
+        self.tracking_lines = {'curr_pos': [], 'des_pos': [], 'curr_vel': [], 'des_vel': []}
+        labels = ['X', 'Y', 'Z']
+        colors_curr = ['blue', 'green', 'red']
+        colors_des = ['cyan', 'lime', 'orange']
+        
+        for i, label in enumerate(labels):
+            # Position plots
+            line_curr, = self.tracking_axs[0, i].plot([], [], color=colors_curr[i], linewidth=2, label=f'Current')
+            line_des, = self.tracking_axs[0, i].plot([], [], '--', color=colors_des[i], linewidth=2, label=f'Desired')
+            self.tracking_lines['curr_pos'].append(line_curr)
+            self.tracking_lines['des_pos'].append(line_des)
+            self.tracking_axs[0, i].set_title(f'{label} Position')
+            self.tracking_axs[0, i].set_xlabel('Time (s)')
+            self.tracking_axs[0, i].set_ylabel(f'{label} (m)')
+            self.tracking_axs[0, i].legend()
+            self.tracking_axs[0, i].grid(True, alpha=0.3)
+            
+            # Velocity plots
+            line_curr, = self.tracking_axs[1, i].plot([], [], color=colors_curr[i], linewidth=2, label=f'Current')
+            line_des, = self.tracking_axs[1, i].plot([], [], '--', color=colors_des[i], linewidth=2, label=f'Desired')
+            self.tracking_lines['curr_vel'].append(line_curr)
+            self.tracking_lines['des_vel'].append(line_des)
+            self.tracking_axs[1, i].set_title(f'V{label.lower()} Velocity')
+            self.tracking_axs[1, i].set_xlabel('Time (s)')
+            self.tracking_axs[1, i].set_ylabel(f'V{label.lower()} (m/s)')
+            self.tracking_axs[1, i].legend()
+            self.tracking_axs[1, i].grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+
+    def update_live_tracking_plots(self):
+        """Update tracking plots with latest data"""
+        if not hasattr(self, 'tracking_lines'):
+            return
+        
+        times = np.array(self.controller.time_log)
+        curr_pos = np.array(self.controller.current_positions)
+        des_pos = np.array(self.controller.desired_positions)
+        curr_vel = np.array(self.controller.current_velocities)
+        des_vel = np.array(self.controller.desired_velocities)
+        
+        if len(times) < 2:
+            return
+        
+        # Update position plots
+        for i in range(3):
+            self.tracking_lines['curr_pos'][i].set_data(times, curr_pos[:, i])
+            self.tracking_lines['des_pos'][i].set_data(times, des_pos[:, i])
+            self.tracking_axs[0, i].relim()
+            self.tracking_axs[0, i].autoscale_view()
+        
+        # Update velocity plots
+        for i in range(3):
+            self.tracking_lines['curr_vel'][i].set_data(times, curr_vel[:, i])
+            self.tracking_lines['des_vel'][i].set_data(times, des_vel[:, i])
+            self.tracking_axs[1, i].relim()
+            self.tracking_axs[1, i].autoscale_view()
+        
+        self.tracking_fig.canvas.draw()
+        self.tracking_fig.canvas.flush_events()
+    
     
     def _create_cube_vertices(self, xmin, ymin, zmin, xmax, ymax, zmax):
         """Create cube vertices"""
