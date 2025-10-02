@@ -301,7 +301,7 @@ class TrajectoryGenerator:
         return np.array(segment_times)
     def _limit_trajectory_dynamics(self, positions, velocities, accelerations, time_points):
         """Limit velocities and accelerations to physical constraints"""
-        max_vel = 4.0  # m/s
+        max_vel = 6.0  # m/s
         max_acc = 4.0  # m/s² (leave margin below controller limit)
         
         # Limit velocities
