@@ -9,16 +9,25 @@ class Environment3D:
         self.blocks = []
         
         
-        # self.start_point = [6.0,20.0,6.0]#[7.954360487979886, 6.822833826909669, 1.058209137433761] # map1.txt
-        self.start_point = [0.0, 20.0, 2.0] # map2.txt
-        # self.start_point = [0.0, 3.0, 2.0] # map3.txt
-        # self.start_point = [7.954360487979886, 6.822833826909669, 1.058209137433761] # map4.txt
-        
-        
-        # self.goal_point = [0.0, -5.0, 1.0]#[44.304797815557095, 29.328280798754054, 4.454834705539382] # map1.txt
-        self.goal_point = [10.0, 20.0, 3.0] # map2.txt
-        # self.goal_point = [20.0, 2.0, 4.0] # map3.txt
-        # self.goal_point = [44.304797815557095, 29.328280798754054, 4.454834705539382] # map4.txt
+        # Switch-case for start/goal points based on input i
+        # Usage: Environment3D(i=1) for map1, i=2 for map2, etc.
+        i = 3 # Default to map2 if not set externally
+        if i == 1:
+            self.start_point = [6.0, 20.0, 6.0]  # map1.txt
+            self.goal_point = [0.0, -5.0, 1.0]
+        elif i == 2:
+            self.start_point = [0.0, 20.0, 2.0]  # map2.txt
+            self.goal_point = [10.0, 20.0, 3.0]
+        elif i == 3:
+            self.start_point = [0.0, 3.0, 2.0]  # map3.txt
+            self.goal_point = [20.0, 2.0, 4.0]
+        elif i == 4:
+            self.start_point = [7.954360487979886, 6.822833826909669, 1.058209137433761]  # map4.txt
+            self.goal_point = [44.304797815557095, 29.328280798754054, 4.454834705539382]
+        else:
+            # Default/fallback
+            self.start_point = [0.0, 20.0, 2.0]
+            self.goal_point = [10.0, 20.0, 3.0]
         
         
         
@@ -29,7 +38,7 @@ class Environment3D:
         self.robotmarginz = tello.margin_z    # Robot margin for obstacle bloating
         print("robot margin z:", self.robotmarginz)
         
-        self.safety_margin = 0.2  # Safety margin around obstacles
+        self.safety_margin = 0.25  # Safety margin around obstacles
 
     def parse_map_file(self, filename):
         """
@@ -163,9 +172,9 @@ class Environment3D:
         
         max_attempts = 1000
         for _ in range(max_attempts):
-            x = np.random.uniform(xmin + self.safety_margin, xmax - self.safety_margin)
-            y = np.random.uniform(ymin + self.safety_margin, ymax - self.safety_margin)
-            z = np.random.uniform(zmin + self.safety_margin, zmax - self.safety_margin)
+            x = np.random.uniform(xmin + (self.safety_margin*0.5), xmax - (self.safety_margin*0.5))
+            y = np.random.uniform(ymin + (self.safety_margin*0.5), ymax - (self.safety_margin*0.5))
+            z = np.random.uniform(zmin + (self.safety_margin*0.5), zmax - (self.safety_margin*0.5))
             
             point = np.array([x, y, z])
             if self.is_point_in_free_space(point):
