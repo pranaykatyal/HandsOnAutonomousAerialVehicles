@@ -57,7 +57,7 @@ class LiveQuadrotorSimulator:
         
         # Simulation status
         self.goal_reached = False
-        self.goal_tolerance = 0.8  # meters
+        self.goal_tolerance = 0.025  # meters
         self.simulation_active = False
         
         # Visualization elements
@@ -112,6 +112,11 @@ class LiveQuadrotorSimulator:
                 # Verify the points are well-separated
         start_point = self.env.start_point
         goal_point = self.env.goal_point
+        print(f"Start point: {self.env.start_point}")
+        print(f"Goal point: {self.env.goal_point}")
+        print(f"Start valid: {self.env.is_point_in_free_space(self.env.start_point)}")
+        print(f"Goal valid: {self.env.is_point_in_free_space(self.env.goal_point)}")
+
         distance = np.linalg.norm(np.array(goal_point) - np.array(start_point))
         
         print(f"📏 Start-to-goal distance: {distance:.2f} meters")
@@ -123,13 +128,23 @@ class LiveQuadrotorSimulator:
         from path_planner import RRTNode
         start_node = RRTNode(start_point)
         tree = [start_node]
-        
+        n_obstacles = len(self.env.blocks)
+
+    
+
         # RRT* parameters - adjust based on environment size
-        max_iterations = 800# min(3000, max(1000, int(distance * 150)))  # Scale with distance
-        step_size = min(1.5, distance / 10)  # Adaptive step size
-        goal_radius = max(0.8, min(1.5, distance / 15))  # Adaptive goal radius
-        search_radius = step_size * 2.5
-        goal_bias = 0.15
+        if n_obstacles >= 2:  # Complex map
+            max_iterations = 10000  # Much more exploration needed
+            step_size = 0.5  # Smaller to fit through gaps
+            goal_radius = 0.5  # Tighter
+            search_radius = 2.5  # Larger for better rewiring
+            goal_bias = 0.1  
+        else:  # Simple map (like map1)
+            max_iterations = min(3000, max(1000, int(distance * 150)))
+            step_size = min(1.5, distance / 10)
+            goal_radius = max(0.25, min(1.5, distance / 15))
+            search_radius = step_size * 2.5
+            goal_bias = 0.15
         
         print(f"🔧 RRT* Parameters:")
         print(f"   Max iterations: {max_iterations}")
@@ -163,10 +178,10 @@ class LiveQuadrotorSimulator:
             
             # Check validity
             if not self.env.is_point_in_free_space(new_position):
-                print("point in occuoied space")
+                # print("point in occuoied space")
                 continue
             if not self.env.is_line_collision_free(nearest_node.position, new_position):
-                print("line in occuoied space")
+                # print("line in occuoied space")
                 continue
             
             # Find near nodes and choose best parent
@@ -210,7 +225,7 @@ class LiveQuadrotorSimulator:
             self.planner.waypoints = self.planner.extract_path(goal_node)
             original_waypoints = len(self.planner.waypoints)
             # self.planner.waypoints = self.planner.extract_path(goal_node)
-            self.planner.waypoints = self.planner.simplify_path(self.planner.waypoints)
+            self.planner.waypoints = self.planner.simplify_path(self.planner.waypoints, max_skip_distance=5.0, boundary_threshold=0.05)
             simplified_waypoints = len(self.planner.waypoints)
             self.planner.visualize_tree()
             print(f"   RRT* planning successful!")
@@ -297,7 +312,8 @@ class LiveQuadrotorSimulator:
         self.traj_gen.trajectory_duration = min(20.0, len(self.planner.waypoints) * 2.0)
         
         num_points = int(self.traj_gen.trajectory_duration / self.dt)
-        result = self.traj_gen.generate_spline_trajectory(num_points=num_points)
+        print(f"num points : {num_points}")
+        result = self.traj_gen.generate_bspline_trajectory(num_points=num_points)
         
         
         if result[0] is not None:
@@ -324,7 +340,10 @@ class LiveQuadrotorSimulator:
             self.ax.legend()
             self.fig.canvas.draw()
             self.fig.canvas.flush_events()
-            
+            # After generating trajectory
+            print(f"Trajectory start: {trajectory_points[0]}")
+            print(f"Drone start: {self.env.start_point}")
+            print(f"Mismatch: {np.linalg.norm(trajectory_points[0] - self.env.start_point)}")
             time.sleep(2)  # Show trajectory
             self.trajectory_complete = True
             return True
@@ -335,7 +354,7 @@ class LiveQuadrotorSimulator:
     def initialize_execution_phase(self):
         """Initialize the execution phase"""
         print("🚁 Starting execution phase...")
-        
+        self.setup_live_tracking_plots()
         # Set initial state
         self.state[0:3] = self.env.start_point
         self.state[3:6] = 0  # Zero initial velocity
@@ -401,7 +420,7 @@ class LiveQuadrotorSimulator:
         # Check goal reached
         if self.env.goal_point is not None:
             goal_distance = np.linalg.norm(current_pos - np.array(self.env.goal_point))
-            if goal_distance < self.goal_tolerance and not self.goal_reached:
+            if goal_distance <= self.goal_tolerance and not self.goal_reached:
                 self.goal_reached = True
                 print(f"\n GOAL REACHED at time {self.sim_time:.2f}s!")
                 print(f"Final distance to goal: {goal_distance:.3f}m")
@@ -461,10 +480,11 @@ class LiveQuadrotorSimulator:
             return False
         
         # # Phase 3: Trajectory Execution
-        # self.initialize_execution_phase()
+        self.initialize_execution_phase()
         
+        self.controller.plot_tracking()
         # # Start execution
-        # self.simulation_active = True
+        self.simulation_active = True
         
         # print("\nExecuting trajectory...")
         # print("Close the plot window to stop simulation")
@@ -478,11 +498,12 @@ class LiveQuadrotorSimulator:
         #         # Run simulation step
         #         continue_sim = self.simulation_step()
                 
-        #         # Update visualization at specified rate
-        #         current_time = time.time()
-        #         if current_time - last_update_time >= update_interval:
-        #             self.update_execution_visualization()
-        #             last_update_time = current_time
+                # Update visualization at specified rate
+                current_time = time.time()
+                if current_time - last_update_time >= update_interval:
+                    self.update_execution_visualization()
+                    self.update_live_tracking_plots()
+                    last_update_time = current_time
                 
         #         # Control real-time execution
         #         time.sleep(max(0, self.dt - (time.time() - current_time)))
@@ -543,6 +564,74 @@ class LiveQuadrotorSimulator:
         if self.env.goal_point:
             self.ax.scatter(*self.env.goal_point, c='gold', s=150, marker='*', 
                            edgecolors='black', linewidth=2, label='Goal')
+    
+    def setup_live_tracking_plots(self):
+        """Setup live tracking plots that update during simulation"""
+        self.tracking_fig, self.tracking_axs = plt.subplots(2, 3, figsize=(18, 10))
+        plt.ion()
+        
+        # Initialize empty lines
+        self.tracking_lines = {'curr_pos': [], 'des_pos': [], 'curr_vel': [], 'des_vel': []}
+        labels = ['X', 'Y', 'Z']
+        colors_curr = ['blue', 'green', 'red']
+        colors_des = ['cyan', 'lime', 'orange']
+        
+        for i, label in enumerate(labels):
+            # Position plots
+            line_curr, = self.tracking_axs[0, i].plot([], [], color=colors_curr[i], linewidth=2, label=f'Current')
+            line_des, = self.tracking_axs[0, i].plot([], [], '--', color=colors_des[i], linewidth=2, label=f'Desired')
+            self.tracking_lines['curr_pos'].append(line_curr)
+            self.tracking_lines['des_pos'].append(line_des)
+            self.tracking_axs[0, i].set_title(f'{label} Position')
+            self.tracking_axs[0, i].set_xlabel('Time (s)')
+            self.tracking_axs[0, i].set_ylabel(f'{label} (m)')
+            self.tracking_axs[0, i].legend()
+            self.tracking_axs[0, i].grid(True, alpha=0.3)
+            
+            # Velocity plots
+            line_curr, = self.tracking_axs[1, i].plot([], [], color=colors_curr[i], linewidth=2, label=f'Current')
+            line_des, = self.tracking_axs[1, i].plot([], [], '--', color=colors_des[i], linewidth=2, label=f'Desired')
+            self.tracking_lines['curr_vel'].append(line_curr)
+            self.tracking_lines['des_vel'].append(line_des)
+            self.tracking_axs[1, i].set_title(f'V{label.lower()} Velocity')
+            self.tracking_axs[1, i].set_xlabel('Time (s)')
+            self.tracking_axs[1, i].set_ylabel(f'V{label.lower()} (m/s)')
+            self.tracking_axs[1, i].legend()
+            self.tracking_axs[1, i].grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+
+    def update_live_tracking_plots(self):
+        """Update tracking plots with latest data"""
+        if not hasattr(self, 'tracking_lines'):
+            return
+        
+        times = np.array(self.controller.time_log)
+        curr_pos = np.array(self.controller.current_positions)
+        des_pos = np.array(self.controller.desired_positions)
+        curr_vel = np.array(self.controller.current_velocities)
+        des_vel = np.array(self.controller.desired_velocities)
+        
+        if len(times) < 2:
+            return
+        
+        # Update position plots
+        for i in range(3):
+            self.tracking_lines['curr_pos'][i].set_data(times, curr_pos[:, i])
+            self.tracking_lines['des_pos'][i].set_data(times, des_pos[:, i])
+            self.tracking_axs[0, i].relim()
+            self.tracking_axs[0, i].autoscale_view()
+        
+        # Update velocity plots
+        for i in range(3):
+            self.tracking_lines['curr_vel'][i].set_data(times, curr_vel[:, i])
+            self.tracking_lines['des_vel'][i].set_data(times, des_vel[:, i])
+            self.tracking_axs[1, i].relim()
+            self.tracking_axs[1, i].autoscale_view()
+        
+        self.tracking_fig.canvas.draw()
+        self.tracking_fig.canvas.flush_events()
+    
     
     def _create_cube_vertices(self, xmin, ymin, zmin, xmax, ymax, zmax):
         """Create cube vertices"""

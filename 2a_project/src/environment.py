@@ -2,16 +2,43 @@ import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
-
+import tello
 class Environment3D:
     def __init__(self):
         self.boundary = []
         self.blocks = []
-        self.start_point = [6.0, 20.0, 6.0]
-        self.goal_point = [0.0, -5.0, 1.0]
-        self.safety_margin = 0.5  # Safety margin around obstacles
-
-
+        
+        
+        # Switch-case for start/goal points based on input i
+        # Usage: Environment3D(i=1) for map1, i=2 for map2, etc.
+        i = 3 # Default to map2 if not set externally
+        if i == 1:
+            self.start_point = [6.0, 20.0, 6.0]  # map1.txt
+            self.goal_point = [0.0, -5.0, 1.0]
+        elif i == 2:
+            self.start_point = [0.0, 20.0, 2.0]  # map2.txt
+            self.goal_point = [10.0, 20.0, 3.0]
+        elif i == 3:
+            self.start_point = [0.0, 3.0, 2.0]  # map3.txt
+            self.goal_point = [20.0, 2.0, 4.0]
+        elif i == 4:
+            self.start_point = [7.954360487979886, 6.822833826909669, 1.058209137433761]  # map4.txt
+            self.goal_point = [44.304797815557095, 29.328280798754054, 4.454834705539382]
+        else:
+            # Default/fallback
+            self.start_point = [0.0, 20.0, 2.0]
+            self.goal_point = [10.0, 20.0, 3.0]
+        
+        
+        
+        
+        self.robotmarginxy = tello.margin_xy  # Robot margin for obstacle bloating
+        print("robot margin xy:", self.robotmarginxy)
+        
+        self.robotmarginz = tello.margin_z    # Robot margin for obstacle bloating
+        print("robot margin z:", self.robotmarginz)
+        
+        self.safety_margin = 0.25  # Safety margin around obstacles
 
     def parse_map_file(self, filename):
         """
@@ -54,67 +81,65 @@ class Environment3D:
 
     def is_point_in_free_space(self, point):
         """
-        Check if a point is in free space (not inside any obstacle)
-        
-        Current issue: Your implementation has a logic error - it returns True 
-        immediately when checking ANY block, instead of checking ALL blocks
+        Check if a point is in free space (not inside any obstacle AND within boundaries)
+        return True if free, False if in collision or out of bounds
         """
-        x, y, z = point
-        
-        # Check if point is within boundary
-        if not self.boundary:
-            return False
-        
-        xmin, ymin, zmin, xmax, ymax, zmax = self.boundary
-        if not (xmin <= x <= xmax and ymin <= y <= ymax and zmin <= z <= zmax):
-            return False
-        
-        # Check if point is inside any obstacle (with safety margin)
-        for block_coords, _ in self.blocks:
-            bxmin, bymin, bzmin, bxmax, bymax, bzmax = block_coords
-            
-            # Add safety margin
-            bxmin -= self.safety_margin
-            bymin -= self.safety_margin  
-            bzmin -= self.safety_margin
-            bxmax += self.safety_margin
-            bymax += self.safety_margin
-            bzmax += self.safety_margin
-            
-            # If point is inside this block, it's NOT free
-            if (bxmin <= x <= bxmax and 
-                bymin <= y <= bymax and 
-                bzmin <= z <= bzmax):
+        # FIRST: Check if point is within boundaries
+        if self.boundary:
+            xmin, ymin, zmin, xmax, ymax, zmax = self.boundary
+            if not (xmin <= point[0] <= xmax and 
+                    ymin <= point[1] <= ymax and 
+                    zmin <= point[2] <= zmax):
+                # print(f"Point {point} is outside boundary")
                 return False
         
-        # Point is free if it's not inside any obstacle
-        return True
+        # SECOND: Check if point collides with any obstacle
+        for block in self.blocks:
+            block_coords = block[0]
+            if ((block_coords[0] - self.robotmarginxy) <= point[0] <= (block_coords[3] + self.robotmarginxy) and
+                (block_coords[1] - self.robotmarginxy) <= point[1] <= (block_coords[4] + self.robotmarginxy) and
+                (block_coords[2] - self.robotmarginz) <= point[2] <= (block_coords[5] + self.robotmarginz)):
+                # print("occupied point")
+                return False
+        
+        return True 
 
 
     def is_line_collision_free(self, p1, p2, eps=1e-12):
+        """Check if line segment is collision-free AND stays within boundaries"""
+        
+        # FIRST: Check if both endpoints are within boundaries
+        if self.boundary:
+            xmin, ymin, zmin, xmax, ymax, zmax = self.boundary
+            
+            for point in [p1, p2]:
+                if not (xmin <= point[0] <= xmax and 
+                        ymin <= point[1] <= ymax and 
+                        zmin <= point[2] <= zmax):
+                    return False  # Endpoint outside boundary
+        
+        # SECOND: Check collision with obstacles (your existing code)
         Ax, Ay, Az = p1
         Bx, By, Bz = p2
         dx, dy, dz = Bx - Ax, By - Ay, Bz - Az
 
         for block in self.blocks:
             coords = block[0]
-            mn = (coords[0], coords[1], coords[2])
-            mx = (coords[3], coords[4], coords[5])
+            mn = (coords[0] - self.robotmarginxy, coords[1] - self.robotmarginxy, coords[2] - self.robotmarginz)
+            mx = (coords[3] + self.robotmarginxy, coords[4] + self.robotmarginxy, coords[5] + self.robotmarginz)
 
-            t0, t1 = 0.0, 1.0  # clamp to SEGMENT
-
+            t0, t1 = 0.0, 1.0
+            intersects = True
+            
             for a, d, lo, hi in (
                 (Ax, dx, mn[0], mx[0]),
                 (Ay, dy, mn[1], mx[1]),
                 (Az, dz, mn[2], mx[2]),
             ):
                 if abs(d) < eps:
-                    # Parallel to this axis: must already be inside its slab
                     if a < lo or a > hi:
-                        # No intersection with THIS block; move to next block
-                        t0, t1 = 1.0, 0.0  # mark empty to skip post-check
+                        intersects = False
                         break
-                    # inside slab → no constraint from this axis
                     continue
 
                 tA = (lo - a) / d
@@ -125,14 +150,13 @@ class Environment3D:
                 if tA > t0: t0 = tA
                 if tB < t1: t1 = tB
                 if t0 > t1:
-                    # No intersection with THIS block; try next block
+                    intersects = False
                     break
 
-            # If after all axes the window is non-empty, the segment hits this block
-            if t0 <= t1:
-                return False  # in collision with this block
+            if intersects and t0 <= t1:
+                return False
 
-        return True  # free of all blocks
+        return True
 
     
     
@@ -148,11 +172,11 @@ class Environment3D:
         
         max_attempts = 1000
         for _ in range(max_attempts):
-            x = np.random.uniform(xmin + self.safety_margin, xmax - self.safety_margin)
-            y = np.random.uniform(ymin + self.safety_margin, ymax - self.safety_margin)
-            z = np.random.uniform(zmin + self.safety_margin, zmax - self.safety_margin)
+            x = np.random.uniform(xmin + (self.safety_margin*0.5), xmax - (self.safety_margin*0.5))
+            y = np.random.uniform(ymin + (self.safety_margin*0.5), ymax - (self.safety_margin*0.5))
+            z = np.random.uniform(zmin + (self.safety_margin*0.5), zmax - (self.safety_margin*0.5))
             
-            point = [x, y, z]
+            point = np.array([x, y, z])
             if self.is_point_in_free_space(point):
                 return point
         
