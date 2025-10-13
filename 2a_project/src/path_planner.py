@@ -13,13 +13,15 @@ class RRTNode:
         self.cost:float = 0.0
         self.children = []
 
-class PathPlanner:
+class PathPlanner(RRTStar):
     """
     Robust RRT* implementation for 3D path planning
+    Inherits from RRTStar and provides interface compatibility with the simulation framework
     """
     
     def __init__(self, environment):
-        self.env = environment
+        super().__init__(environment)
+        self.env = environment  # Keep reference for compatibility
         self.waypoints = []
         self.tree_nodes:List[RRTNode] = []
         
@@ -31,6 +33,26 @@ class PathPlanner:
         self.search_radius = 2.5
         self.goal_bias = 0.15  # 15% bias towards goal
         
+        # Run RRT* planning
+        success = self.solve(start_state, goal_state, 
+                            max_iterations=max_iterations, max_time=max_time)
+        
+        if success:
+            # Extract path and convert back to position arrays
+            path_states = self.get_solution_path()
+            self.waypoints = [state.position.copy() for state in path_states]
+            
+            # Convert Motion objects to RRTNode for visualization compatibility
+            self._convert_tree_for_visualization()
+            
+            print(f"PathPlanner: Found path with {len(self.waypoints)} waypoints")
+            print(f"PathPlanner: Path cost: {self.best_cost:.3f}")
+            return True
+        else:
+            print("PathPlanner: No path found")
+            self.waypoints = []
+            self.tree_nodes = []
+            return False
     
     def plan(self):
         for i in range(self.max_iterations):
@@ -279,6 +301,14 @@ class PathPlanner:
             ax.plot(waypoints[:, 0], waypoints[:, 1], waypoints[:, 2], 
                    'ro-', markersize=8, linewidth=3, label='RRT* Path')
         
+        # Draw start and goal if available
+        if hasattr(self.env, 'start_point') and self.env.start_point:
+            ax.scatter(*self.env.start_point, c='green', s=100, marker='s', 
+                      label='Start', edgecolors='black', linewidth=2)
+        if hasattr(self.env, 'goal_point') and self.env.goal_point:
+            ax.scatter(*self.env.goal_point, c='red', s=100, marker='*', 
+                      label='Goal', edgecolors='black', linewidth=2)
+        
         if standalone:
             ax.set_xlabel('X (m)')
             ax.set_ylabel('Y (m)')
@@ -289,3 +319,80 @@ class PathPlanner:
             plt.show()
         
         return ax
+    
+    def get_planning_statistics(self):
+        """Get detailed planning statistics"""
+        stats = self.get_statistics()  # From RRTStar parent class
+        
+        # Add path-specific statistics
+        if self.waypoints:
+            stats.update({
+                'path_length': self.get_path_length(),
+                'waypoints_count': len(self.waypoints),
+                'path_found': True
+            })
+        else:
+            stats.update({
+                'path_length': 0.0,
+                'waypoints_count': 0,
+                'path_found': False
+            })
+        
+        return stats
+    
+    def reset(self):
+        """Reset the planner state"""
+        self.waypoints = []
+        self.tree_nodes = []
+        self.motions.clear()
+        self.start_motions.clear()
+        self.goal_motions.clear()
+        self.best_goal_motion = None
+        self.best_cost = float('inf')
+        self.iterations = 0
+
+
+# Example usage and testing
+if __name__ == "__main__":
+    # Mock environment for testing
+    class MockEnvironment:
+        def __init__(self):
+            self.boundary = [0, 0, 0, 10, 10, 10]  # [xmin, ymin, zmin, xmax, ymax, zmax]
+            self.start_point = [1, 1, 1]
+            self.goal_point = [9, 9, 9]
+        
+        def is_point_in_free_space(self, point):
+            # Simple bounds checking
+            return (self.boundary[0] <= point[0] <= self.boundary[3] and
+                   self.boundary[1] <= point[1] <= self.boundary[4] and
+                   self.boundary[2] <= point[2] <= self.boundary[5])
+        
+        def is_line_collision_free(self, start, end):
+            # Simplified line checking
+            return (self.is_point_in_free_space(start) and 
+                   self.is_point_in_free_space(end))
+    
+    # Test the planner
+    print("Testing PathPlanner...")
+    env = MockEnvironment()
+    planner = PathPlanner(env)
+    
+    # Plan a path
+    success = planner.plan_path([1, 1, 1], [9, 9, 9])
+    
+    if success:
+        print(f"Path planning successful!")
+        print(f"Statistics: {planner.get_planning_statistics()}")
+        
+        # Test path simplification
+        original_waypoints = len(planner.waypoints)
+        simplified_waypoints = planner.simplify_path()
+        print(f"Path simplified from {original_waypoints} to {len(simplified_waypoints)} waypoints")
+        
+        # Visualize if matplotlib available
+        try:
+            planner.visualize_tree()
+        except:
+            print("Visualization not available")
+    else:
+        print("Path planning failed")

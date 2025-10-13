@@ -486,17 +486,17 @@ class LiveQuadrotorSimulator:
         # # Start execution
         self.simulation_active = True
         
-        print("\nExecuting trajectory...")
-        print("Close the plot window to stop simulation")
+        # print("\nExecuting trajectory...")
+        # print("Close the plot window to stop simulation")
         
-        execution_update_rate = 25  # Hz
-        update_interval = 1.0 / execution_update_rate
-        last_update_time = time.time()
+        # execution_update_rate = 25  # Hz
+        # update_interval = 1.0 / execution_update_rate
+        # last_update_time = time.time()
         
-        try:
-            while self.simulation_active and plt.get_fignums():
-                # Run simulation step
-                continue_sim = self.simulation_step()
+        # try:
+        #     while self.simulation_active and plt.get_fignums():
+        #         # Run simulation step
+        #         continue_sim = self.simulation_step()
                 
                 # Update visualization at specified rate
                 current_time = time.time()
@@ -505,24 +505,24 @@ class LiveQuadrotorSimulator:
                     self.update_live_tracking_plots()
                     last_update_time = current_time
                 
-                # Control real-time execution
-                time.sleep(max(0, self.dt - (time.time() - current_time)))
+        #         # Control real-time execution
+        #         time.sleep(max(0, self.dt - (time.time() - current_time)))
                 
-                if not continue_sim:
-                    break
+        #         if not continue_sim:
+        #             break
                     
-        except KeyboardInterrupt:
-            print("\nSimulation stopped by user")
-        except Exception as e:
-            print(f"\nSimulation error: {e}")
-        finally:
-            self.simulation_active = False
+        # except KeyboardInterrupt:
+        #     print("\nSimulation stopped by user")
+        # except Exception as e:
+        #     print(f"\nSimulation error: {e}")
+        # finally:
+        #     self.simulation_active = False
         
-        # Final update
-        self.update_execution_visualization()
+        # # Final update
+        # self.update_execution_visualization()
         
-        # Print results
-        self._print_simulation_results()
+        # # Print results
+        # self._print_simulation_results()
         
         # Keep plot open
         print("\n Simulation complete. Close plot window to continue...")
