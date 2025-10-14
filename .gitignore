@@ -58,3 +58,9 @@ dist/
 env/
 ENV/
 .venv/
+
+lib/
+HoAAV/lib/
+venv/
+ENV/
+.venv/
