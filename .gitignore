@@ -21,3 +21,6 @@ __pycache__/
 # Other
 .DS_Store
 venv
+2b_project/group8_p2b/p2phaseb_colmap/colmap/database.db
+2b_project/group8_p2b/p2phaseb_colmap/colmap/sparse/0/images.bin
+2b_project/group8_p2b/p2phaseb_colmap_splat/p2phaseb_colmap/splatfacto/2025-10-07_134702/nerfstudio_models/step-000029999.ckpt
