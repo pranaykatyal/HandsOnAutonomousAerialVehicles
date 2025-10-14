@@ -11,7 +11,7 @@ class Environment3D:
         
         # Switch-case for start/goal points based on input i
         # Usage: Environment3D(i=1) for map1, i=2 for map2, etc.
-        i = 3 # Default to map2 if not set externally
+        i = 1 # Default to map2 if not set externally
         if i == 1:
             self.start_point = [6.0, 20.0, 6.0]  # map1.txt
             self.goal_point = [0.0, -5.0, 1.0]

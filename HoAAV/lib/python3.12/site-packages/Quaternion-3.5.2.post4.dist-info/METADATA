@@ -1,0 +1,33 @@
+Metadata-Version: 2.1
+Name: Quaternion
+Version: 3.5.2.post4
+Summary: Quaternion object manipulation
+Home-page: https://sot.github.io/Quaternion
+Author: Jean Connelly
+Author-email: jconnelly@cfa.harvard.edu
+License: New BSD/3-clause BSD License. Copyright (c) 2016 Smithsonian Astrophysical Observatory. All rights reserved.
+Download-URL: http://pypi.python.org/pypi/Quaternion/
+Platform: UNKNOWN
+Description-Content-Type: text/markdown
+Requires-Dist: numpy
+
+Quaternion provides a class for manipulating quaternion objects.
+
+To install:
+
+```
+pip install quaternion
+```
+
+To run some tests:
+
+```
+pip install pytest
+python -c 'import Quaternion; Quaternion.test()'
+```
+
+Documentation: https://sot.github.io/Quaternion
+
+Source: https://github.com/sot/Quaternion
+
+
