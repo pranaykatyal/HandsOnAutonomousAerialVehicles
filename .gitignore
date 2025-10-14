@@ -1,3 +1,7 @@
+# Ignore large binary files and database/model files
+*.db
+*.bin
+*.ckpt
 # Media files
 *.png
 *.mp4
