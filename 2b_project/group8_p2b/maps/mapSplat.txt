@@ -1,3 +1,4 @@
+# mapSplat.txt
 # An example environment
 # boundary xmin ymin zmin xmax ymax zmax
 # block xmin ymin zmin xmax ymax zmax r g b

@@ -115,6 +115,20 @@ class SplatRenderer:
         self.colormap_options_rgb = ColormapOptions(colormap='default', normalize=True)
         self.colormap_options_depth = ColormapOptions(colormap='gray', normalize=True)
 
+    def getObstaclePoses(self, position_ned):
+        """
+        Transform obstacle coordinates from NED frame to Splat frame
+        """
+        
+        pos_update = self.init_orientation @ np.array([
+            [position_ned[1]],   # East
+            [-position_ned[2]],  # Up
+            [-position_ned[0]]   # Forward
+        ])
+        pos_splat = self.init_position + pos_update.flatten()
+        
+        return pos_splat  # Return 3D point
+    
     def render(self, position: np.ndarray, orientation_rpy: np.ndarray):
         """
         position: (3,) [x, y, z] in meters (in NED frame)

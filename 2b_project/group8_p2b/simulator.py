@@ -40,8 +40,7 @@ class LiveQuadrotorSimulator:
 
         # renderer
         self.splatConfig    = './p2phaseb_colmap_splat/p2phaseb_colmap/splatfacto/2025-10-07_134702/config.yml'
-        # self.renderSettings = './vizflyt_viewer/render_settings/render_config.json'
-        self.renderSettings = '/home/deepak/Deepak/PhD/TA/aerial_robotics/RBE595_AerialRobotics_ST_Project2/src/vizflyt_viewer/render_settings/render_config.json'
+        self.renderSettings = './vizflyt_viewer/render_settings/render_config.json'
         self.renderer = SplatRenderer(self.splatConfig, self.renderSettings)
         
         # Create log directory
@@ -90,7 +89,57 @@ class LiveQuadrotorSimulator:
         self.planning_complete = False
         self.trajectory_complete = False
         self.execution_started = False
+     
+     
+    def _quaternion_to_rpy(self, quat):
+        """
+        Convert quaternion [qx, qy, qz, qw] to roll, pitch, yaw
         
+        Args:
+            quat: [qx, qy, qz, qw] from state[6:10]
+        
+        Returns:
+            [roll, pitch, yaw] in radians
+        """
+        from pyquaternion import Quaternion
+        q = Quaternion(quat[3], quat[0], quat[1], quat[2])  # w, x, y, z
+        yaw, pitch, roll = q.yaw_pitch_roll
+        return np.array([roll, pitch, yaw])  
+     
+     
+     
+    def _render_and_save(self):
+        """Render current view and save RGB and depth images"""
+        try:
+            # Get current position and orientation
+            current_pos = self.state[0:3]
+            current_quat = self.state[6:10]
+            
+            # Convert quaternion to roll, pitch, yaw
+            rpy = self._quaternion_to_rpy(current_quat)
+            
+            # Render
+            rgb_img, depth_img = self.renderer.render(current_pos, rpy)
+            
+            # Save images with timestamp
+            frame_id = len(self.state_history)
+            timestamp = f"{self.sim_time:.3f}".replace('.', '_')
+            
+            rgb_filename = os.path.join(self.render_dir, f'rgb_{frame_id:05d}_t{timestamp}.png')
+            depth_filename = os.path.join(self.render_dir, f'depth_{frame_id:05d}_t{timestamp}.png')
+            
+            import cv2
+            cv2.imwrite(rgb_filename, rgb_img)
+            cv2.imwrite(depth_filename, depth_img)
+            
+            # # Optional: print progress
+            # if frame_id % 50 == 0:
+            #     print(f"   Rendered frame {frame_id} at t={self.sim_time:.2f}s")
+                
+        except Exception as e:
+            print(f"   Rendering error at t={self.sim_time:.2f}s: {e}")
+    
+    
     def setup_visualization(self):
         """Setup the 3D visualization for step-by-step planning"""
         plt.ion()  # Interactive mode
@@ -124,61 +173,61 @@ class LiveQuadrotorSimulator:
                         Set to None for manual continuation (press Enter)
             """
             print("\n" + "="*60)
-            print("👀 ENVIRONMENT PREVIEW")
+            print("ðŸ‘€ ENVIRONMENT PREVIEW")
             print("="*60)
             
             # Print environment information
             print(self.env.get_environment_info())
             
             # Show the visualization
-            self.ax.set_title('🌍 Environment Preview - Inspecting workspace...')
+            self.ax.set_title('ðŸŒ Environment Preview - Inspecting workspace...')
             self.fig.canvas.draw()
             self.fig.canvas.flush_events()
             
             if wait_time is None:
                 # Manual continuation
-                print("\n⏸️  Environment displayed!")
-                print("📍 Start (green square) and Goal (gold star) marked")
-                print("🧱 Obstacles shown in the workspace")
-                input("\n▶️  Press ENTER to start planning...")
+                print("\nâ¸ï¸  Environment displayed!")
+                print("ðŸ“ Start (green square) and Goal (gold star) marked")
+                print("ðŸ§± Obstacles shown in the workspace")
+                input("\nâ–¶ï¸  Press ENTER to start planning...")
             else:
                 # Automatic continuation after wait_time
-                print(f"\n⏸️  Displaying environment for {wait_time:.1f} seconds...")
-                print("📍 Start (green square) and Goal (gold star) marked")
-                print("🧱 Obstacles shown in the workspace")
+                print(f"\nâ¸ï¸  Displaying environment for {wait_time:.1f} seconds...")
+                print("ðŸ“ Start (green square) and Goal (gold star) marked")
+                print("ðŸ§± Obstacles shown in the workspace")
                 
                 # Countdown
                 for i in range(int(wait_time), 0, -1):
                     print(f"   Starting planning in {i}...", end='\r')
                     time.sleep(1)
-                print("\n▶️  Starting planning now!                    ")
+                print("\nâ–¶ï¸  Starting planning now!                    ")
             
             print("="*60 + "\n")
     
     def animated_rrt_planning(self, start=None, goal=None):
         """Show animated RRT* planning process"""
-        print("🎬 Starting animated RRT* planning...")
+        print("ðŸŽ¬ Starting animated RRT* planning...")
         
         # Print environment information
         print(self.env.get_environment_info())
         
         # Set start and goal points with smart defaults
         # if not self.env.set_start_goal_points(start, goal):
-        #     print("❌ Failed to set start/goal points")
+        #     print("âŒ Failed to set start/goal points")
         #     return False
         
         # Verify the points are well-separated
         start_point = self.env.start_point
-        goal_point = [1,0,0.5] #self.renderer.getObstaclePoses(np.array(self.env.goal_point))
+        goal_point = self.env.goal_point #self.renderer.getObstaclePoses(np.array(self.env.goal_point))
         distance = np.linalg.norm(np.array(goal_point) - np.array(start_point))
         
-        print(f"📏 Start-to-goal distance: {distance:.2f} meters")
+        print(f"ðŸ“ Start-to-goal distance: {distance:.2f} meters")
         if distance < 0.10:
-            print("⚠️ Warning: Start and goal are quite close")
+            print("âš ï¸ Warning: Start and goal are quite close")
         elif distance > 15.0:
-            print("⚠️ Warning: Start and goal are quite far - this may take longer")
+            print("âš ï¸ Warning: Start and goal are quite far - this may take longer")
         else:
-            print("✅ Good start-goal separation for planning")
+            print("âœ… Good start-goal separation for planning")
         
         # Update title
         self.ax.set_title('Phase 1: RRT* Path Planning (Building Tree...)')
@@ -201,7 +250,7 @@ class LiveQuadrotorSimulator:
         search_radius = step_size * 2.5
         goal_bias = 0.15
         
-        print(f"🔧 RRT* Parameters:")
+        print(f"ðŸ”§ RRT* Parameters:")
         print(f"   Max iterations: {max_iterations}")
         print(f"   Step size: {step_size:.3f}m")
         print(f"   Goal radius: {goal_radius:.3f}m")
@@ -210,7 +259,7 @@ class LiveQuadrotorSimulator:
         goal_node = None
         update_interval = max(25, max_iterations // 80)  # Adaptive update rate
         
-        print(f"🚀 Starting RRT* planning from {start_point} to {goal_point}")
+        print(f"ðŸš€ Starting RRT* planning from {start_point} to {goal_point}")
         
         for iteration in range(max_iterations):
             # Sample point
@@ -266,7 +315,7 @@ class LiveQuadrotorSimulator:
                     goal_node.cost = new_node.cost + goal_distance
                     new_node.children.append(goal_node)
                     tree.append(goal_node)
-                    print(f"🎯 Goal reached at iteration {iteration}! Final cost: {goal_node.cost:.2f}")
+                    print(f"ðŸŽ¯ Goal reached at iteration {iteration}! Final cost: {goal_node.cost:.2f}")
                     break
             
             # Update visualization periodically
@@ -286,7 +335,7 @@ class LiveQuadrotorSimulator:
             self.planner.waypoints = self.planner.simplify_path(self.planner.waypoints)
             simplified_waypoints = len(self.planner.waypoints)
             
-            print(f"✅ RRT* planning successful!")
+            print(f"âœ… RRT* planning successful!")
             print(f"   Original path: {original_waypoints} waypoints")
             print(f"   Simplified path: {simplified_waypoints} waypoints")
             print(f"   Path cost: {goal_node.cost:.2f} meters")
@@ -296,7 +345,7 @@ class LiveQuadrotorSimulator:
             self._show_final_rrt_path()
             return True
         else:
-            print(f"❌ RRT* planning failed after {max_iterations} iterations")
+            print(f"âŒ RRT* planning failed after {max_iterations} iterations")
             print(f"   Tree size: {len(tree)} nodes")
             print("   Try increasing max_iterations or adjusting parameters")
             return False
@@ -359,7 +408,7 @@ class LiveQuadrotorSimulator:
     
     def show_bspline_trajectory(self):
         """Show B-spline trajectory generation"""
-        print("📈 Generating B-spline trajectory...")
+        print("ðŸ“ˆ Generating B-spline trajectory...")
         
         self.ax.set_title('Phase 2: B-spline Trajectory Generation...')
         self.fig.canvas.draw()
@@ -401,12 +450,12 @@ class LiveQuadrotorSimulator:
             self.trajectory_complete = True
             return True
         else:
-            print("❌ Trajectory generation failed")
+            print("âŒ Trajectory generation failed")
             return False
     
     def initialize_execution_phase(self):
         """Initialize the execution phase"""
-        print("🚁 Starting execution phase...")
+        print("ðŸš Starting execution phase...")
         
         # Set initial state
         self.state[0:3] = self.env.start_point
@@ -466,7 +515,9 @@ class LiveQuadrotorSimulator:
         current_pos = self.state[0:3]
         self.trail_positions.append(current_pos.copy())
         
-
+        render_interval = 10  # Render every 10 simulation steps
+        if len(self.state_history) % render_interval == 0:
+            self._render_and_save()
 
         # Limit trail length
         if len(self.trail_positions) > self.max_trail_length:
@@ -477,13 +528,13 @@ class LiveQuadrotorSimulator:
             goal_distance = np.linalg.norm(current_pos - np.array(self.env.goal_point))
             if goal_distance < self.goal_tolerance and not self.goal_reached:
                 self.goal_reached = True
-                print(f"\n🎉 GOAL REACHED at time {self.sim_time:.2f}s!")
-                print(f"📏 Final distance to goal: {goal_distance:.3f}m")
+                print(f"\nðŸŽ‰ GOAL REACHED at time {self.sim_time:.2f}s!")
+                print(f"ðŸ“ Final distance to goal: {goal_distance:.3f}m")
                 return False
         
         # Check time limit
         if self.sim_time >= self.max_sim_time:
-            print(f"\n⏰ Simulation time limit reached: {self.sim_time:.2f}s")
+            print(f"\nâ° Simulation time limit reached: {self.sim_time:.2f}s")
             return False
         
         return True
@@ -521,7 +572,7 @@ class LiveQuadrotorSimulator:
         2. B-spline trajectory generation
         3. Trajectory execution
         """
-        print("🎬 Starting complete quadrotor simulation with all phases...")
+        print("ðŸŽ¬ Starting complete quadrotor simulation with all phases...")
         
         # Setup visualization
         self.setup_visualization()
@@ -542,8 +593,8 @@ class LiveQuadrotorSimulator:
         # Start execution
         self.simulation_active = True
         
-        print("\n🚀 Executing trajectory...")
-        print("💡 Close the plot window to stop simulation")
+        print("\nðŸš€ Executing trajectory...")
+        print("ðŸ’¡ Close the plot window to stop simulation")
         
         execution_update_rate = 25  # Hz
         update_interval = 1.0 / execution_update_rate
@@ -567,9 +618,9 @@ class LiveQuadrotorSimulator:
                     break
                     
         except KeyboardInterrupt:
-            print("\n⏹️ Simulation stopped by user")
+            print("\nâ¹ï¸ Simulation stopped by user")
         except Exception as e:
-            print(f"\n💥 Simulation error: {e}")
+            print(f"\nðŸ’¥ Simulation error: {e}")
         finally:
             self.simulation_active = False
         
@@ -580,7 +631,7 @@ class LiveQuadrotorSimulator:
         self._print_simulation_results()
         
         # Keep plot open
-        print("\n📊 Simulation complete. Close plot window to continue...")
+        print("\nðŸ“Š Simulation complete. Close plot window to continue...")
         plt.ioff()
         plt.show()
         
@@ -641,27 +692,27 @@ class LiveQuadrotorSimulator:
     def _print_simulation_results(self):
         """Print simulation results summary"""
         print("\n" + "="*60)
-        print("🏁 COMPLETE SIMULATION RESULTS")
+        print("ðŸ COMPLETE SIMULATION RESULTS")
         print("="*60)
         
         final_pos = self.state[0:3]
         
-        print(f"📋 PHASE SUMMARY:")
-        print(f"   ✅ Phase 1: RRT* Planning - {len(self.planner.waypoints)} waypoints")
-        print(f"   ✅ Phase 2: B-spline Trajectory - {len(self.controller.trajectory_points) if self.controller.trajectory_points is not None else 0} points")
-        print(f"   ✅ Phase 3: Execution - {self.sim_time:.2f}s")
+        print(f"ðŸ“‹ PHASE SUMMARY:")
+        print(f"   âœ… Phase 1: RRT* Planning - {len(self.planner.waypoints)} waypoints")
+        print(f"   âœ… Phase 2: B-spline Trajectory - {len(self.controller.trajectory_points) if self.controller.trajectory_points is not None else 0} points")
+        print(f"   âœ… Phase 3: Execution - {self.sim_time:.2f}s")
         
         if self.env.goal_point is not None:
             goal_distance = np.linalg.norm(final_pos - np.array(self.env.goal_point))
             start_goal_dist = np.linalg.norm(np.array(self.env.goal_point) - np.array(self.env.start_point))
             success_rate = max(0, (1 - goal_distance / start_goal_dist) * 100)
             
-            print(f"\n🎯 EXECUTION RESULTS:")
-            print(f"   Status: {'✅ GOAL REACHED' if self.goal_reached else '❌ NOT REACHED'}")
+            print(f"\nðŸŽ¯ EXECUTION RESULTS:")
+            print(f"   Status: {'âœ… GOAL REACHED' if self.goal_reached else 'âŒ NOT REACHED'}")
             print(f"   Final distance to goal: {goal_distance:.3f} m")
             print(f"   Success rate: {success_rate:.1f}%")
         
-        print(f"\n📊 PERFORMANCE:")
+        print(f"\nðŸ“Š PERFORMANCE:")
         print(f"   Execution time: {self.sim_time:.2f} s")
         print(f"   Final position: [{final_pos[0]:.2f}, {final_pos[1]:.2f}, {final_pos[2]:.2f}]")
         print(f"   Path length: {len(self.trail_positions)} points")
@@ -692,4 +743,4 @@ class LiveQuadrotorSimulator:
         
         filename = f'./log/{filename_prefix}.mat'
         scipy.io.savemat(filename, data)
-        print(f"💾 Complete simulation results saved to {filename}")
+        print(f"ðŸ’¾ Complete simulation results saved to {filename}")
