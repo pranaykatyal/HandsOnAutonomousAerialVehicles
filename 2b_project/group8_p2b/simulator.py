@@ -219,6 +219,11 @@ class LiveQuadrotorSimulator:
         # Verify the points are well-separated
         start_point = self.env.start_point
         goal_point = self.env.goal_point #self.renderer.getObstaclePoses(np.array(self.env.goal_point))
+        print(f"Start point: {self.env.start_point}")
+        print(f"Goal point: {self.env.goal_point}")
+        print(f"Start valid: {self.env.is_point_in_free_space(self.env.start_point)}")
+        print(f"Goal valid: {self.env.is_point_in_free_space(self.env.goal_point)}")
+        
         distance = np.linalg.norm(np.array(goal_point) - np.array(start_point))
         
         print(f"ðŸ“ Start-to-goal distance: {distance:.2f} meters")
@@ -242,11 +247,11 @@ class LiveQuadrotorSimulator:
         tree = [start_node]
         
         # RRT* parameters - adjust based on environment size
-        max_iterations = min(3000, max(1000, int(distance * 150)))  # Scale with distance
+        max_iterations = 10000#min(3000, max(1000, int(distance * 150)))  # Scale with distance
         step_size = min(1.5, distance / 10)  # Adaptive step size
-        step_size = 0.001
+        step_size = 0.01
         goal_radius = max(0.8, min(1.5, distance / 15))  # Adaptive goal radius
-        goal_radius = 0.008
+        goal_radius = 0.01
         search_radius = step_size * 2.5
         goal_bias = 0.15
         
@@ -287,42 +292,22 @@ class LiveQuadrotorSimulator:
             
             # Find near nodes and choose best parent
             near_nodes = self.planner.find_near_nodes(tree, new_position, search_radius)
-            best_parent, best_cost = self.planner.choose_parent(near_nodes, new_position)
-            
-            if best_parent is None:
-                if self.planner.is_path_valid(nearest_node.position, new_position):
-                    best_parent = nearest_node
-                    best_cost = nearest_node.cost + self.planner.distance(nearest_node.position, new_position)
-                else:
-                    continue
-            
-            # Create new node
-            new_node = RRTNode(new_position)
-            new_node.parent = best_parent
-            new_node.cost = best_cost
-            best_parent.children.append(new_node)
+            new_node = self.planner.choose_parent(near_nodes, nearest_node, new_position)
             tree.append(new_node)
-            
+
             # Rewire tree
-            self.planner.rewire_tree(tree, new_node, near_nodes)
-            
+            self.planner.rewire_tree(new_node, near_nodes)
+
             # Check if goal reached
-            goal_distance = self.planner.distance(new_position, goal_point)
-            if goal_distance <= goal_radius:
-                if self.planner.is_path_valid(new_position, goal_point):
-                    goal_node = RRTNode(goal_point)
-                    goal_node.parent = new_node
-                    goal_node.cost = new_node.cost + goal_distance
-                    new_node.children.append(goal_node)
-                    tree.append(goal_node)
-                    print(f"ðŸŽ¯ Goal reached at iteration {iteration}! Final cost: {goal_node.cost:.2f}")
+            if self.planner.reached_goal(new_node):
+                    goal_node = new_node
+                    print(f"Goal reached at iteration {iteration}! Final cost: {new_node.cost:.2f}")
                     break
-            
             # Update visualization periodically
             if iteration % update_interval == 0:
                 self._update_rrt_visualization(tree, iteration, max_iterations)
                 time.sleep(0.03)  # Small delay for animation effect
-        
+        print("all done")
         # Final visualization update
         self._update_rrt_visualization(tree, iteration, max_iterations, final=True)
         
@@ -330,12 +315,13 @@ class LiveQuadrotorSimulator:
         self.planner.tree_nodes = tree
         
         if goal_node is not None:
+            print("it foind a goal")
             self.planner.waypoints = self.planner.extract_path(goal_node)
             original_waypoints = len(self.planner.waypoints)
             self.planner.waypoints = self.planner.simplify_path(self.planner.waypoints)
             simplified_waypoints = len(self.planner.waypoints)
             
-            print(f"âœ… RRT* planning successful!")
+            print(f"â RRT* planning successful!")
             print(f"   Original path: {original_waypoints} waypoints")
             print(f"   Simplified path: {simplified_waypoints} waypoints")
             print(f"   Path cost: {goal_node.cost:.2f} meters")
@@ -345,7 +331,8 @@ class LiveQuadrotorSimulator:
             self._show_final_rrt_path()
             return True
         else:
-            print(f"âŒ RRT* planning failed after {max_iterations} iterations")
+            print("deepak special charicters")
+            print(f"â RRT* planning failed after {max_iterations} iterations")
             print(f"   Tree size: {len(tree)} nodes")
             print("   Try increasing max_iterations or adjusting parameters")
             return False
