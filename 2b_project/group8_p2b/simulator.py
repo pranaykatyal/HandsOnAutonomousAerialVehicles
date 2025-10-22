@@ -389,6 +389,7 @@ class LiveQuadrotorSimulator:
         self.ax.legend()
         self.fig.canvas.draw()
         self.fig.canvas.flush_events()
+        self.fig.savefig('foo.png')
         
         time.sleep(2)  # Show final path
         self.planning_complete = True
