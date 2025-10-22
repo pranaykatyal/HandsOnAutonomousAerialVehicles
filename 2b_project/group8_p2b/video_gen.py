@@ -9,7 +9,11 @@ import os
 def gen_vizflyt(img_dir,fps,save_dir):
     # Check if directory exists and has frames
     if not os.path.exists(img_dir):
-        print(f'irectory {img_dir} does not exist!')
+        print(f'directory {img_dir} does not exist!')
+        return False
+    
+    if not os.path.exists(save_dir):
+        print(f'directory {save_dir} did not exist so i created it myself')
         return False
 
     # Check if there are any frame files
@@ -22,7 +26,7 @@ def gen_vizflyt(img_dir,fps,save_dir):
         print(f'No depth_files')
         return False
         
-    video_path = os.path.join(img_dir, 'VizFlyt_FPV.mp4')
+    video_path = os.path.join(save_dir, 'VizFlyt_FPV.mp4')
     
     # ffmpeg command to create video from frames
     cmd = [

@@ -12,7 +12,7 @@ from environment import Environment3D
 from path_planner import PathPlanner
 from trajectory_generator import TrajectoryGenerator
 from control import QuadrotorController
-
+from video_gen import  gen_vizflyt
 # Dynamics and parameters
 from quad_dynamics import model_derivative
 import tello as drone_params
@@ -389,7 +389,7 @@ class LiveQuadrotorSimulator:
         self.ax.legend()
         self.fig.canvas.draw()
         self.fig.canvas.flush_events()
-        self.fig.savefig('foo.png')
+        self.fig.savefig('/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/2b_project/group8_p2b/report_outputs/final_RRT_path.png')
         
         time.sleep(2)  # Show final path
         self.planning_complete = True
@@ -433,7 +433,8 @@ class LiveQuadrotorSimulator:
             self.ax.legend()
             self.fig.canvas.draw()
             self.fig.canvas.flush_events()
-            
+            self.fig.savefig('/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/2b_project/group8_p2b/report_outputs/final_bspline_trajectory.png')
+
             time.sleep(2)  # Show trajectory
             self.trajectory_complete = True
             return True
@@ -623,6 +624,12 @@ class LiveQuadrotorSimulator:
         plt.ioff()
         plt.show()
         
+        print("saveing video")
+        gen_vizflyt(
+            '/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/2b_project/group8_p2b/renders'
+            ,10
+            ,'/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/2b_project/group8_p2b/report_outputs')
+            
         return True
     
     # Keep all the other methods from before (environment drawing, results, etc.)
