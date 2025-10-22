@@ -26,7 +26,7 @@ __pycache__/
 # Other
 .DS_Store
 venv
-
+*.sh
 
 # Jupyter Notebook checkpoints
 .ipynb_checkpoints/
