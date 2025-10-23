@@ -1,4 +1,4 @@
-#!/home/pranaykatyal/HoAAV/HoAAV/bin/python3
+#!/home/pranaykatyal/HoAAV/HoAAV/bin/python
 # -*- coding: utf-8 -*-
 import re
 import sys

@@ -158,7 +158,7 @@ class Environment3D:
 
         return True
 
-    
+
     
     def generate_random_free_point(self):
         """

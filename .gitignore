@@ -5,6 +5,11 @@
 *.jpeg
 *.gif
 
+*.db
+*.bin
+*.ckpt
+
+
 # Python cache
 __pycache__/
 *.py[cod]
@@ -21,3 +26,41 @@ __pycache__/
 # Other
 .DS_Store
 venv
+*.sh
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Log files
+*.log
+
+# Environment files
+.env
+.env.*
+
+# System files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# VS Code settings (if you use VS Code)
+.vscode/
+
+# MacOS system files
+.DS_Store
+
+# Python virtual environments (if you use other names)
+env/
+ENV/
+.venv/
+
+lib/
+HoAAV/lib/
+venv/
+ENV/
+.venv/
