@@ -117,7 +117,7 @@ def run_trajectory_demo(map_file, start=None, goal=None):
         return False
     
     # Generate trajectory
-    traj_gen = TrajectoryGenerator(planner.waypoints)
+    traj_gen = TrajectoryGenerator(planner.waypoints, environment=env)
     result = traj_gen.generate_bspline_trajectory(num_points=200)
     
     if result[0] is not None:
