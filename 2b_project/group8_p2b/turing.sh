@@ -23,5 +23,36 @@ module load miniconda3
 source "$("conda" info --base)/etc/profile.d/conda.sh"
 conda activate /home/pkatyal/.conda/envs/aerial_robotics
 
+<<<<<<< HEAD
 python3 /home/pkatyal/HandsOnAutonomousAerialVehicles/2b_project/group8_p2b/main.py maps/mapSplat.txt
+=======
+python3 /home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/2b_project/group8_p2b/main.py maps/mapSplat.txt
+# python3 -c "import video_gen; video_gen.ffmpeging_video(
+#     '/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/2b_project/group8_p2b/renders',
+#     'rgb_', 
+#     10, 
+#     '/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/2b_project/group8_p2b/report_outputs'
+#     )"
+>>>>>>> ded2c962565d14133a4c901c23d5fb6f6d0ae0ac
 
+# python3 -c "import video_gen; video_gen.ffmpeging_video(
+# '/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/2b_project/group8_p2b/renders',
+# 'depth_', 
+# 10, 
+# '/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/2b_project/group8_p2b/report_outputs'
+# )"
+
+# python3 -c "import video_gen; video_gen.ffmpeging_video(
+# '/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/2b_project/group8_p2b/renders',
+# 'plot_', 
+# 10, 
+# '/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/2b_project/group8_p2b/report_outputs'
+# )"
+
+# python3 -c "import video_gen; video_gen.create_combined_video(
+#     '/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/2b_project/group8_p2b/report_outputs',
+#     [
+#         '/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/2b_project/group8_p2b/report_outputs/rgb_.mp4', 
+#         '/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/2b_project/group8_p2b/report_outputs/plot_.mp4'
+#     ]
+#     )"
