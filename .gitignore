@@ -64,3 +64,5 @@ HoAAV/lib/
 venv/
 ENV/
 .venv/
+
+*/turing.sh

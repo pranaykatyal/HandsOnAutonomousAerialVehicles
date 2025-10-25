@@ -14,7 +14,7 @@ from environment import Environment3D
 from path_planner import PathPlanner
 from trajectory_generator import TrajectoryGenerator
 from control import QuadrotorController
-from video_gen import  gen_vizflyt
+from video_gen import  ffmpeging_video, create_combined_video
 # Dynamics and parameters
 from quad_dynamics import model_derivative
 import tello as drone_params
@@ -110,201 +110,7 @@ class LiveQuadrotorSimulator:
         self.trajectory_complete = False
         self.execution_started = False
      
-    def setup_output_directories(self):
-        """Setup directory structure for P2b outputs"""
-        self.log_dir = Path('./log')
-        self.render_base_dir = Path('./renders')
-        
-        self.log_dir.mkdir(exist_ok=True)
-        self.render_base_dir.mkdir(exist_ok=True)
-        
-        # Timestamped subdirectory
-        timestamp = time.strftime("%Y%m%d_%H%M%S")
-        self.run_dir = self.render_base_dir / f"run_{timestamp}"
-        self.run_dir.mkdir(exist_ok=True)
-        
-        # Create subdirectories
-        self.render_rgb_dir = self.run_dir / "rgb_frames"
-        self.render_depth_dir = self.run_dir / "depth_frames"
-        self.render_plot_dir = self.run_dir / "plot_frames"
-        self.video_dir = self.run_dir / "videos"
-        
-        for dir_path in [self.render_rgb_dir, self.render_depth_dir, 
-                        self.render_plot_dir, self.video_dir]:
-            dir_path.mkdir(exist_ok=True)
-        
-        print(f" Output directory: {self.run_dir}")
-
-    def quaternion_to_euler(self, quat):
-        """
-        Convert quaternion [qw, qx, qy, qz] to Euler angles [roll, pitch, yaw]
-        
-        Args:
-            quat: numpy array [qw, qx, qy, qz] - scalar first convention
-        
-        Returns:
-            numpy array [roll, pitch, yaw] in radians
-        """
-        qw, qx, qy, qz = quat
-        
-        # Roll (x-axis rotation)
-        sinr_cosp = 2.0 * (qw * qx + qy * qz)
-        cosr_cosp = 1.0 - 2.0 * (qx * qx + qy * qy)
-        roll = np.arctan2(sinr_cosp, cosr_cosp)
-        
-        # Pitch (y-axis rotation)
-        sinp = 2.0 * (qw * qy - qz * qx)
-        if abs(sinp) >= 1:
-            pitch = np.copysign(np.pi / 2, sinp)
-        else:
-            pitch = np.arcsin(sinp)
-        
-        # Yaw (z-axis rotation)
-        siny_cosp = 2.0 * (qw * qz + qx * qy)
-        cosy_cosp = 1.0 - 2.0 * (qy * qy + qz * qz)
-        yaw = np.arctan2(siny_cosp, cosy_cosp)
-        
-        return np.array([roll, pitch, yaw])
-
-    def render_current_view(self):
-        """Render current drone view"""
-        if not self.rendering_enabled:
-            return None, None
-        
-        try:
-            position = self.state[0:3]  # [x, y, z] NED
-            quat = self.state[6:10]     # [qx, qy, qz, qw]
-            
-           
-            orientation_rpy = self.quaternion_to_euler(quat)
-            
-            rgb_frame, depth_frame = self.renderer.render(position, orientation_rpy)
-            return rgb_frame, depth_frame
-            
-        except Exception as e:
-            print(f"Rendering error: {e}")
-            return None, None
-
-    def save_rendered_frame(self, rgb_frame, depth_frame):
-        """Save rendered frames to disk"""
-        if rgb_frame is not None:
-            rgb_path = self.render_rgb_dir / f"frame_{self.frame_count:06d}.png"
-            cv2.imwrite(str(rgb_path), rgb_frame)
-            self.saved_frames.append(str(rgb_path))
-        
-        if depth_frame is not None:
-            depth_path = self.render_depth_dir / f"frame_{self.frame_count:06d}.png"
-            cv2.imwrite(str(depth_path), depth_frame)
-        
-        self.frame_count += 1
-
-    def save_plot_frame(self):
-        """Save current matplotlib plot as frame (headless-safe)"""
-        if not hasattr(self, 'fig') or self.fig is None:
-            return
-        
-        try:
-            plot_path = self.render_plot_dir / f"plot_{self.frame_count:06d}.png"
-            
-            # Save without display (headless-safe)
-            self.fig.savefig(str(plot_path), dpi=100, bbox_inches='tight', 
-                            facecolor='white', edgecolor='none')
-            
-        except Exception as e:
-            print(f" Error saving plot frame: {e}")
-
-    def create_video_from_frames(self, frame_dir, output_name, fps=25, frame_pattern="frame"):
-        """Create video from saved frames using ffmpeg"""
-        import subprocess
-        
-        # Support different frame patterns (frame_*.png or plot_*.png)
-        if frame_pattern == "plot":
-            pattern = str(frame_dir / "plot_%06d.png")
-            glob_pattern = "plot_*.png"
-        else:
-            pattern = str(frame_dir / "frame_%06d.png")
-            glob_pattern = "frame_*.png"
-        
-        output_path = self.video_dir / f"{output_name}.mp4"
-        
-        frames = list(frame_dir.glob(glob_pattern))
-        if len(frames) == 0:
-            print(f" No frames in {frame_dir}")
-            return None
-        
-        print(f" Creating video from {len(frames)} frames...")
-        
-        cmd = [
-            'ffmpeg', '-y', '-framerate', str(fps),
-            '-i', pattern,
-            '-c:v', 'libx264', '-pix_fmt', 'yuv420p',
-            '-crf', '18', '-preset', 'slow',
-            str(output_path)
-        ]
-        
-        try:
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            if result.returncode == 0:
-                print(f" Video created: {output_path}")
-                return output_path
-            else:
-                print(f" ffmpeg error: {result.stderr}")
-                return None
-        except FileNotFoundError:
-            print(" ffmpeg not found. Load module: module load ffmpeg")
-            return None
-
-    def finalize_videos(self):
-        """Create all videos after simulation"""
-        print("\n" + "="*60)
-        print(" CREATING VIDEOS")
-        print("="*60)
-        
-        fps = int(1.0 / (self.dt * self.render_every_n_steps))
-        print(f"Video FPS: {fps}")
-        
-        videos_created = []
-        
-        # 1. FPV RGB video
-        print("\n Creating FPV RGB video...")
-        fpv_video = self.create_video_from_frames(self.render_rgb_dir, "fpv_rgb", fps=fps)
-        if fpv_video:
-            videos_created.append(("FPV RGB", fpv_video))
-        
-        # 2. Depth video
-        print("\n Creating depth video...")
-        depth_video = self.create_video_from_frames(self.render_depth_dir, "depth", fps=fps)
-        if depth_video:
-            videos_created.append(("Depth", depth_video))
-        
-        # 3. Plot video
-        print("\n Creating plot video...")
-        plot_video = self.create_video_from_frames(self.render_plot_dir, "plot_view", fps=fps,frame_pattern="plot")
-        if plot_video:
-            videos_created.append(("Plot", plot_video))
-        
-        # 4. Combined video
-        if fpv_video and plot_video:
-            print("\n Creating combined video...")
-            combined = self.create_side_by_side_video(fpv_video, plot_video, "combined_fpv_plot")
-            if combined:
-                videos_created.append(("Combined", combined))
-        
-        print("\n" + "="*60)
-        print(" VIDEO CREATION COMPLETE")
-        print("="*60)
-        if videos_created:
-            print("Created videos:")
-            for name, path in videos_created:
-                print(f" {name}: {path}")
-        print("="*60 + "\n")
-        
-        return videos_created
-    
-    
-    
-    
-    
+     
     def _quaternion_to_rpy(self, quat):
         """
         Convert quaternion [qx, qy, qz, qw] to roll, pitch, yaw
@@ -373,14 +179,19 @@ class LiveQuadrotorSimulator:
             # Save images with timestamp
             frame_id = len(self.state_history)
             timestamp = f"{self.sim_time:.3f}".replace('.', '_')
-            
-            rgb_filename = os.path.join(self.render_dir, f'rgb_{frame_id:05d}_t{timestamp}.png')
-            depth_filename = os.path.join(self.render_dir, f'depth_{frame_id:05d}_t{timestamp}.png')
-            
+            print("timestep", timestamp)
+            rgb_filename = os.path.join(self.render_dir, f'rgb_{frame_id:05d}.png')#f'rgb_{frame_id:05d}_t{timestamp}.png
+            depth_filename = os.path.join(self.render_dir, f'depth_{frame_id:05d}.png')
+
+            plot_filename = os.path.join(self.render_dir, f'plot_{frame_id:05d}.png')
+
             import cv2
             cv2.imwrite(rgb_filename, rgb_img)
             cv2.imwrite(depth_filename, depth_img)
-            
+
+            self.fig.savefig(plot_filename,bbox_inches='tight', pad_inches=0)
+
+
             # # Optional: print progress
             # if frame_id % 50 == 0:
             #     print(f"   Rendered frame {frame_id} at t={self.sim_time:.2f}s")
@@ -432,6 +243,7 @@ class LiveQuadrotorSimulator:
             self.ax.set_title('ðŸŒ Environment Preview - Inspecting workspace...')
             self.fig.canvas.draw()
             self.fig.canvas.flush_events()
+            self.fig.savefig('./report_outputs/Environment_Preview.png')
             
             if wait_time is None:
                 # Manual continuation
@@ -638,7 +450,7 @@ class LiveQuadrotorSimulator:
         self.ax.legend()
         self.fig.canvas.draw()
         self.fig.canvas.flush_events()
-        self.fig.savefig('/home/pkatyal/HandsOnAutonomousAerialVehicles/2b_project/group8_p2b/report_outputs/final_RRT_path.png')
+        self.fig.savefig('./report_outputs/final_RRT_path.png')
         
         time.sleep(2)  # Show final path
         self.planning_complete = True
@@ -682,7 +494,7 @@ class LiveQuadrotorSimulator:
             self.ax.legend()
             self.fig.canvas.draw()
             self.fig.canvas.flush_events()
-            self.fig.savefig('/home/pkatyal/HandsOnAutonomousAerialVehicles/2b_project/group8_p2b/report_outputs/final_bspline_trajectory.png')
+            self.fig.savefig('/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/2b_project/group8_p2b/report_outputs/final_bspline_trajectory.png')
 
             time.sleep(2)  # Show trajectory
             self.trajectory_complete = True
@@ -753,9 +565,11 @@ class LiveQuadrotorSimulator:
         current_pos = self.state[0:3]
         self.trail_positions.append(current_pos.copy())
         
-        render_interval = 10  # Render every 10 simulation steps
-        if len(self.state_history) % render_interval == 0:
+        if len(self.state_history) % self.render_interval == 0:
+            print("saveing FPV")
             self._render_and_save()
+
+
 
         # Limit trail length
         if len(self.trail_positions) > self.max_trail_length:
@@ -787,6 +601,7 @@ class LiveQuadrotorSimulator:
             print(f"\nâ° Simulation time limit reached: {self.sim_time:.2f}s")
             return False
         
+        print(f'sim time:{self.sim_time}')
         return True
     
     def update_execution_visualization(self):
@@ -814,7 +629,11 @@ class LiveQuadrotorSimulator:
         # Refresh display
         self.fig.canvas.draw()
         self.fig.canvas.flush_events()
-    
+
+        # if len(self.state_history) % self.render_interval == 0:
+        #     plot_filename = os.path.join(self.render_dir, f'plot_{len(self.state_history):05d}.png')
+        #     self.fig.savefig(plot_filename)
+
     def run_live_simulation(self, start=None, goal=None):
         """
         Run the complete simulation showing all phases:
@@ -891,11 +710,27 @@ class LiveQuadrotorSimulator:
         # plt.show()
         
         print("saveing video")
-        gen_vizflyt(
-            '/home/pkatyal/HandsOnAutonomousAerialVehicles/2b_project/group8_p2b/renders'
-            ,10
-            ,'/home/pkatyal/HandsOnAutonomousAerialVehicles/2b_project/group8_p2b/report_outputs')
-        
+        ffmpeging_video(img_dir='/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/2b_project/group8_p2b/renders',
+                        delineator='rgb_',
+                        fps=10,
+                        save_dir='/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/2b_project/group8_p2b/report_outputs',
+
+        )
+
+        ffmpeging_video(img_dir='/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/2b_project/group8_p2b/renders',
+                        delineator='plot_',
+                        fps=10,
+                        save_dir='/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/2b_project/group8_p2b/report_outputs',
+
+        )
+
+        create_combined_video(
+            dataset_dir='/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/2b_project/group8_p2b/report_outputs',
+            video_paths=['/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/2b_project/group8_p2b/report_outputs/rgb_.mp4', 
+            '/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/2b_project/group8_p2b/report_outputs/plot_.mp4'
+            ]
+        )
+
         return True
     
     # Keep all the other methods from before (environment drawing, results, etc.)

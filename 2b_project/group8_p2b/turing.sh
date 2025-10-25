@@ -25,3 +25,24 @@ conda activate /home/pkatyal/.conda/envs/aerial_robotics
 
 python3 /home/pkatyal/HandsOnAutonomousAerialVehicles/2b_project/group8_p2b/main.py maps/mapSplat.txt
 
+# python3 -c "import video_gen; video_gen.ffmpeging_video(
+# '/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/2b_project/group8_p2b/renders',
+# 'depth_', 
+# 10, 
+# '/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/2b_project/group8_p2b/report_outputs'
+# )"
+
+# python3 -c "import video_gen; video_gen.ffmpeging_video(
+# '/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/2b_project/group8_p2b/renders',
+# 'plot_', 
+# 10, 
+# '/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/2b_project/group8_p2b/report_outputs'
+# )"
+
+# python3 -c "import video_gen; video_gen.create_combined_video(
+#     '/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/2b_project/group8_p2b/report_outputs',
+#     [
+#         '/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/2b_project/group8_p2b/report_outputs/rgb_.mp4', 
+#         '/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/2b_project/group8_p2b/report_outputs/plot_.mp4'
+#     ]
+#     )"
