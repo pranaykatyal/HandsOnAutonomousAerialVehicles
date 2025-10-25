@@ -8,9 +8,8 @@ class Environment3D:
         self.boundary = []
         self.blocks = []
         self.start_point = [0, 0, -0.15]
-        self.goal_point = [1.6, 0.125, -0.20]
-        self.safety_margin = 0.5  # Safety margin around obstacles    
-        
+        self.goal_point = [0.7, 0.125, -0.20]
+    
         
         
         
@@ -20,7 +19,7 @@ class Environment3D:
         self.robotmarginz = tello.margin_z    # Robot margin for obstacle bloating
         print("robot margin z:", self.robotmarginz)
         
-        self.safety_margin = 0.25  # Safety margin around obstacles
+        self.safety_margin = 0.0025  # Safety margin around obstacles
 
     def parse_map_file(self, filename):
         """
