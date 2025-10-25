@@ -65,4 +65,4 @@ venv/
 ENV/
 .venv/
 
-turing.sh
+*/turing.sh
