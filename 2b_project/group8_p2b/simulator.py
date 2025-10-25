@@ -129,7 +129,7 @@ class LiveQuadrotorSimulator:
             rgb_filename = os.path.join(self.render_dir, f'rgb_{frame_id:05d}.png')#f'rgb_{frame_id:05d}_t{timestamp}.png
             depth_filename = os.path.join(self.render_dir, f'depth_{frame_id:05d}.png')
 
-            plot_filename = os.path.join(self.render_dir, f'plot_{len(self.state_history):05d}.png')
+            plot_filename = os.path.join(self.render_dir, f'plot_{frame_id:05d}.png')
 
             import cv2
             cv2.imwrite(rgb_filename, rgb_img)
@@ -189,7 +189,7 @@ class LiveQuadrotorSimulator:
             self.ax.set_title('ðŸŒ Environment Preview - Inspecting workspace...')
             self.fig.canvas.draw()
             self.fig.canvas.flush_events()
-            self.fig.savefig('/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/2b_project/group8_p2b/report_outputs/Environment_Preview.png')
+            self.fig.savefig('./report_outputs/Environment_Preview.png')
             
             if wait_time is None:
                 # Manual continuation
@@ -396,7 +396,7 @@ class LiveQuadrotorSimulator:
         self.ax.legend()
         self.fig.canvas.draw()
         self.fig.canvas.flush_events()
-        self.fig.savefig('/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/2b_project/group8_p2b/report_outputs/final_RRT_path.png')
+        self.fig.savefig('./report_outputs/final_RRT_path.png')
         
         time.sleep(2)  # Show final path
         self.planning_complete = True
@@ -440,7 +440,7 @@ class LiveQuadrotorSimulator:
             self.ax.legend()
             self.fig.canvas.draw()
             self.fig.canvas.flush_events()
-            self.fig.savefig('/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/2b_project/group8_p2b/report_outputs/final_bspline_trajectory.png')
+            self.fig.savefig('./report_outputs/final_bspline_trajectory.png')
 
             time.sleep(2)  # Show trajectory
             self.trajectory_complete = True
@@ -639,24 +639,24 @@ class LiveQuadrotorSimulator:
         plt.show()
         
         print("saveing video")
-        ffmpeging_video(img_dir='/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/2b_project/group8_p2b/renders',
+        ffmpeging_video(img_dir='./renders',
                         delineator='rgb_',
                         fps=10,
-                        save_dir='/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/2b_project/group8_p2b/report_outputs',
+                        save_dir='./report_outputs',
 
         )
 
-        ffmpeging_video(img_dir='/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/2b_project/group8_p2b/renders',
+        ffmpeging_video(img_dir='./renders',
                         delineator='plot_',
                         fps=10,
-                        save_dir='/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/2b_project/group8_p2b/report_outputs',
+                        save_dir='./report_outputs',
 
         )
 
         create_combined_video(
-            dataset_dir='/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/2b_project/group8_p2b/report_outputs',
-            video_paths=['/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/2b_project/group8_p2b/report_outputs/rgb_.mp4', 
-            '/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/2b_project/group8_p2b/report_outputs/plot_.mp4'
+            dataset_dir='./report_outputs',
+            video_paths=['./report_outputs/rgb_.mp4', 
+            './report_outputs/plot_.mp4'
             ]
         )
 
