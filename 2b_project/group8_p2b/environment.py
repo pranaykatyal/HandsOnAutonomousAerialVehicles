@@ -7,12 +7,9 @@ class Environment3D:
     def __init__(self):
         self.boundary = []
         self.blocks = []
-        
-        
-        # Switch-case for start/goal points based on input i
-        # Usage: Environment3D(i=1) for map1, i=2 for map2, etc.
-        self.start_point = [-0.34, 0.12, 0.0036]
-        self.goal_point = [1, 0, 0.5]             
+        self.start_point = [0, 0, -0.15]
+        self.goal_point = [1.6, 0.125, -0.20]
+        self.safety_margin = 0.5  # Safety margin around obstacles    
         
         
         
