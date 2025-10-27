@@ -126,10 +126,22 @@ class LiveQuadrotorSimulator:
             frame_id = len(self.state_history)
             timestamp = f"{self.sim_time:.3f}".replace('.', '_')
             print("timestep", timestamp)
-            rgb_filename = os.path.join(self.render_dir, f'rgb_{frame_id:05d}.png')#f'rgb_{frame_id:05d}_t{timestamp}.png
-            depth_filename = os.path.join(self.render_dir, f'depth_{frame_id:05d}.png')
+            rgb_folder = os.path.join(self.render_dir, "rgb")
+            depth_folder = os.path.join(self.render_dir, "depth")
+            plot_foler = os.path.join(self.render_dir, "plot")
 
-            plot_filename = os.path.join(self.render_dir, f'plot_{len(self.state_history):05d}.png')
+
+            if not os.path.exists(rgb_folder):
+                os.makedirs(rgb_folder)
+            if not os.path.exists(depth_folder):
+                os.makedirs(depth_folder)
+            if not os.path.exists(plot_foler):
+                os.makedirs(plot_foler)
+
+            rgb_filename = os.path.join(rgb_folder, f'rgb_{frame_id:05d}.png')#f'rgb_{frame_id:05d}_t{timestamp}.png
+            depth_filename = os.path.join(depth_folder, f'depth_{frame_id:05d}.png')
+
+            plot_filename = os.path.join(plot_foler, f'plot_{frame_id:05d}.png')
 
             import cv2
             cv2.imwrite(rgb_filename, rgb_img)
@@ -639,14 +651,14 @@ class LiveQuadrotorSimulator:
         plt.show()
         
         print("saveing video")
-        ffmpeging_video(img_dir='./renders',
+        ffmpeging_video(img_dir='./renders/rgb/',
                         delineator='rgb_',
                         fps=10,
                         save_dir='./report_outputs',
 
         )
 
-        ffmpeging_video(img_dir='./renders',
+        ffmpeging_video(img_dir='./renders/plot/',
                         delineator='plot_',
                         fps=10,
                         save_dir='./report_outputs',
