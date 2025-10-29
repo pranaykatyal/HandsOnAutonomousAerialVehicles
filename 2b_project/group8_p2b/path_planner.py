@@ -165,7 +165,7 @@ class PathPlanner:
     def distance(self, new_position: Position, goal_point:Position):
         return np.linalg.norm(np.array(new_position) - np.array(goal_point))
     
-    def simplify_path(self, path_waypoints: List[Position], max_skip_distance=0.4, boundary_threshold=0.2):
+    def simplify_path(self, path_waypoints: List[Position], max_skip_distance=0.1, boundary_threshold=0.2):
         if len(path_waypoints) <= 2:
             return path_waypoints
         

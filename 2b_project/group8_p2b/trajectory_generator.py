@@ -171,7 +171,7 @@ class TrajectoryGenerator:
         n_coeffs = poly_order + 1  # 8 coefficients
         
         # STEP 1: Allocate time for each segment
-        segment_times = self._allocate_segment_times()
+        segment_times = self._allocate_segment_times()*1.5  # Scale up for safety
         
         print(f"Solving minimum snap optimization for {n_segments} segments...")
         

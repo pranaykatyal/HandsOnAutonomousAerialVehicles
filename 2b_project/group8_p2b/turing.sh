@@ -1,11 +1,11 @@
 #!/bin/bash
 
-#SBATCH --mail-user=hkortus@wpi.edu
+#SBATCH --mail-user=pkatyal@wpi.edu
 #SBATCH --mail-type=ALL
 
 #SBATCH -J p2b
-#SBATCH --output=/home/hkortus/logs/p2b_%j.out
-#SBATCH --error=/home/hkortus/logs/p2b_%j.err
+#SBATCH --output=/home/pkatyal/logs/p2b_%j.out
+#SBATCH --error=/home/pkatyal/logs/p2b_%j.err
 
 #SBATCH -N 1
 #SBATCH -n 8
@@ -20,6 +20,6 @@ module load miniconda3
 module load ffmpeg/6.1.1/cup2q2r
 
 source "$("conda" info --base)/etc/profile.d/conda.sh"
-conda activate /home/hkortus/.conda/envs/aerial_robotics
+conda activate /home/pkatyal/.conda/envs/aerial_robotics
 
 python3 main.py maps/mapSplat.txt
