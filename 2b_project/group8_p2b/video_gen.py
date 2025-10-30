@@ -6,80 +6,6 @@ from matplotlib.patches import Polygon
 import subprocess
 import os
 
-# def gen_vizflyt(img_dir,fps,save_dir):
-#     # Check if directory exists and has frames
-#     if not os.path.exists(img_dir):
-#         print(f'directory {img_dir} does not exist!')
-#         return False
-    
-#     if not os.path.exists(save_dir):
-#         print(f'directory {save_dir} did not exist so i created it myself')
-#         return False
-
-#     # Check if there are any frame files
-#     rgb_files = [f for f in os.listdir(img_dir) if f.startswith('rgb_') and f.endswith('.png')]
-#     if not rgb_files:
-#         print(f'No depth_files')
-#         return False
-        
-#     video_path = os.path.join(save_dir, 'VizFlyt_FPV.mp4')
-    
-#     # ffmpeg command to create video from frames
-#     cmd = [
-#         'ffmpeg', '-y', '-loglevel', 'error', '-framerate', str(fps),
-#         '-pattern_type', 'glob', '-i', os.path.join(img_dir, 'rgb_*_*.png'),
-#         '-vf', 'hflip,vflip',
-#         '-c:v', 'libx264', '-pix_fmt', 'yuv420p', video_path
-#     ]
-    
-#     print(f'Creating video with cmd {cmd}...')
-    
-#     try:
-#         subprocess.run(cmd, check=True)
-#         print(f'Successfully created {video_path}')
-#     except subprocess.CalledProcessError as e:
-#         print(f'Error creating video for {video_path}: {e}')
-#     except FileNotFoundError:
-#         print(f'ffmpeg not found. Please install ffmpeg to create videos.')
-#         return
-    
-
-# def gen_plot_vid(img_dir,fps,save_dir):
-#     # Check if directory exists and has frames
-#     if not os.path.exists(img_dir):
-#         print(f'directory {img_dir} does not exist!')
-#         return False
-    
-#     if not os.path.exists(save_dir):
-#         print(f'directory {save_dir} did not exist ')
-#         return False
-
-#     # Check if there are any frame files
-#     plot_files = [f for f in os.listdir(img_dir) if f.startswith('plot_') and f.endswith('.png')]
-#     if not plot_files:
-#         print(f'No plot_files')
-#         return False
-
-#     video_path = os.path.join(save_dir, 'plot_vid.mp4')
-    
-#     # ffmpeg command to create video from frames
-#     cmd = [
-#         'ffmpeg', '-y', '-loglevel', 'error', '-framerate', str(fps),
-#         '-pattern_type', 'glob', '-i', os.path.join(img_dir, 'plot_*_*.png'),
-#         '-c:v', 'libx264', '-pix_fmt', 'yuv420p', video_path
-#     ]
-    
-#     print(f'Creating video with cmd {cmd}...')
-    
-#     try:
-#         subprocess.run(cmd, check=True)
-#         print(f'Successfully created {video_path}')
-#     except subprocess.CalledProcessError as e:
-#         print(f'Error creating video for {video_path}: {e}')
-#     except FileNotFoundError:
-#         print(f'ffmpeg not found. Please install ffmpeg to create videos.')
-#         return
-
 def ffmpeging_video(img_dir,delineator,fps,save_dir,img_type='.png'):
     # Check if directory exists and has frames
     if not os.path.exists(img_dir):
@@ -131,9 +57,9 @@ def create_combined_video(dataset_dir, video_paths):
         # 2 videos in a horizontal row
         cmd_grid = [
             'ffmpeg', '-y', '-loglevel', 'error',
-            '-i', video_paths[0], '-i', video_paths[1], 
+            '-i', video_paths[0], '-i', video_paths[1],
             "-filter_complex",
-            "[0:v]fps=10,scale=-2:720:flags=lanczos,setsar=1[v0];"
+            "[0:v]rotate=PI,fps=10,scale=-2:720:flags=lanczos,setsar=1[v0];"
             "[1:v]fps=10,scale=-2:720:flags=lanczos,setsar=1[v1];"
             "[v0][v1]hstack=inputs=2:shortest=1[v]",
             "-map", "[v]", "-r", "10",
