@@ -150,7 +150,7 @@ class LiveQuadrotorSimulator:
             # Save images with timestamp
             frame_id = len(self.state_history)
             timestamp = f"{self.sim_time:.3f}".replace('.', '_')
-            print("timestep", timestamp)
+            # print("timestep", timestamp)
             rgb_folder = os.path.join(self.render_dir, "rgb")
             depth_folder = os.path.join(self.render_dir, "depth")
             plot_foler = os.path.join(self.render_dir, "plot")
@@ -370,7 +370,7 @@ class LiveQuadrotorSimulator:
             print(f"   Simplified path: {simplified_waypoints} waypoints")
             print(f"   Path cost: {goal_node.cost:.2f} meters")
             print(f"   Tree size: {len(tree)} nodes")
-            
+            # print(f"all waypoints (sorry fo the spam), {self.planner.waypoints}")
             # Show final path
             self._show_final_rrt_path()
             return True
@@ -494,7 +494,7 @@ class LiveQuadrotorSimulator:
         # Set initial state
         self.state[0:3] = self.env.start_point
         self.state[3:6] = 0  # Zero initial velocity
-        self.state[6:10] = [0, 0, 0, 1]  # Identity quaternion
+        self.state[6:10] = [1,0,0,0]# [1, 0, 0, 0]  # Identity quaternion
         self.state[10:13] = 0  # Zero angular rates
         
         # Initialize drone visualization
@@ -550,7 +550,7 @@ class LiveQuadrotorSimulator:
         self.trail_positions.append(current_pos.copy())
         
         if len(self.state_history) % self.render_interval == 0:
-            print("saving FPV")
+            # print("saving FPV")
             self._render_and_save()
 
 
@@ -573,7 +573,7 @@ class LiveQuadrotorSimulator:
             print(f"\n  Simulation time limit reached: {self.sim_time:.2f}s")
             return False
         
-        print(f'sim time:{self.sim_time}')
+        # print(f'sim time:{self.sim_time}')
         return True
     
     def update_execution_visualization(self):
