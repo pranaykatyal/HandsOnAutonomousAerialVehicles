@@ -26,7 +26,7 @@ __pycache__/
 # Other
 .DS_Store
 venv
-
+*.sh
 
 # Jupyter Notebook checkpoints
 .ipynb_checkpoints/
@@ -64,3 +64,5 @@ HoAAV/lib/
 venv/
 ENV/
 .venv/
+
+*/turing.sh

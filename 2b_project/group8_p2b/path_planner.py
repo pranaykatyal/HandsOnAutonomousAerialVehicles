@@ -26,10 +26,10 @@ class PathPlanner:
         # RRT* parameters
         self.max_iterations = 3000
         self.simplify_iterations = 1000
-        self.step_size = 1.0
-        self.goal_radius = 0.25
-        self.search_radius = 2.5
-        self.goal_bias = 0.15  # 15% bias towards goal
+        self.step_size = 0.1   
+        self.goal_radius = 0.04  
+        self.search_radius = 0.3 
+        self.goal_bias = 0.15 
         
     
     def plan(self):
@@ -165,7 +165,7 @@ class PathPlanner:
     def distance(self, new_position: Position, goal_point:Position):
         return np.linalg.norm(np.array(new_position) - np.array(goal_point))
     
-    def simplify_path(self, path_waypoints: List[Position], max_skip_distance=3.0, boundary_threshold=2.0):
+    def simplify_path(self, path_waypoints: List[Position], max_skip_distance=0.1, boundary_threshold=0.2):
         if len(path_waypoints) <= 2:
             return path_waypoints
         
@@ -188,7 +188,7 @@ class PathPlanner:
                 return False
             
             # Sample intermediate points along the shortcut
-            num_samples = max(3, int(np.linalg.norm(p2 - p1) / 0.3))
+            num_samples = max(3, int(np.linalg.norm(p2 - p1) / 0.05))  
             for i in range(1, num_samples):
                 t = i / num_samples
                 intermediate = p1 + t * (p2 - p1)
@@ -198,14 +198,14 @@ class PathPlanner:
                     return False
                 
                 # Extra check: ensure minimum clearance from obstacles
-                # Sample a small sphere around the point
+                # Sample a small sphere around the point (adjusted for -1 to 1 normalized space)
                 clearance_samples = [
-                    intermediate + np.array([0.15, 0, 0]),
-                    intermediate + np.array([-0.15, 0, 0]),
-                    intermediate + np.array([0, 0.15, 0]),
-                    intermediate + np.array([0, -0.15, 0]),
-                    intermediate + np.array([0, 0, 0.15]),
-                    intermediate + np.array([0, 0, -0.15])
+                    intermediate + np.array([0.02, 0, 0]),
+                    intermediate + np.array([-0.02, 0, 0]),
+                    intermediate + np.array([0, 0.02, 0]),
+                    intermediate + np.array([0, -0.02, 0]),
+                    intermediate + np.array([0, 0, 0.02]),
+                    intermediate + np.array([0, 0, -0.02])
                 ]
                 
                 for sample in clearance_samples:
@@ -280,10 +280,10 @@ class PathPlanner:
                    'ro-', markersize=8, linewidth=3, label='RRT* Path')
         
         if standalone:
-            ax.set_xlabel('X (m)')
-            ax.set_ylabel('Y (m)')
-            ax.set_zlabel('Z (m)')
-            ax.set_title('RRT* Tree and Path')
+            ax.set_xlabel('X')
+            ax.set_ylabel('Y')
+            ax.set_zlabel('Z')
+            ax.set_title('RRT* Tree and Path (Normalized Space)')
             ax.legend()
             plt.tight_layout()
             plt.show()

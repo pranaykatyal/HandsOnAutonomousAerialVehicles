@@ -7,13 +7,9 @@ class Environment3D:
     def __init__(self):
         self.boundary = []
         self.blocks = []
-        
-        
-        # Switch-case for start/goal points based on input i
-        # Usage: Environment3D(i=1) for map1, i=2 for map2, etc.
-        self.start_point = [-0.34, 0.12, 0.0036]
-        self.goal_point = [1, 0, 0.5]             
-        
+        self.start_point = [0, 0, -0.15]
+        self.goal_point = [0.7, 0.125, -0.20]
+    
         
         
         
@@ -23,7 +19,7 @@ class Environment3D:
         self.robotmarginz = tello.margin_z    # Robot margin for obstacle bloating
         print("robot margin z:", self.robotmarginz)
         
-        self.safety_margin = 0.25  # Safety margin around obstacles
+        self.safety_margin = 0.0025  # Safety margin around obstacles
 
     def parse_map_file(self, filename):
         """

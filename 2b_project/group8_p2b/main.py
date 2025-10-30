@@ -117,7 +117,7 @@ def run_trajectory_demo(map_file, start=None, goal=None):
         return False
     
     # Generate trajectory
-    traj_gen = TrajectoryGenerator(planner.waypoints)
+    traj_gen = TrajectoryGenerator(planner.waypoints, environment=env)
     result = traj_gen.generate_bspline_trajectory(num_points=200)
     
     if result[0] is not None:
@@ -132,12 +132,12 @@ def run_trajectory_demo(map_file, start=None, goal=None):
         print("Trajectory generation failed")
         return False
 
-def run_live_simulation(map_file, start=None, goal=None, save_data=False):
+def run_live_simulation(map_file, start=None, goal=None, save_data=False, clear_renders=True):
     """Run the live real-time simulation"""
     print("Running live quadrotor simulation...")
     
     # Initialize simulator
-    sim = LiveQuadrotorSimulator(map_file)
+    sim = LiveQuadrotorSimulator(map_file,clear_renders=clear_renders)
     
     # Run simulation
     success = sim.run_live_simulation(start=start, goal=goal)
@@ -165,7 +165,7 @@ def run_offline_simulation(map_file, start=None, goal=None, save_data=False):
     if not sim.initialize_simulation(start, goal):
         return False
     
-    print("🏃 Running fast simulation...")
+    print(" Running fast simulation...")
     sim.simulation_active = True
     
     try:
@@ -281,6 +281,9 @@ Examples:
         """)
     
     parser.add_argument('map_file', help='Path to the map file (e.g., map1.txt)')
+    parser.add_argument('--keep-old-renders', action='store_true',
+                   help='Keep old render images (uses timestamped folders)')
+
     
     # Mode selection
     parser.add_argument('--visualize-only', action='store_true',
@@ -328,6 +331,7 @@ Examples:
         
         elif args.offline:
             # Offline simulation with analysis
+            clear_renders = not args.keep_old_renders
             success = run_offline_simulation(
                 args.map_file,
                 start=args.start,

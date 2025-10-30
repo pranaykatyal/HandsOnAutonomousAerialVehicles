@@ -67,7 +67,7 @@ class TrajectoryGenerator:
             return
         
         xmin, ymin, zmin, xmax, ymax, zmax = self.environment.boundary
-        margin = 1.5  # Stay 0.8m away from boundaries
+        margin = 0.2  # Stay 0.2 units away from boundaries in normalized space (-1 to 1)
         
         clamped_count = 0
         for i in range(len(self.waypoints)):
@@ -142,6 +142,29 @@ class TrajectoryGenerator:
         
         return A_ineq, b_ineq
     
+    def _resample_trajectory(self, points, num_points=50):
+        """Resample trajectory to have exactly num_points evenly spaced"""
+        if len(points) <= num_points:
+            return points
+        
+        # Use linear interpolation to resample
+        indices = np.linspace(0, len(points) - 1, num_points)
+        resampled = np.zeros((num_points, 3))
+        
+        for i, idx in enumerate(indices):
+            idx_floor = int(np.floor(idx))
+            idx_ceil = int(np.ceil(idx))
+            
+            if idx_floor == idx_ceil:
+                resampled[i] = points[idx_floor]
+            else:
+                # Linear interpolation
+                alpha = idx - idx_floor
+                resampled[i] = (1 - alpha) * points[idx_floor] + alpha * points[idx_ceil]
+        
+        return resampled
+    
+    
     def generate_bspline_trajectory(self, num_points=None):
         """
         Generate minimum snap trajectory (B-spline-like smooth trajectory)
@@ -161,7 +184,7 @@ class TrajectoryGenerator:
         print("Generating minimum snap trajectory...")
         self._clamp_waypoints_to_boundaries()
         n = len(self.waypoints)
-        n_segments = n - 1
+        n_segments = n
         
         if num_points is None:
             num_points = 50  # Default points per segment
@@ -171,7 +194,7 @@ class TrajectoryGenerator:
         n_coeffs = poly_order + 1  # 8 coefficients
         
         # STEP 1: Allocate time for each segment
-        segment_times = self._allocate_segment_times()
+        segment_times = self._allocate_segment_times()*1.5  # Scale up for safety
         
         print(f"Solving minimum snap optimization for {n_segments} segments...")
         
@@ -204,7 +227,15 @@ class TrajectoryGenerator:
         final_velocities = np.stack(all_velocities, axis=-1)
         final_accelerations = np.stack(all_accelerations, axis=-1)
         
-        
+        desired_total_points = len(self.waypoints)
+        final_trajectory = self._resample_trajectory(final_trajectory, num_points=desired_total_points)
+        # Recalculate time points for resampled trajectory
+        # final_time_points = np.linspace(0, self.trajectory_duration, desired_total_points)
+
+        # Recalculate velocities and accelerations
+        # dt = self.trajectory_duration / (desired_total_points - 1)
+        # final_velocities = self._calculate_velocities_from_positions(final_trajectory, dt)
+        # final_accelerations = self._calculate_accelerations_from_velocities(final_velocities, dt)
         # STEP 4: COLLISION CHECK - uses your environment's methods!
         is_safe = self._check_trajectory_collisions(final_trajectory, check_every_n=1)
         
@@ -231,11 +262,11 @@ class TrajectoryGenerator:
         
         self.trajectory_duration = final_time_points[-1]
         
-        print(f"\nGenerated minimum snap trajectory:")
+        print(f"\nGenerated minimum snap trajectory (Normalized Space):")
         print(f"  Total points: {len(final_trajectory)}")
         print(f"  Duration: {self.trajectory_duration:.2f} seconds")
-        print(f"  Max velocity: {np.max(np.linalg.norm(final_velocities, axis=1)):.2f} m/s")
-        print(f"  Max acceleration: {np.max(np.linalg.norm(final_accelerations, axis=1)):.2f} m/s²")
+        print(f"  Max velocity: {np.max(np.linalg.norm(final_velocities, axis=1)):.2f} units/s")
+        print(f"  Max acceleration: {np.max(np.linalg.norm(final_accelerations, axis=1)):.2f} units/s²")
         print(f"  Collision-free: {'YES ' if is_safe else 'NO '}")
         
         # Visualize
@@ -255,7 +286,7 @@ class TrajectoryGenerator:
             base_time = distance / base_speed
             
             # Factor 1: Curvature - slow down at sharp turns
-            curvature_factor = 1.0  # FIXED: default to 1.0, not 10
+            curvature_factor = 1.0
             if i > 0:
                 v_in = self.waypoints[i] - self.waypoints[i-1]
                 v_out = self.waypoints[i+1] - self.waypoints[i]
@@ -266,11 +297,10 @@ class TrajectoryGenerator:
                 cos_angle = np.dot(v_in_norm, v_out_norm)
                 cos_angle = np.clip(cos_angle, -1, 1)
                 
-                # Sharp turn → increase time (1.0 to 1.5×)
                 curvature_factor = 1.0 + 0.5 * (1 - cos_angle)
             
             # Factor 2: Boundary proximity
-            boundary_factor = 1.0  # FIXED: default to 1.0, not 5
+            boundary_factor = 1.0 
             if self.environment and self.environment.boundary:
                 xmin, ymin, zmin, xmax, ymax, zmax = self.environment.boundary
                 mid_point = (self.waypoints[i] + self.waypoints[i+1]) / 2
@@ -286,7 +316,6 @@ class TrajectoryGenerator:
                 
                 min_boundary_dist = min(distances_to_boundaries)
                 
-                # Near boundary → reduce time slightly (0.7 to 1.0×)
                 if min_boundary_dist < 2.0:
                     boundary_factor = 1.5 + 0.3 * (min_boundary_dist / 2.0)
             
@@ -300,9 +329,9 @@ class TrajectoryGenerator:
         
         return np.array(segment_times)
     def _limit_trajectory_dynamics(self, positions, velocities, accelerations, time_points):
-        """Limit velocities and accelerations to physical constraints"""
-        max_vel = 6.0  # m/s
-        max_acc = 4.0  # m/s² (leave margin below controller limit)
+        """Limit velocities and accelerations to physical constraints (normalized space -1 to 1)"""
+        max_vel = 0.6  # units/s in normalized space (-1 to 1)
+        max_acc = 0.4  # units/s² in normalized space (leave margin below controller limit)
         
         # Limit velocities
         vel_magnitudes = np.linalg.norm(velocities, axis=1)

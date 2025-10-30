@@ -6,29 +6,28 @@ from matplotlib.patches import Polygon
 import subprocess
 import os
 
-def gen_vizflyt(img_dir,fps,save_dir):
+def ffmpeging_video(img_dir,delineator,fps,save_dir,img_type='.png'):
     # Check if directory exists and has frames
     if not os.path.exists(img_dir):
-        print(f'irectory {img_dir} does not exist!')
+        print(f'directory {img_dir} does not exist!')
+        return False
+    
+    if not os.path.exists(save_dir):
+        print(f'directory {save_dir} did not exist ')
         return False
 
     # Check if there are any frame files
-    depth_files = [f for f in os.listdir(img_dir) if f.startswith('depth_') and f.endswith('.png')]
-    rgb_files = [f for f in os.listdir(img_dir) if f.startswith('rgb_') and f.endswith('.png')]
-    if not depth_files:
-        print(f'No depth_files')
+    plot_files = [f for f in os.listdir(img_dir) if f.startswith(delineator) and f.endswith(img_type)]
+    if not plot_files:
+        print(f'No plot_files')
         return False
-    if not rgb_files:
-        print(f'No depth_files')
-        return False
-        
-    video_path = os.path.join(img_dir, 'VizFlyt_FPV.mp4')
+
+    video_path = os.path.join(save_dir, f'{delineator}.mp4')
     
     # ffmpeg command to create video from frames
     cmd = [
         'ffmpeg', '-y', '-loglevel', 'error', '-framerate', str(fps),
-        '-pattern_type', 'glob', '-i', os.path.join(img_dir, 'rgb_*_*.png'),
-        '-vf', 'hflip,vflip',
+        '-pattern_type', 'glob', '-i', os.path.join(img_dir,f'{delineator}*{img_type}'),
         '-c:v', 'libx264', '-pix_fmt', 'yuv420p', video_path
     ]
     
@@ -42,11 +41,9 @@ def gen_vizflyt(img_dir,fps,save_dir):
     except FileNotFoundError:
         print(f'ffmpeg not found. Please install ffmpeg to create videos.')
         return
-    
 
 
-
-def create_combined_video(dataset_dir, video_paths, method_names):
+def create_combined_video(dataset_dir, video_paths):
     """
     Create a combined grid video from individual method videos.
     
@@ -56,18 +53,22 @@ def create_combined_video(dataset_dir, video_paths, method_names):
         method_names: List of method names corresponding to video paths
     """
     combined_path = os.path.join(dataset_dir, 'combined.mp4')
-    
-    if len(video_paths) == 4:
-        # 2x2 grid for 4 videos
+    if len(video_paths) == 2:
+        # 2 videos in a horizontal row
         cmd_grid = [
             'ffmpeg', '-y', '-loglevel', 'error',
-            '-i', video_paths[0], '-i', video_paths[1], '-i', video_paths[2], '-i', video_paths[3],
-            '-filter_complex',
-            '[0:v][1:v]hstack=inputs=2[top];[2:v][3:v]hstack=inputs=2[bottom];[top][bottom]vstack=inputs=2',
-            '-c:v', 'libx264', '-pix_fmt', 'yuv420p', combined_path
+            '-i', video_paths[0], '-i', video_paths[1],
+            "-filter_complex",
+            "[0:v]rotate=PI,fps=10,scale=-2:720:flags=lanczos,setsar=1[v0];"
+            "[1:v]fps=10,scale=-2:720:flags=lanczos,setsar=1[v1];"
+            "[v0][v1]hstack=inputs=2:shortest=1[v]",
+            "-map", "[v]", "-r", "10",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+            "-an",
+            combined_path
         ]
-        layout = "2x2"
-        
+        layout = "1x2 horizontal"
+           
     elif len(video_paths) == 5:
         # 5 videos in a horizontal row - simple and clean
         cmd_grid = [
@@ -106,7 +107,7 @@ def create_combined_video(dataset_dir, video_paths, method_names):
         layout = f"1x{len(video_paths)}"
     
     print(f'Combining videos into {layout} grid for {dataset_dir}...')
-    print(f'Methods in grid: {", ".join(method_names)}')
+    # print(f'Methods in grid: {", ".join(method_names)}')
     
     try:
         subprocess.run(cmd_grid, check=True)
