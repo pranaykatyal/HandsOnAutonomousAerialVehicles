@@ -142,6 +142,29 @@ class TrajectoryGenerator:
         
         return A_ineq, b_ineq
     
+    def _resample_trajectory(self, points, num_points=50):
+        """Resample trajectory to have exactly num_points evenly spaced"""
+        if len(points) <= num_points:
+            return points
+        
+        # Use linear interpolation to resample
+        indices = np.linspace(0, len(points) - 1, num_points)
+        resampled = np.zeros((num_points, 3))
+        
+        for i, idx in enumerate(indices):
+            idx_floor = int(np.floor(idx))
+            idx_ceil = int(np.ceil(idx))
+            
+            if idx_floor == idx_ceil:
+                resampled[i] = points[idx_floor]
+            else:
+                # Linear interpolation
+                alpha = idx - idx_floor
+                resampled[i] = (1 - alpha) * points[idx_floor] + alpha * points[idx_ceil]
+        
+        return resampled
+    
+    
     def generate_bspline_trajectory(self, num_points=None):
         """
         Generate minimum snap trajectory (B-spline-like smooth trajectory)
@@ -161,7 +184,7 @@ class TrajectoryGenerator:
         print("Generating minimum snap trajectory...")
         self._clamp_waypoints_to_boundaries()
         n = len(self.waypoints)
-        n_segments = n - 1
+        n_segments = n
         
         if num_points is None:
             num_points = 50  # Default points per segment
@@ -204,7 +227,15 @@ class TrajectoryGenerator:
         final_velocities = np.stack(all_velocities, axis=-1)
         final_accelerations = np.stack(all_accelerations, axis=-1)
         
-        
+        desired_total_points = len(self.waypoints)
+        final_trajectory = self._resample_trajectory(final_trajectory, num_points=desired_total_points)
+        # Recalculate time points for resampled trajectory
+        # final_time_points = np.linspace(0, self.trajectory_duration, desired_total_points)
+
+        # Recalculate velocities and accelerations
+        # dt = self.trajectory_duration / (desired_total_points - 1)
+        # final_velocities = self._calculate_velocities_from_positions(final_trajectory, dt)
+        # final_accelerations = self._calculate_accelerations_from_velocities(final_velocities, dt)
         # STEP 4: COLLISION CHECK - uses your environment's methods!
         is_safe = self._check_trajectory_collisions(final_trajectory, check_every_n=1)
         

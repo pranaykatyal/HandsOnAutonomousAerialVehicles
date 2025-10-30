@@ -1,4 +1,6 @@
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
@@ -44,7 +46,24 @@ class LiveQuadrotorSimulator:
         # renderer
         self.splatConfig    = './p2phaseb_colmap_splat/p2phaseb_colmap/splatfacto/2025-10-07_134702/config.yml'
         self.renderSettings = './vizflyt_viewer/render_settings/render_config.json'
-        self.renderer = SplatRenderer(self.splatConfig, self.renderSettings)
+        try:
+            self.renderer = SplatRenderer(self.splatConfig, self.renderSettings)
+            self.rendering_enabled = True
+            print(" Gaussian Splat Renderer initialized")
+        except Exception as e:
+            print(f" Renderer failed: {e}")
+            self.rendering_enabled = False
+        
+        
+        self.render_every_n_steps = 2     
+        self.frame_count = 0              
+        self.saved_frames = []            
+        self.render_rgb_dir = None        
+        self.render_depth_dir = None      
+        self.render_plot_dir = None       
+        self.video_dir = None             
+        self.setup_output_directories()
+        # self.renderer = SplatRenderer(self.splatConfig, self.renderSettings)
         
         # --- HYBRID FOLDER HANDLING HERE ---
         if clear_renders:
@@ -132,7 +151,42 @@ class LiveQuadrotorSimulator:
         yaw, pitch, roll = q.yaw_pitch_roll
         return np.array([roll, pitch, yaw])  
      
-     
+    def create_side_by_side_video(self, left_video, right_video, output_name="combined"):
+        """Create side-by-side video combining FPV and plot view"""
+        import subprocess
+        
+        output_path = self.video_dir / f"{output_name}.mp4"
+        
+        print(f"🎬 Creating side-by-side video...")
+        
+        # Scale both to same height (1080p), then stack horizontally
+        cmd = [
+            'ffmpeg', '-y',
+            '-i', str(left_video),
+            '-i', str(right_video),
+            '-filter_complex', 
+            '[0:v]scale=-1:1080[left];[1:v]scale=-1:1080[right];[left][right]hstack=inputs=2[v]',
+            '-map', '[v]',
+            '-c:v', 'libx264',
+            '-pix_fmt', 'yuv420p',
+            '-crf', '18',
+            '-preset', 'slow',
+            str(output_path)
+        ]
+        
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            
+            if result.returncode == 0:
+                print(f" Combined video created: {output_path}")
+                return output_path
+            else:
+                print(f" ffmpeg error: {result.stderr}")
+                return None
+                
+        except Exception as e:
+            print(f" Error creating combined video: {e}")
+            return None
      
     def _render_and_save(self):
         """Render current view and save RGB and depth images"""
@@ -185,7 +239,7 @@ class LiveQuadrotorSimulator:
     
     def setup_visualization(self):
         """Setup the 3D visualization for step-by-step planning"""
-        plt.ion()  # Interactive mode
+        # plt.ion()  # Interactive mode
         self.fig = plt.figure(figsize=(16, 10))
         self.ax = self.fig.add_subplot(111, projection='3d')
         
@@ -467,7 +521,7 @@ class LiveQuadrotorSimulator:
             
             # Add velocity vectors at key points
             vector_sample = max(1, len(trajectory_points) // 20)
-            for i in range(0, len(trajectory_points), vector_sample):
+            for i in range(0, min(len(trajectory_points), len(velocities)), vector_sample):
                 pos = trajectory_points[i]
                 vel = velocities[i] * 0.4  # Scale for visualization
                 self.ax.quiver(pos[0], pos[1], pos[2], 
@@ -558,6 +612,18 @@ class LiveQuadrotorSimulator:
         # Limit trail length
         if len(self.trail_positions) > self.max_trail_length:
             self.trail_positions.pop(0)
+        
+        # P2B: Render frames periodically
+        step_number = len(self.state_history)
+        if self.rendering_enabled and (step_number % self.render_every_n_steps == 0):
+            rgb_frame, depth_frame = self.render_current_view()
+            if rgb_frame is not None:
+                self.save_rendered_frame(rgb_frame, depth_frame)
+                self.save_plot_frame()
+                
+                # Progress updates
+                if self.frame_count % 25 == 0:
+                    print(f"  Rendered {self.frame_count} frames at t={self.sim_time:.2f}s")
         
         # Check goal reached
         if self.env.goal_point is not None:
@@ -670,6 +736,11 @@ class LiveQuadrotorSimulator:
         
         # Print results
         self._print_simulation_results()
+        
+        # create videos
+        if self.rendering_enabled:              
+            self.finalize_videos()              
+        
         
         # Keep plot open
         print("\n Simulation complete. Close plot window to continue...")
