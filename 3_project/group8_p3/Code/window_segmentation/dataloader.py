@@ -47,9 +47,9 @@ class WindowDataset(Dataset):
         image_idx = idx // 10
         rgb, label = self.DATA[image_idx]
         # add the random noises if the image is not the original
-        if idx % 10 == 0:
+        if idx % 100 == 0:
             pass
-        elif idx % 10 == 1:
+        elif idx % 100 == 1:
             rgb, label = self._get_blank_image()
             rgb = self.add_background(rgb)
             rgb = self.guass_noise(rgb)
@@ -89,7 +89,7 @@ class WindowDataset(Dataset):
     def color_jit(self, input_img):
         color_jitter = T.ColorJitter(
             brightness=(0.5, 2.0), contrast=(0.33, 3.0),
-            saturation=(0.5, 2.0), hue=(-0.35, 0.35))
+            saturation=(0.5, 2.0), hue=(-0.2, 0.2))
         return color_jitter(input_img)
 
     def add_background(self, img):
