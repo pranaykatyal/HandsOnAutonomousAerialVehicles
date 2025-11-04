@@ -23,7 +23,9 @@ class WindowDataset(Dataset):
         self.background_path = ds_path + background_folder
         self.img_w = img_w
         self.img_h = img_h
-
+        self.blank_image_prob = 15
+        self.backgrounds = []
+        self._load_background_images()
         print(self._get_random_background_path())
         for file in os.listdir(img_path):
             if file.endswith(".png"):
@@ -34,7 +36,7 @@ class WindowDataset(Dataset):
                 self.DATA.append([img, seg])
         print("Dataset initialized")
     def __len__(self):
-        N = len(self.DATA * 10)
+        N = len(self.DATA * 2)
         return N
 
     # we do a little trick: to make the 100 000 images, if the image requested number is 47589, we will return image 4758 and a random augmentation (1-9, 0 will return the original)
@@ -44,12 +46,12 @@ class WindowDataset(Dataset):
         # convert them to tensors
         # apply any transform (blur, noise...)
 
-        image_idx = idx // 10
+        image_idx = idx // 2
         rgb, label = self.DATA[image_idx]
         # add the random noises if the image is not the original
         if idx % 100 == 0:
             pass
-        elif idx % 100 == 1:
+        elif idx % 100 < self.blank_image_prob:
             rgb, label = self._get_blank_image()
             rgb = self.add_background(rgb)
             rgb = self.guass_noise(rgb)
@@ -73,7 +75,7 @@ class WindowDataset(Dataset):
     
     def guass_noise(self, input_img):
         inputs = T.ToTensor()(input_img)
-        noise = inputs + torch.rand_like(inputs) * random.uniform(0, 1.0)
+        noise = inputs + torch.rand_like(inputs) * random.uniform(0, .90)
         noise = torch.clip(noise, 0, 1.)
         output_image = T.ToPILImage()
         image = output_image(noise)
@@ -88,8 +90,8 @@ class WindowDataset(Dataset):
 
     def color_jit(self, input_img):
         color_jitter = T.ColorJitter(
-            brightness=(0.5, 2.0), contrast=(0.33, 3.0),
-            saturation=(0.5, 2.0), hue=(-0.2, 0.2))
+            brightness=(0.5, 1.50), contrast=(0.33, 2.50),
+            saturation=(0.5, 1.50), hue=(-0.2, 0.2))
         return color_jitter(input_img)
 
     def add_background(self, img):
@@ -110,11 +112,7 @@ class WindowDataset(Dataset):
 
     def _get_random_background_path(self):
         # select a random background image
-        background_path = random.choice([
-            os.path.join(self.background_path, p)
-            for p in os.listdir(self.background_path)
-            if p.endswith(('jpg'))
-        ])
+        background_path = random.choice(self.backgrounds)
         return background_path
     
     def _get_blank_image(self):
@@ -124,6 +122,12 @@ class WindowDataset(Dataset):
         mask = Image.fromarray(mask, mode="L")
         return image, mask
     
+    def _load_background_images(self):
+        for background_path in os.listdir(self.background_path):
+            if background_path.endswith(('jpg')):
+                self.backgrounds.append(os.path.join(self.background_path, background_path))
+        print(f"done loading background images {self.backgrounds}")
+
 
 # verify the dataloader
 if __name__ == "__main__":

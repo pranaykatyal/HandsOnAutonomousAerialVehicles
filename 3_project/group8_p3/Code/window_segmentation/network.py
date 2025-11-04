@@ -46,15 +46,19 @@ class Network(nn.Module):
         # x = self.maxPool(x)
         if self.debug:
             print("X1", x_1.shape)
+        
         x_2 = self.down1(x_1)
         if self.debug:
             print("X2", x_2.shape)
+        
         x_3 = self.down2(x_2)
         if self.debug:
             print("X3", x_3.shape)
+        
         x_4 = self.down3(x_3)
         if self.debug:
             print("X4", x_4.shape)
+        
         x_5 = self.down4(x_4)
         if self.debug:
             print("X5", x_5.shape)
@@ -63,12 +67,15 @@ class Network(nn.Module):
         x = self.up1(x_5, x_4)
         if self.debug:
             print("x_0_up", x.shape)
+        
         x = self.up2(x, x_3)
         if self.debug:
             print("x_1_up", x.shape)
+        
         x = self.up3(x, x_2)
         if self.debug:
             print("x_2_up", x.shape)
+        
         x = self.up4(x, x_1)
         if self.debug:
             print("x_3_up", x.shape)

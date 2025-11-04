@@ -78,8 +78,8 @@ def val(dataloader, model, loss_fn, epochstep):
             label = label.to(device)
             
             pred = model(rgb)
-            print(pred)
-            print(pred.shape)
+            # print(pred)
+            # print(pred.shape)
             loss = loss_fn(pred, label)       
 
             epochloss += loss.item()
@@ -102,13 +102,21 @@ def val(dataloader, model, loss_fn, epochstep):
     wandb.log({
         "epoch/loss/val": epochloss,
                 })
+                
+base = "parameter"
+n = 0
+while True:
+    _model_folder_name = f"{base}{n}"
+    TRAINED_MDL_PATH = os.path.join(JOB_FOLDER, _model_folder_name)
+    if not os.path.exists(TRAINED_MDL_PATH):
+        os.makedirs(TRAINED_MDL_PATH)
+        break
+    n += 1
 
 
-if os.path.exists(JOB_FOLDER):
-    shutil.rmtree(JOB_FOLDER)
-    print(f"deleted previous job folder from {JOB_FOLDER}")
-os.mkdir(JOB_FOLDER)
-os.mkdir(TRAINED_MDL_PATH)
+if not os.path.exists(JOB_FOLDER):
+    os.mkdir(JOB_FOLDER)
+
 
 # DATASET ---------------------------------------------------------------------------
 datatype = torch.float32
@@ -132,6 +140,7 @@ valLoader = torch.utils.data.DataLoader(valset, BATCH_SIZE, True, num_workers=NU
 
 # Network and optimzer --------------------------------------------------------------
 model = Network(3, 1)
+model.load_state_dict(torch.load(PRETRAINED_PATH, weights_only=True))
 model = model.to(device)
 
 # LOSS FUNCTION AND OPTIMIZER
@@ -159,7 +168,7 @@ wandb.init(
 )
 
 # STORE ORIGINAL PARAMTERS
-trainedMdlPath = TRAINED_MDL_PATH + f"test.pth"
+trainedMdlPath = TRAINED_MDL_PATH + f"/test.pth"
 torch.save(model.state_dict(), trainedMdlPath)
 
 # SCRIPT ---------------------------------------------------------------------------------
@@ -175,5 +184,5 @@ for eIndex in range(epochs):
     print(" validation:")
     val(valLoader, model, lossFn, eIndex)
 
-    trainedMdlPath = TRAINED_MDL_PATH + f"{eIndex}.pth"
+    trainedMdlPath = TRAINED_MDL_PATH + f"/{eIndex}.pth"
     torch.save(model.state_dict(), trainedMdlPath)
