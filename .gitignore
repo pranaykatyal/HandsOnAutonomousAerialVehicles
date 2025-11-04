@@ -65,4 +65,6 @@ venv/
 ENV/
 .venv/
 
-*/turing.sh
+*/turing.
+wandb/
+logs/

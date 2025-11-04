@@ -8,7 +8,7 @@
 #SBATCH --error=/home/pkatyal/logs/p2b_%j.err
 
 #SBATCH -N 1
-#SBATCH -n 8
+#SBATCH -n 32
 #SBATCH --mem=64G
 #SBATCH --gres=gpu:1
 #SBATCH -C H100|A100|V100|A30
