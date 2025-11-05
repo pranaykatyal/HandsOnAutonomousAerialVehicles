@@ -90,8 +90,8 @@ class WindowDataset(Dataset):
 
     def color_jit(self, input_img):
         color_jitter = T.ColorJitter(
-            brightness=(0.5, 1.50), contrast=(0.33, 2.50),
-            saturation=(0.5, 1.50), hue=(-0.2, 0.2))
+            brightness=(0.3, 2.0), contrast=(0.33, 3.0),
+            saturation=(0.3, 2.0), hue=(-0.35, 0.35))
         return color_jitter(input_img)
 
     def add_background(self, img):

@@ -36,6 +36,7 @@ def train(dataloader, model, loss_fn, optimizer, epochstep):
         optimizer.zero_grad()
         
         pred = model(rgb)
+        print(f'logits info: min{pred.min()}, max:{pred.max()}')
         loss = loss_fn(pred, label)        
         loss.backward()
         optimizer.step()

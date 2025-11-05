@@ -7,8 +7,9 @@ from pyquaternion import Quaternion
 from control import QuadrotorController
 from quad_dynamics import model_derivative
 import tello
-
-
+from window_segmentation.window_segmentation import Window_Segmentaion
+from window_segmentation.network import Network
+from params import *
 
 ################################################
 #### Navigation Function ########################
@@ -170,13 +171,21 @@ def goToWaypoint(currentPose, targetPose, velocity=0.1):
 #### Main Function ##############################
 ################################################
 def main(renderer):
+    #set up model 
+    segmentor = Window_Segmentaion(torch_network=Network,
+                                   model_path=TRAINED_MODEL_PATH,
+                                   model_thresh=.98,
+                                   in_ch=3,out_ch=1,img_h=256,img_w=256)
+
+
+
     # Create log directory if it doesn't exist
     import os
     os.makedirs('./log', exist_ok=True)
     
     # Initialize pose - Position: x, y, z in meters | Orientation: roll, pitch, yaw in radians
     currentPose = {
-        'position': np.array([0.0, 0.0, 0.0]),  # NED origin
+        'position': np.array([0.0, 0.0, -0.2]),  # NED origin
         'rpy': np.radians([0.0, 0.0, 0.0])      # Orientation origin
     }
     
@@ -192,6 +201,13 @@ def main(renderer):
             currentPose['rpy']
         )
 
+        # brightness_increase = 55
+        # boosted_color_image = np.clip((color_image.astype(int)*1.85) + brightness_increase, 0, 255).astype(np.uint8)
+        segmented = segmentor.get_pred(color_image)
+        print(f'segmentd stats {segmented.max()}, main:{segmented.min()}')
+        segmented = cv2.normalize(segmented, None, 0, 255, cv2.NORM_MINMAX)
+        segmented = segmented.astype(np.uint8)
+        cv2.imwrite(f'segmentaion{windowCount}.png', segmented)
         #####################################################
         ### DETECT THE WINDOW AND NAVIGATION THROUGH IT #####
         #####################################################
@@ -207,13 +223,13 @@ def main(renderer):
         ## you can tweak the trajectory planner as well if you want
         
         # Example target (you should compute this from windowMask and depth)
-        targetPose = np.array([1.0 * (windowCount + 1), 0.0, 0.0])
+        # targetPose = np.array([1.0 * (windowCount + 1), 0.0, 0.0])
         
         # Navigate to the target waypoint
-        currentPose = goToWaypoint(currentPose, targetPose, velocity=1.0)
+        # currentPose = goToWaypoint(currentPose, targetPose, velocity=1.0)
         
         # Save the color image
-        color_image_bgr = cv2.cvtColor(color_image)
+        color_image_bgr = cv2.cvtColor(color_image,cv2.COLOR_RGB2BGR)
         cv2.imwrite(f'rendered_frame_window_{windowCount}.png', color_image_bgr)
 
         # Save the depth image (normalized for visualization)
@@ -222,7 +238,8 @@ def main(renderer):
         cv2.imwrite(f'depth_frame_window_{windowCount}.png', depth_normalized)
 
         print(f'Saved frame for window {windowCount} at position {currentPose["position"]}')
-
+       
+        return False
 
 if __name__ == "__main__":
     config_path = "../data/washburn-env6-itr0-1fps/washburn-env6-itr0-1fps_nf_format/splatfacto/2025-03-06_201843/config.yml"
