@@ -19,6 +19,8 @@ from nerfstudio.cameras.cameras import CameraType
 
 import math
 import numpy as np
+
+import numpy as np
 from scipy.spatial.transform import Rotation as R
 from transforms3d.euler import mat2euler
 from scipy.spatial.transform import Rotation as R
@@ -119,20 +121,6 @@ class SplatRenderer:
         self.colormap_options_depth = ColormapOptions(colormap='gray', normalize=True)
 
 
-    def getObstaclePoses(self, position_ned):
-        """
-        Transform obstacle coordinates from NED frame to Splat frame
-        """
-        
-        pos_update = self.init_orientation @ np.array([
-            [position_ned[1]],   # East
-            [-position_ned[2]],  # Up
-            [-position_ned[0]]   # Forward
-        ])
-        pos_splat = self.init_position + pos_update.flatten()
-        
-        return pos_splat  # Return 3D point
-    
     def getNWUPose(self,position, orientation_rpy):
         pos_update = self.init_orientation @ np.array([
             [position[1]],  # East
@@ -169,7 +157,7 @@ class SplatRenderer:
         rotation = R.from_matrix(Rot)
         quat = rotation.as_quat()  # x, y, z, w
         quat_wxyz = np.roll(quat, 1)  # w, x, y, z
-        getNEDPose
+        
         # Convert the quaternion back to Euler angles (roll, pitch, yaw)
         euler_angles = rotation.as_euler('xyz', degrees=True)
         roll, pitch, yaw = euler_angles  # In degrees

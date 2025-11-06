@@ -7,13 +7,8 @@ from pyquaternion import Quaternion
 from control import QuadrotorController
 from quad_dynamics import model_derivative
 import tello
-from window_segmentation.window_segmentation import Window_Segmentaion
-from window_segmentation.network import Network
-from params import *
-<<<<<<< HEAD
-from window_detector import WindowDetector
-=======
->>>>>>> 273d76bfe1c93d827a6a02cb162e8fb0114638d5
+
+
 
 ################################################
 #### Navigation Function ########################
@@ -27,7 +22,7 @@ def goToWaypoint(currentPose, targetPose, velocity=0.1):
         'position': [x, y, z] in NED frame (meters)
         'rpy': [roll, pitch, yaw] in radians
     - targetPose: [x, y, z] target position in NED frame (meters)
-    - velocity: cruise velocity (m/s), default 0.1
+    - velocity: cruise velocity (m/s), default 1.0
     
     Returns:
     - newPose: Dictionary with updated 'position' and 'rpy'
@@ -170,200 +165,33 @@ def goToWaypoint(currentPose, targetPose, velocity=0.1):
     
     return newPose
 
-def navigate_through_window(renderer, currentPose, segmentor, detector, windowCount, 
-                           max_iterations=10, step_distance=0.5):
-    """
-    Visual servoing approach to navigate through a window
-    
-    Parameters:
-    - renderer: SplatRenderer instance
-    - currentPose: Current drone pose dictionary
-    - segmentor: Window segmentation model
-    - detector: WindowDetector instance
-    - windowCount: Current window number (for logging)
-    - max_iterations: Maximum alignment iterations
-    - step_distance: Distance to move forward each step (meters)
-    
-    Returns:
-    - success: bool, whether window was successfully traversed
-    - currentPose: Updated pose after navigation
-    """
-    
-    print(f"\n{'='*60}")
-    print(f"Window {windowCount + 1} - Visual Servoing Approach")
-    print(f"{'='*60}")
-    
-    for iteration in range(max_iterations):
-        print(f"\n--- Iteration {iteration + 1}/{max_iterations} ---")
-        
-        # Step 1: Render current view
-        color_image, depth_image, metric_depth = renderer.render(
-            currentPose['position'], 
-            currentPose['rpy']
-        )
-        
-        # Step 2: Segment windows
-        segmented = segmentor.get_pred(color_image)
-        segmented = cv2.normalize(segmented, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
-        
-        # Step 3: Detect windows
-        detections = detector.process_segmentation(segmented)
-        
-        if not detections:
-            print("⚠️  No windows detected! Stopping.")
-            return False, currentPose
-        
-        # Step 4: Select closest window
-        closest_window = detector.get_closest_window(detections)
-        
-        # Step 5: Calculate alignment error
-        error_x, error_y, error_mag = detector.calculate_alignment_error(closest_window)
-        area_pct = closest_window['area'] / detector.image_area * 100
-        
-        print(f"Window Stats:")
-        print(f"  Area: {area_pct:.1f}% of image")
-        print(f"  Alignment error: {error_mag:.1f} pixels ({error_x:+.0f}x, {error_y:+.0f}y)")
-        print(f"  Center: {closest_window['center']}")
-        
-        # Step 6: Save visualization
-        vis_img = detector.visualize_detection(color_image, detections, closest_window)
-        cv2.imwrite(f'./log/window_{windowCount}_iter_{iteration}_detection.png', 
-                   cv2.cvtColor(vis_img, cv2.COLOR_RGB2BGR))
-        cv2.imwrite(f'./log/window_{windowCount}_iter_{iteration}_segmentation.png', segmented)
-        
-        # Step 7: Decision logic
-        is_aligned = detector.is_aligned(closest_window)
-        is_close = detector.is_close_enough(closest_window)
-        
-        if is_aligned and is_close:
-            print(f"✅ ALIGNED & CLOSE - Flying through window!")
-            
-            # Final push through the window
-            target = currentPose['position'].copy()
-            target[0] += 2.0  # Move forward 2 meters to ensure we're through
-            
-            currentPose = goToWaypoint(currentPose, target, velocity=1.0)
-            
-            print(f"🎯 Successfully passed through window {windowCount + 1}!")
-            return True, currentPose
-        
-        elif is_aligned:
-            print(f"→  Aligned but far - approaching...")
-            distance_factor = detector.get_approach_distance(closest_window)
-            move_distance = step_distance * distance_factor
-            
-            # Move straight forward (already aligned)
-            target = currentPose['position'].copy()
-            target[0] += move_distance
-            
-        else:
-            print(f"⟲ Not aligned - correcting position...")
-            
-            # Compute target with lateral correction
-            target = detector.compute_navigation_target(
-                currentPose['position'], 
-                closest_window, 
-                forward_distance=step_distance * 0.5  # Move slower while correcting
-            )
-        
-        # Step 8: Navigate to target
-        print(f"Moving to: {target}")
-        currentPose = goToWaypoint(currentPose, target, velocity=0.3)
-    
-    # If we exhausted iterations without passing through
-    print(f"⚠️  Max iterations reached without passing through window")
-    return False, currentPose
-
 
 ################################################
 #### Main Function ##############################
 ################################################
 def main(renderer):
-<<<<<<< HEAD
-    """Main racing loop - navigate through multiple windows"""
-    
-    # Set up segmentation model
-    segmentor = Window_Segmentaion(
-        torch_network=Network,
-        model_path=TRAINED_MODEL_PATH,
-        model_thresh=0.98,
-        in_ch=3, 
-        out_ch=1, 
-        img_h=256, 
-        img_w=256
-    )
-    
-    # Set up window detector (adjust dimensions based on render_settings_2.json)
-    detector = WindowDetector(image_width=1440, image_height=1080)
-    
-    # Create log directory
-=======
-    #set up model 
-    segmentor = Window_Segmentaion(torch_network=Network,
-                                   model_path=TRAINED_MODEL_PATH,
-                                   model_thresh=.98,
-                                   in_ch=3,out_ch=1,img_h=256,img_w=256)
-
-
-
     # Create log directory if it doesn't exist
->>>>>>> 273d76bfe1c93d827a6a02cb162e8fb0114638d5
     import os
     os.makedirs('./log', exist_ok=True)
     
-    # Initialize pose - NED frame
+    # Initialize pose - Position: x, y, z in meters | Orientation: roll, pitch, yaw in radians
     currentPose = {
-<<<<<<< HEAD
-        'position': np.array([0.0, 0.0, -0.2]),  # Start slightly elevated
-        'rpy': np.radians([0.0, 0.0, 0.0])       # Level orientation
-=======
-        'position': np.array([0.0, 0.0, -0.2]),  # NED origin
+        'position': np.array([0.0, 0.0, 0.0]),  # NED origin
         'rpy': np.radians([0.0, 0.0, 0.0])      # Orientation origin
->>>>>>> 273d76bfe1c93d827a6a02cb162e8fb0114638d5
     }
     
     numWindows = 3
-    successful_windows = 0
-    
-    # Main racing loop
+
+    # iterate through windows one by one
     for windowCount in range(numWindows):
-        success, currentPose = navigate_through_window(
-            renderer=renderer,
-            currentPose=currentPose,
-            segmentor=segmentor,
-            detector=detector,
-            windowCount=windowCount,
-            max_iterations=10,
-            step_distance=0.5
-        )
-<<<<<<< HEAD
+        print(f"\n=== Window {windowCount + 1}/{numWindows} ===")
         
-        if success:
-            successful_windows += 1
-            print(f"\n Window {windowCount + 1} PASSED")
-        else:
-            print(f"\n Window {windowCount + 1} FAILED")
-            # Optional: decide whether to continue or abort
-            # break  # Uncomment to stop on first failure
-    
-    # Final summary
-    print(f"\n{'='*60}")
-    print(f"RACE COMPLETE")
-    print(f"{'='*60}")
-    print(f"Successfully passed: {successful_windows}/{numWindows} windows")
-    print(f"Final position: {currentPose['position']}")
-    
-    return successful_windows == numWindows
+        # Render the frame at the current pose
+        color_image, depth_image, metric_depth = renderer.render(
+            currentPose['position'], 
+            currentPose['rpy']
+        )
 
-=======
-
-        # brightness_increase = 55
-        # boosted_color_image = np.clip((color_image.astype(int)*1.85) + brightness_increase, 0, 255).astype(np.uint8)
-        segmented = segmentor.get_pred(color_image)
-        print(f'segmentd stats {segmented.max()}, main:{segmented.min()}')
-        segmented = cv2.normalize(segmented, None, 0, 255, cv2.NORM_MINMAX)
-        segmented = segmented.astype(np.uint8)
-        cv2.imwrite(f'segmentaion{windowCount}.png', segmented)
         #####################################################
         ### DETECT THE WINDOW AND NAVIGATION THROUGH IT #####
         #####################################################
@@ -379,13 +207,13 @@ def main(renderer):
         ## you can tweak the trajectory planner as well if you want
         
         # Example target (you should compute this from windowMask and depth)
-        # targetPose = np.array([1.0 * (windowCount + 1), 0.0, 0.0])
+        targetPose = np.array([1.0 * (windowCount + 1), 0.0, 0.0])
         
         # Navigate to the target waypoint
-        # currentPose = goToWaypoint(currentPose, targetPose, velocity=1.0)
+        currentPose = goToWaypoint(currentPose, targetPose, velocity=1.0)
         
         # Save the color image
-        color_image_bgr = cv2.cvtColor(color_image,cv2.COLOR_RGB2BGR)
+        color_image_bgr = cv2.cvtColor(color_image)
         cv2.imwrite(f'rendered_frame_window_{windowCount}.png', color_image_bgr)
 
         # Save the depth image (normalized for visualization)
@@ -394,19 +222,11 @@ def main(renderer):
         cv2.imwrite(f'depth_frame_window_{windowCount}.png', depth_normalized)
 
         print(f'Saved frame for window {windowCount} at position {currentPose["position"]}')
-       
-        return False
->>>>>>> 273d76bfe1c93d827a6a02cb162e8fb0114638d5
+
 
 if __name__ == "__main__":
-    # Update these paths to match your setup
     config_path = "../data/washburn-env6-itr0-1fps/washburn-env6-itr0-1fps_nf_format/splatfacto/2025-03-06_201843/config.yml"
     json_path = "../render_settings/render_settings_2.json"
-    
+
     renderer = SplatRenderer(config_path, json_path)
-    success = main(renderer)
-    
-    if success:
-        print("\n All windows cleared successfully!")
-    else:
-        print("\n  Some windows were not cleared")
+    main(renderer)
