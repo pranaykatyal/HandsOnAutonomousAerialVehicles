@@ -10,10 +10,7 @@ import tello
 from window_segmentation.window_segmentation import Window_Segmentaion
 from window_segmentation.network import Network
 from params import *
-<<<<<<< HEAD
 from window_detector import WindowDetector
-=======
->>>>>>> 273d76bfe1c93d827a6a02cb162e8fb0114638d5
 
 ################################################
 #### Navigation Function ########################
@@ -279,7 +276,6 @@ def navigate_through_window(renderer, currentPose, segmentor, detector, windowCo
 #### Main Function ##############################
 ################################################
 def main(renderer):
-<<<<<<< HEAD
     """Main racing loop - navigate through multiple windows"""
     
     # Set up segmentation model
@@ -297,29 +293,13 @@ def main(renderer):
     detector = WindowDetector(image_width=1440, image_height=1080)
     
     # Create log directory
-=======
-    #set up model 
-    segmentor = Window_Segmentaion(torch_network=Network,
-                                   model_path=TRAINED_MODEL_PATH,
-                                   model_thresh=.98,
-                                   in_ch=3,out_ch=1,img_h=256,img_w=256)
-
-
-
-    # Create log directory if it doesn't exist
->>>>>>> 273d76bfe1c93d827a6a02cb162e8fb0114638d5
     import os
     os.makedirs('./log', exist_ok=True)
     
     # Initialize pose - NED frame
     currentPose = {
-<<<<<<< HEAD
         'position': np.array([0.0, 0.0, -0.2]),  # Start slightly elevated
         'rpy': np.radians([0.0, 0.0, 0.0])       # Level orientation
-=======
-        'position': np.array([0.0, 0.0, -0.2]),  # NED origin
-        'rpy': np.radians([0.0, 0.0, 0.0])      # Orientation origin
->>>>>>> 273d76bfe1c93d827a6a02cb162e8fb0114638d5
     }
     
     numWindows = 3
@@ -336,7 +316,6 @@ def main(renderer):
             max_iterations=10,
             step_distance=0.5
         )
-<<<<<<< HEAD
         
         if success:
             successful_windows += 1
@@ -355,48 +334,6 @@ def main(renderer):
     
     return successful_windows == numWindows
 
-=======
-
-        # brightness_increase = 55
-        # boosted_color_image = np.clip((color_image.astype(int)*1.85) + brightness_increase, 0, 255).astype(np.uint8)
-        segmented = segmentor.get_pred(color_image)
-        print(f'segmentd stats {segmented.max()}, main:{segmented.min()}')
-        segmented = cv2.normalize(segmented, None, 0, 255, cv2.NORM_MINMAX)
-        segmented = segmented.astype(np.uint8)
-        cv2.imwrite(f'segmentaion{windowCount}.png', segmented)
-        #####################################################
-        ### DETECT THE WINDOW AND NAVIGATION THROUGH IT #####
-        #####################################################
-        
-        ## Segment the window from color image
-        ## Feel free to use metric_depth or depth_image as well  
-        ## Write your own logic to go through the window
-        ## Example: Use windowMask to extract window region,
-        ## compute centroid, use depth to estimate distance,
-        ## then navigate through it
-
-        ## you are free to use any method you like to navigate through the window
-        ## you can tweak the trajectory planner as well if you want
-        
-        # Example target (you should compute this from windowMask and depth)
-        # targetPose = np.array([1.0 * (windowCount + 1), 0.0, 0.0])
-        
-        # Navigate to the target waypoint
-        # currentPose = goToWaypoint(currentPose, targetPose, velocity=1.0)
-        
-        # Save the color image
-        color_image_bgr = cv2.cvtColor(color_image,cv2.COLOR_RGB2BGR)
-        cv2.imwrite(f'rendered_frame_window_{windowCount}.png', color_image_bgr)
-
-        # Save the depth image (normalized for visualization)
-        depth_normalized = cv2.normalize(depth_image, None, 0, 255, cv2.NORM_MINMAX)
-        depth_normalized = depth_normalized.astype(np.uint8)
-        cv2.imwrite(f'depth_frame_window_{windowCount}.png', depth_normalized)
-
-        print(f'Saved frame for window {windowCount} at position {currentPose["position"]}')
-       
-        return False
->>>>>>> 273d76bfe1c93d827a6a02cb162e8fb0114638d5
 
 if __name__ == "__main__":
     # Update these paths to match your setup
