@@ -171,21 +171,23 @@ def goToWaypoint(currentPose, targetPose, velocity=0.1):
 #### Main Function ##############################
 ################################################
 def main(renderer):
-    #set up model 
-    segmentor = Window_Segmentaion(torch_network=Network,
-                                   model_path=TRAINED_MODEL_PATH,
-                                   model_thresh=.98,
-                                   in_ch=3,out_ch=1,img_h=256,img_w=256)
-
-
-
     # Create log directory if it doesn't exist
     import os
     os.makedirs('./log', exist_ok=True)
-    
+    os.makedirs('./images', exist_ok=True)
+
+    #set up model 
+    segmentor = Window_Segmentaion(torch_network=Network,
+                                   model_path=TRAINED_MODEL_PATH,
+                                   model_thresh=.99,
+                                   in_ch=3,out_ch=1,img_h=480,img_w=640)# img_h=256,img_w=256) #
+
+
+
+
     # Initialize pose - Position: x, y, z in meters | Orientation: roll, pitch, yaw in radians
     currentPose = {
-        'position': np.array([0.0, 0.0, -0.2]),  # NED origin
+        'position': np.array([0.0012, 0.0012, -0.001]),  # NED origin
         'rpy': np.radians([0.0, 0.0, 0.0])      # Orientation origin
     }
     
@@ -194,53 +196,74 @@ def main(renderer):
     # iterate through windows one by one
     for windowCount in range(numWindows):
         print(f"\n=== Window {windowCount + 1}/{numWindows} ===")
-        
-        # Render the frame at the current pose
-        color_image, depth_image, metric_depth = renderer.render(
-            currentPose['position'], 
-            currentPose['rpy']
-        )
+        while True:
+            n=0
+            # Render the frame at the current pose
+            rpy = currentPose['rpy']
+            # rpy[0] = (rpy[0] + np.pi) % (np.pi * 2)
+            color_image, depth_image, metric_depth = renderer.render(
+                currentPose['position'], 
+                rpy
+            )
+            # while 
+            print(f"color image shape{color_image.shape} depth image shape {depth_image.shape} metrid depth shape {metric_depth.shape}")
+            # brightness_increase = 55
+            # boosted_color_image = np.clip((color_image.astype(int)*1.85) + brightness_increase, 0, 255).astype(np.uint8)
+            segmented = segmentor.get_pred(color_image)
+            print(f'segmentd stats {segmented.max()}, main:{segmented.min()}')
+            segmented = cv2.normalize(segmented, None, 0, 255, cv2.NORM_MINMAX)
+            segmented = segmented.astype(np.uint8)
+            cv2.imwrite(f'images/segmentaion{n}.png', segmented)
+            #####################################################
+            ### DETECT THE WINDOW AND NAVIGATION THROUGH IT #####
+            #####################################################
+            
+            ## Segment the window from color image
+            ## Feel free to use metric_depth or depth_image as well  
+            ## Write your own logic to go through the window
+            ## Example: Use windowMask to extract window region,
+            ## compute centroid, use depth to estimate distance,
+            ## then navigate through it
 
-        # brightness_increase = 55
-        # boosted_color_image = np.clip((color_image.astype(int)*1.85) + brightness_increase, 0, 255).astype(np.uint8)
-        segmented = segmentor.get_pred(color_image)
-        print(f'segmentd stats {segmented.max()}, main:{segmented.min()}')
-        segmented = cv2.normalize(segmented, None, 0, 255, cv2.NORM_MINMAX)
-        segmented = segmented.astype(np.uint8)
-        cv2.imwrite(f'segmentaion{windowCount}.png', segmented)
-        #####################################################
-        ### DETECT THE WINDOW AND NAVIGATION THROUGH IT #####
-        #####################################################
-        
-        ## Segment the window from color image
-        ## Feel free to use metric_depth or depth_image as well  
-        ## Write your own logic to go through the window
-        ## Example: Use windowMask to extract window region,
-        ## compute centroid, use depth to estimate distance,
-        ## then navigate through it
+            ## you are free to use any method you like to navigate through the window
+            ## you can tweak the trajectory planner as well if you want
+            
+            # Example target (you should compute this from windowMask and depth)
+            # targetPose = np.array([1.0 * (windowCount + 1), 0.0, 0.0])
+            
+            # Navigate to the target waypoint
+            # currentPose = goToWaypoint(currentPose, targetPose, velocity=1.0)
+            
+            # Save the color image
+            color_image_bgr = cv2.cvtColor(color_image,cv2.COLOR_RGB2BGR)
+            cv2.imwrite(f'images/rendered_frame_window_{n}.png', color_image_bgr)
 
-        ## you are free to use any method you like to navigate through the window
-        ## you can tweak the trajectory planner as well if you want
-        
-        # Example target (you should compute this from windowMask and depth)
-        # targetPose = np.array([1.0 * (windowCount + 1), 0.0, 0.0])
-        
-        # Navigate to the target waypoint
-        # currentPose = goToWaypoint(currentPose, targetPose, velocity=1.0)
-        
-        # Save the color image
-        color_image_bgr = cv2.cvtColor(color_image,cv2.COLOR_RGB2BGR)
-        cv2.imwrite(f'rendered_frame_window_{windowCount}.png', color_image_bgr)
+            # Save the depth image (normalized for visualization)
+            depth_normalized = cv2.normalize(metric_depth, None, 0, 255, cv2.NORM_MINMAX)
+            depth_normalized = depth_normalized.astype(np.uint8)
+            cv2.imwrite(f'images/depth_frame_window_{n}.png', depth_normalized)
 
-        # Save the depth image (normalized for visualization)
-        depth_normalized = cv2.normalize(depth_image, None, 0, 255, cv2.NORM_MINMAX)
-        depth_normalized = depth_normalized.astype(np.uint8)
-        cv2.imwrite(f'depth_frame_window_{windowCount}.png', depth_normalized)
+            print(f'Saved frame for window {n} a1t position {currentPose["position"]}')
+            error_x, error_z, error_y = segmentor.get_closest_frame(color_image, metric_depth)
+            print(f'errorx{error_x}, error y {error_y} error z{error_z}')
+            k_x = .002
+            k_y = .002
+            k_z = .002
+            ctrl_x = error_x*k_x
+            ctrl_y = error_x*error_y*k_y
+            ctrl_z = error_x*error_z*k_z
+            print(f'ctrl_x{ctrl_x}, ctrl_y y {ctrl_y} ctrl_z z{ctrl_z}')
 
-        print(f'Saved frame for window {windowCount} at position {currentPose["position"]}')
-       
-        return False
 
+            # targetPose = np.array([1.0 * (windowCount + 1), 0.0, 0.0])
+            # currentPose = goToWaypoint(currentPose, targetPose, velocity=1.0)
+            targetPose = currentPose['position'] + [ctrl_x, ctrl_y, ctrl_z]
+            print(f'target pose {targetPose}')
+            currentPose = goToWaypoint(currentPose, targetPose, velocity=1.0)
+            n = n + 1
+
+            if n == 25:
+                return False
 if __name__ == "__main__":
     config_path = "../data/washburn-env6-itr0-1fps/washburn-env6-itr0-1fps_nf_format/splatfacto/2025-03-06_201843/config.yml"
     json_path = "../render_settings/render_settings_2.json"

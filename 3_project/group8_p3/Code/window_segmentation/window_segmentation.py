@@ -29,18 +29,19 @@ class Window_Segmentaion():
 
 
     def get_pred(self, rgb):
-
+        print(f"w: {self.img_w}, h:{self.img_h}")
                 # Resize to model input size
         if isinstance(rgb, np.ndarray):
             rgb_resized = cv2.resize(rgb, (self.img_w, self.img_h))
-            
-            # Convert BGR to RGB if needed
-            if rgb_resized.shape[2] == 3:
-                rgb_resized = cv2.cvtColor(rgb_resized, cv2.COLOR_BGR2RGB)
+            print("converted np array")
+            # # Convert BGR to RGB if needed
+            # if rgb_resized.shape[2] == 3:
+            #     rgb_resized = cv2.cvtColor(rgb_resized, cv2.COLOR_BGR2RGB)
         else: #its PIL
             rgb_resized = rgb.resize((self.img_w, self.img_h))
+            print("converting pill")
         cv2.imwrite(f'pre_seg_view.png', rgb_resized)
-        rgb_tensor = T.ToTensor()(rgb)
+        rgb_tensor = T.ToTensor()(rgb_resized)
         # Add batch dimension
         rgb_tensor = rgb_tensor.unsqueeze(0)  # Shape: [1, C, H, W]
 
@@ -62,7 +63,7 @@ class Window_Segmentaion():
             pred_probs = pred_probs.numpy()  # Shape: [out_ch, H, W]
         
         # Convert probabilities to binary mask (threshold at 0.5) and scale to 0-255
-        return ((pred_probs > 0.95).astype(np.uint8) * 255)
+        return ((pred_probs > self.model_thresh).astype(np.uint8) * 255)
 
     
     #asssuming input images are already opencv
@@ -74,21 +75,71 @@ class Window_Segmentaion():
         window_mask01 = (window_mask > 0).astype(np.uint16)
         print(f"depth shape {depth.shape}, max:{depth.max()}, min, {depth.min()}")
         print(f"window_mask shape {window_mask.shape}, max:{window_mask.max()}, min, {window_mask.min()}")
+
         #mask our depth image 
         window_depth = depth * window_mask01
         #find centerr of all closed contores
+
+        window_depth_normalized = cv2.normalize(window_depth, None, 0, 255, cv2.NORM_MINMAX)
+        window_depth_normalized = window_depth_normalized.astype(np.uint8)
+        cv2.imwrite(f'images/window_depth_normalized.png', window_depth_normalized)
+
+
         num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(
-            window_mask01, connectivity=8, ltype=cv2.CV_32S
+            window_mask01.astype(np.uint8), connectivity=8, ltype=cv2.CV_32S
         )
+        print(f'num_labels{num_labels}, labels{labels}, stats{stats}, centroids{centroids} ')
+        areas = stats[1:, cv2.CC_STAT_AREA]
+        order_by_area = np.argsort(areas)[::-1] + 1 
+        # largest component's label id
+        largest_id = order_by_area[0]
+
+        # mask for largest blob
+        largest_mask = (labels == largest_id)
+
+        largest_window_mask = depth * largest_mask
+        largest_window_mask_normalized = cv2.normalize(largest_window_mask, None, 0, 255, cv2.NORM_MINMAX)
+        largest_window_mask_normalized = largest_window_mask_normalized.astype(np.uint8)
+        cv2.imwrite(f'images/largest_window_mask_normalized.png', largest_window_mask_normalized)
+        # # bounding box and centroid of largest blob
+        # x = stats[largest_id, cv2.CC_STAT_LEFT]
+        # y = stats[largest_id, cv2.CC_STAT_TOP]
+        # w = stats[largest_id, cv2.CC_STAT_WIDTH]
+        # h = stats[largest_id, cv2.CC_STAT_HEIGHT]
+        (cw, ch) = centroids[largest_id]
+        # print(f'x{x}')
+        # print(f'y{y}')
+        # print(f'w{w}')
+        # print(f'h{h}')
+        print(f'cw{cw}, ch{ch}')
+        avg_depth = largest_window_mask[largest_window_mask>0].mean()
+        print(f'avg depth {avg_depth}')
+
+        ex = avg_depth
+        ey = cw - (self.img_w/2)
+        ez = ch - (self.img_h/2)
+        return (ex, ey, ez)
+        #now run blob on the invert of the image- look for the inside of the drone frame
+
+
+
+
         #find the closet closed contore
         #make sure its not an overlapping frame
 
 
         #get the min (closest) pixle
-        minVal, maxVal, minLoc, maxLoc = cv2.minMaxLoc(window_depth)
+        # minVal, maxVal, minLoc, maxLoc = cv2.minMaxLoc(window_depth)
+
+
+
+
+
 
         #then erode depth image arround each respective depth
 
     # def save_video(self)
 
     # def clean_segmentation
+
+    #def get_blobs
