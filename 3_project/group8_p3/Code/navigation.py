@@ -29,7 +29,11 @@ def goToWaypoint(currentPose, targetPose, targetOrientation=None, velocity=0.1):
     else:
         # Old format: just position
         target_position = np.array(targetPose)
-        target_orientation = None
+        # Use targetOrientation parameter if provided, otherwise use zeros
+        if targetOrientation is not None:
+            target_orientation = np.array(targetOrientation)
+        else:
+            target_orientation = np.zeros(3)
         control_orientation = False
     
     dt = 0.01  # 10ms timestep
@@ -57,13 +61,11 @@ def goToWaypoint(currentPose, targetPose, targetOrientation=None, velocity=0.1):
     # Build state vector [x, y, z, vx, vy, vz, qx, qy, qz, qw, p, q, r]
     current_state = np.concatenate([pos, vel, [quat.x, quat.y, quat.z, quat.w], pqr])
     
-    target_position = np.array(targetPose)
-    
     # Calculate distance and estimated time
     distance = np.linalg.norm(target_position - pos)
     estimated_time = min(distance / velocity * 2.0, max_time)
     
-    print(f"  Navigating: {pos} → {target_position}")
+    print(f"  Navigating: {pos} to {target_position}")
     print(f"  Distance: {distance:.2f}m, Est. time: {estimated_time:.1f}s")
     
     # Check if already at target
@@ -122,7 +124,7 @@ def goToWaypoint(currentPose, targetPose, targetOrientation=None, velocity=0.1):
     accelerations = np.array(accelerations)
     
     # Set trajectory in controller
-    controller.set_trajectory(trajectory_points, time_points, velocities, accelerations, target_rpy)
+    controller.set_trajectory(trajectory_points, time_points, velocities, accelerations, target_orientation)
     
     # Simulation loop
     state = current_state.copy()
@@ -135,7 +137,7 @@ def goToWaypoint(currentPose, targetPose, targetOrientation=None, velocity=0.1):
         current_pos = state[0:3]
         error = np.linalg.norm(current_pos - target_position)
         if error < tolerance and t > 1.0:
-            print(f"  ✓ Reached at t={t:.2f}s, error={error:.3f}m")
+            print(f" Reached at t={t:.2f}s, error={error:.3f}m")
             state_final = state
             break
         
@@ -238,14 +240,14 @@ def navigate_through_window(renderer, currentPose, segmentor, detector, windowCo
         depth_normalized = cv2.normalize(depth_image, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
         cv2.imwrite(f'{iter_prefix}_depth.png', depth_normalized)
         
-        print(f"  💾 Saved: {iter_prefix}_*.png")
+        print(f"  Saved: {iter_prefix}_*.png")
         
         # ============================================
         # PROCESS DETECTIONS
         # ============================================
         
         if not detections:
-            print("⚠️  No windows detected!")
+            print("  No windows detected!")
             
             # Recovery attempt - move forward slightly
             if iteration < max_iterations - 2:
@@ -276,20 +278,20 @@ def navigate_through_window(renderer, currentPose, segmentor, detector, windowCo
         
         # Step 7: Decision logic
         if is_aligned and is_close:
-            print(f"✅ ALIGNED & CLOSE - Flying through window!")
+            print(f" ALIGNED & CLOSE - Flying through window!")
             
             # Final push through the window
             target = currentPose['position'].copy()
-            target[0] += 2.0  # Move forward 2 meters to ensure we're through
+            target[0] += 1.0  # Move forward 2 meters to ensure we're through
             
             currentPose = goToWaypoint(currentPose, target, velocity=1.0)
             
-            print(f"🎯 Successfully passed through window {windowCount + 1}!")
+            print(f" Successfully passed through window {windowCount + 1}!")
             return True, currentPose
         
         elif area_pct < 2.0:
             # Window too small/far - move forward with correction
-            print(f"⚠️  Window small ({area_pct:.1f}%), correcting alignment while approaching...")
+            print(f"  Window small ({area_pct:.1f}%), correcting alignment while approaching...")
             
             target = detector.compute_navigation_target(
                 currentPose['position'], 
@@ -301,7 +303,7 @@ def navigate_through_window(renderer, currentPose, segmentor, detector, windowCo
             currentPose = goToWaypoint(currentPose, target, velocity=0.2)
         
         elif is_aligned:
-            print(f"→  Aligned but far - approaching...")
+            print(f" Aligned but far - approaching...")
             distance_factor = detector.get_approach_distance(closest_window)
             move_distance = step_distance * distance_factor * 0.5  # Conservative
             
@@ -313,7 +315,7 @@ def navigate_through_window(renderer, currentPose, segmentor, detector, windowCo
             currentPose = goToWaypoint(currentPose, target, velocity=0.3)
             
         else:
-            print(f"⟲ Not aligned - correcting position...")
+            print(f"Not aligned - correcting position...")
             
             # Compute target with lateral correction
             target = detector.compute_navigation_target(
@@ -326,5 +328,5 @@ def navigate_through_window(renderer, currentPose, segmentor, detector, windowCo
             currentPose = goToWaypoint(currentPose, target, velocity=0.3)
     
     # If we exhausted iterations without passing through
-    print(f"⚠️  Max iterations reached without passing through window")
+    print(f" Max iterations reached without passing through window")
     return False, currentPose

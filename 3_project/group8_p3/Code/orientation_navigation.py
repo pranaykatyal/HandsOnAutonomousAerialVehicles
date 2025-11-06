@@ -32,7 +32,7 @@ def calculate_window_orientation_error(window_detection, img_center):
     height_ratio = min(left_height, right_height) / max(left_height, right_height)
     
     # Check if frontal (rectangular appearance)
-    is_frontal = width_ratio > 0.85 and height_ratio > 0.85
+    is_frontal = width_ratio > 0.95 and height_ratio > 0.95
     
     # Calculate yaw error from width trapezoid
     if top_width > bottom_width * 1.1:
@@ -126,7 +126,7 @@ def visualize_orientation_analysis(image, window_detection, yaw_error, pitch_err
     
     # Draw rotation arrows
     if abs(yaw_error) > np.radians(5):
-        arrow_text = "TURN RIGHT →" if yaw_error > 0 else "← TURN LEFT"
+        arrow_text = "TURN RIGHT" if yaw_error > 0 else " TURN LEFT"
         cv2.putText(vis, arrow_text, (10, y_offset + 30),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
     
@@ -187,8 +187,8 @@ def navigate_with_orientation_correction(renderer, currentPose, segmentor, detec
     print(f"Window {windowCount + 1} - Orientation-Aware Navigation")
     print(f"{'='*60}")
     
-    ORIENTATION_THRESHOLD = np.radians(5)  # 5 degrees
-    CLOSE_AREA_THRESHOLD = 0.25  # 25% of image
+    ORIENTATION_THRESHOLD = np.radians(2)  # 5 degrees
+    CLOSE_AREA_THRESHOLD = 0.50  # 25% of image
     
     for iteration in range(max_iterations):
         print(f"\n--- Iteration {iteration + 1}/{max_iterations} ---")
@@ -214,14 +214,15 @@ def navigate_with_orientation_correction(renderer, currentPose, segmentor, detec
         cv2.imwrite(f'{iter_prefix}_segmentation.png', segmented)
         
         if not detections:
-            print("⚠️ No windows detected")
+            print(" No windows detected")
             
             # Blind forward movement
             if iteration < max_iterations - 2:
                 print("  Moving forward 0.1m blindly...")
                 target_pos = currentPose['position'].copy()
                 target_pos[0] += 0.1
-                currentPose = goToWaypoint(currentPose, target_pos, velocity=0.1)
+                target_rpy = currentPose['rpy'].copy()  # Maintain current orientation
+                currentPose = goToWaypoint(currentPose, target_pos, target_rpy, velocity=0.1)
                 continue
             else:
                 return False, currentPose
@@ -239,7 +240,7 @@ def navigate_with_orientation_correction(renderer, currentPose, segmentor, detec
         
         orientation_error_magnitude = np.sqrt(yaw_error**2 + pitch_error**2)
         
-        print(f"Orientation error: {np.degrees(orientation_error_magnitude):.1f}° "
+        print(f"Orientation error: {np.degrees(orientation_error_magnitude):.1f} "
               f"(yaw: {np.degrees(yaw_error):+.1f}°, pitch: {np.degrees(pitch_error):+.1f}°)")
         print(f"Frontal view: {is_frontal}")
         
@@ -250,13 +251,13 @@ def navigate_with_orientation_correction(renderer, currentPose, segmentor, detec
         # Decision: Rotate or Move?
         if orientation_error_magnitude > ORIENTATION_THRESHOLD:
             # Need to correct orientation first
-            print(f"🔄 Correcting orientation (error: {np.degrees(orientation_error_magnitude):.1f}°)...")
+            print(f"Correcting orientation (error: {np.degrees(orientation_error_magnitude):.1f}°)...")
             
             target_pos, target_rpy, rotation_mag = compute_orientation_correction_target(
                 currentPose, yaw_error, pitch_error, max_rotation_per_step=np.radians(8)
             )
             
-            print(f"  Rotating {np.degrees(rotation_mag):.1f}° (target rpy: {np.degrees(target_rpy)})")
+            print(f"  Rotating {np.degrees(rotation_mag):.1f} (target rpy: {np.degrees(target_rpy)})")
             
             # Execute rotation (position stays same)
             currentPose = goToWaypoint(currentPose, target_pos, target_rpy, velocity=0.05)
@@ -264,7 +265,7 @@ def navigate_with_orientation_correction(renderer, currentPose, segmentor, detec
             
         elif area_pct > CLOSE_AREA_THRESHOLD and is_frontal:
             # Oriented correctly AND close enough
-            print(f"✅ Oriented correctly and close ({area_pct:.1f}%) - FLYING THROUGH!")
+            print(f" Oriented correctly and close ({area_pct:.1f}%) - FLYING THROUGH!")
             
             target_pos = currentPose['position'].copy()
             target_pos[0] += 1.5
@@ -275,12 +276,12 @@ def navigate_with_orientation_correction(renderer, currentPose, segmentor, detec
             
         else:
             # Oriented correctly but not close yet - move forward
-            print(f"→ Oriented correctly, moving forward...")
+            print(f"Oriented correctly, moving forward...")
             
             target_pos = currentPose['position'].copy()
             target_pos[0] += 0.15  # 15cm forward
             target_rpy = np.radians([0.0, 0.0, 0.0])
             currentPose = goToWaypoint(currentPose, target_pos,target_rpy, velocity=0.2)
     
-    print(f"⚠️ Max iterations reached")
+    print(f" Max iterations reached")
     return False, currentPose

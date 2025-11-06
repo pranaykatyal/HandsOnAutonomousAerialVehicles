@@ -266,7 +266,7 @@ class QuadrotorController:
         self.time_points = time_points
         self.trajectory_velocities = velocities
         self.trajectory_accelerations = accelerations
-        self.target_orientation = target_rpy if target_rpy else [0,0,0]
+        self.target_orientation = target_rpy if target_rpy is not None else np.array([0.0, 0.0, 0.0])
 
 
     

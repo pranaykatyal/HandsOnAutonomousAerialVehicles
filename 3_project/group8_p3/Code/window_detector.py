@@ -24,7 +24,7 @@ class WindowDetector:
         # Tuning parameters
         self.min_area_threshold = 5000  # Minimum area in pixels to be considered a window
         self.alignment_threshold = 30  # Pixels - how aligned must we be before flying through
-        self.close_area_ratio = 0.35  # When window fills 35% of image, it's close enough
+        self.close_area_ratio = 0.50  # When window fills 35% of image, it's close enough
         
     def process_segmentation(self, seg_mask):
         """
