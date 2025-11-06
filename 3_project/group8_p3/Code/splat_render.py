@@ -235,6 +235,7 @@ class SplatRenderer:
         rgb = apply_colormap(outputs["rgb"], self.colormap_options_rgb)
         rgb = (rgb * 255).type(torch.uint8).cpu().numpy()
         rgb = cv2.cvtColor(rgb, cv2.COLOR_BGR2RGB)
+        # rgb = cv2.flip(rgb, 0)
 
         depth = apply_colormap(outputs["depth"], self.colormap_options_depth)
         depth = (depth * 255).type(torch.uint8).cpu().numpy()

@@ -11,266 +11,11 @@ from window_segmentation.window_segmentation import Window_Segmentaion
 from window_segmentation.network import Network
 from params import *
 from window_detector import WindowDetector
-
-################################################
-#### Navigation Function ########################
-################################################
-def goToWaypoint(currentPose, targetPose, velocity=0.1):
-    """
-    Navigate quadrotor to a target waypoint
-    
-    Parameters:
-    - currentPose: Dictionary with keys:
-        'position': [x, y, z] in NED frame (meters)
-        'rpy': [roll, pitch, yaw] in radians
-    - targetPose: [x, y, z] target position in NED frame (meters)
-    - velocity: cruise velocity (m/s), default 0.1
-    
-    Returns:
-    - newPose: Dictionary with updated 'position' and 'rpy'
-    """
-    
-    dt = 0.01  # 10ms timestep
-    tolerance = 0.1  # 10cm tolerance
-    max_time = 30.0  # Maximum 30 seconds
-    
-    # Initialize controller
-    controller = QuadrotorController(tello)
-    param = tello
-    
-    # Extract current state
-    pos = np.array(currentPose['position'])
-    rpy = np.array(currentPose['rpy'])  # roll, pitch, yaw in radians
-    
-    # Initialize velocities to zero (starting from hover)
-    vel = np.zeros(3)
-    pqr = np.zeros(3)
-    
-    # Convert roll, pitch, yaw to quaternion
-    roll, pitch, yaw = rpy
-    quat = Quaternion(axis=[0, 0, 1], radians=yaw) * \
-           Quaternion(axis=[0, 1, 0], radians=pitch) * \
-           Quaternion(axis=[1, 0, 0], radians=roll)
-    
-    # Build state vector [x, y, z, vx, vy, vz, qx, qy, qz, qw, p, q, r]
-    current_state = np.concatenate([pos, vel, [quat.x, quat.y, quat.z, quat.w], pqr])
-    
-    target_position = np.array(targetPose)
-    
-    # Calculate distance and estimated time
-    distance = np.linalg.norm(target_position - pos)
-    estimated_time = min(distance / velocity * 2.0, max_time)
-    
-    print(f"  Navigating: {pos} → {target_position}")
-    print(f"  Distance: {distance:.2f}m, Est. time: {estimated_time:.1f}s")
-    
-    # Check if already at target
-    if distance < tolerance:
-        print("  Already at target!")
-        return {'position': pos, 'rpy': rpy}
-    
-    # Generate trajectory
-    num_points = int(estimated_time / dt)
-    time_points = np.linspace(0, estimated_time, num_points)
-    
-    # Create trajectory with trapezoidal velocity profile
-    direction = target_position - pos
-    unit_direction = direction / distance
-    
-    trajectory_points = []
-    velocities = []
-    accelerations = []
-    
-    accel_time = min(1.0, estimated_time * 0.25)
-    decel_time = accel_time
-    cruise_time = estimated_time - accel_time - decel_time
-    
-    cruise_vel = min(velocity, distance / (0.5 * accel_time + cruise_time + 0.5 * decel_time))
-    
-    for t in time_points:
-        if t <= accel_time:
-            # Acceleration phase
-            vel_mag = (cruise_vel / accel_time) * t
-            acc_mag = cruise_vel / accel_time
-            progress = 0.5 * (cruise_vel / accel_time) * t * t / distance
-        elif t <= accel_time + cruise_time:
-            # Cruise phase
-            vel_mag = cruise_vel
-            acc_mag = 0.0
-            progress = (0.5 * cruise_vel * accel_time + cruise_vel * (t - accel_time)) / distance
-        else:
-            # Deceleration phase
-            t_decel = t - accel_time - cruise_time
-            vel_mag = cruise_vel - (cruise_vel / decel_time) * t_decel
-            acc_mag = -cruise_vel / decel_time
-            progress = (0.5 * cruise_vel * accel_time + cruise_vel * cruise_time + 
-                      cruise_vel * t_decel - 0.5 * (cruise_vel / decel_time) * t_decel * t_decel) / distance
-        
-        progress = np.clip(progress, 0.0, 1.0)
-        position = pos + progress * direction
-        vel_vec = vel_mag * unit_direction
-        acc_vec = acc_mag * unit_direction
-        
-        trajectory_points.append(position)
-        velocities.append(vel_vec)
-        accelerations.append(acc_vec)
-    
-    trajectory_points = np.array(trajectory_points)
-    velocities = np.array(velocities)
-    accelerations = np.array(accelerations)
-    
-    # Set trajectory in controller
-    controller.set_trajectory(trajectory_points, time_points, velocities, accelerations)
-    
-    # Simulation loop
-    state = current_state.copy()
-    
-    for i, t in enumerate(time_points):
-        # Compute control input
-        control_input = controller.compute_control(state, t)
-        
-        # Check if reached
-        current_pos = state[0:3]
-        error = np.linalg.norm(current_pos - target_position)
-        if error < tolerance and t > 1.0:
-            print(f"  ✓ Reached at t={t:.2f}s, error={error:.3f}m")
-            state_final = state
-            break
-        
-        # Integrate dynamics
-        if i < len(time_points) - 1:
-            sol = solve_ivp(
-                lambda t, X: model_derivative(t, X, control_input, param),
-                [t, t + dt],
-                state,
-                method='RK45',
-                max_step=dt
-            )
-            state = sol.y[:, -1]
-            state_final = state
-    else:
-        # Loop completed without break
-        state_final = state
-        error = np.linalg.norm(state_final[0:3] - target_position)
-        print(f"  Final error: {error:.3f}m")
-    
-    # Extract final pose
-    final_pos = state_final[0:3]
-    final_quat = Quaternion(state_final[9], state_final[6], state_final[7], state_final[8])  # w, x, y, z
-    final_ypr = final_quat.yaw_pitch_roll  # Returns [yaw, pitch, roll]
-    final_rpy = np.array([final_ypr[2], final_ypr[1], final_ypr[0]])  # [roll, pitch, yaw]
-    
-    newPose = {
-        'position': final_pos,
-        'rpy': final_rpy
-    }
-    
-    return newPose
-
-def navigate_through_window(renderer, currentPose, segmentor, detector, windowCount, 
-                           max_iterations=10, step_distance=0.5):
-    """
-    Visual servoing approach to navigate through a window
-    
-    Parameters:
-    - renderer: SplatRenderer instance
-    - currentPose: Current drone pose dictionary
-    - segmentor: Window segmentation model
-    - detector: WindowDetector instance
-    - windowCount: Current window number (for logging)
-    - max_iterations: Maximum alignment iterations
-    - step_distance: Distance to move forward each step (meters)
-    
-    Returns:
-    - success: bool, whether window was successfully traversed
-    - currentPose: Updated pose after navigation
-    """
-    
-    print(f"\n{'='*60}")
-    print(f"Window {windowCount + 1} - Visual Servoing Approach")
-    print(f"{'='*60}")
-    
-    for iteration in range(max_iterations):
-        print(f"\n--- Iteration {iteration + 1}/{max_iterations} ---")
-        
-        # Step 1: Render current view
-        color_image, depth_image, metric_depth = renderer.render(
-            currentPose['position'], 
-            currentPose['rpy']
-        )
-        
-        # Step 2: Segment windows
-        segmented = segmentor.get_pred(color_image)
-        segmented = cv2.normalize(segmented, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
-        
-        # Step 3: Detect windows
-        detections = detector.process_segmentation(segmented)
-        
-        if not detections:
-            print("⚠️  No windows detected! Stopping.")
-            return False, currentPose
-        
-        # Step 4: Select closest window
-        closest_window = detector.get_closest_window(detections)
-        
-        # Step 5: Calculate alignment error
-        error_x, error_y, error_mag = detector.calculate_alignment_error(closest_window)
-        area_pct = closest_window['area'] / detector.image_area * 100
-        
-        print(f"Window Stats:")
-        print(f"  Area: {area_pct:.1f}% of image")
-        print(f"  Alignment error: {error_mag:.1f} pixels ({error_x:+.0f}x, {error_y:+.0f}y)")
-        print(f"  Center: {closest_window['center']}")
-        
-        # Step 6: Save visualization
-        vis_img = detector.visualize_detection(color_image, detections, closest_window)
-        cv2.imwrite(f'./log/window_{windowCount}_iter_{iteration}_detection.png', 
-                   cv2.cvtColor(vis_img, cv2.COLOR_RGB2BGR))
-        cv2.imwrite(f'./log/window_{windowCount}_iter_{iteration}_segmentation.png', segmented)
-        
-        # Step 7: Decision logic
-        is_aligned = detector.is_aligned(closest_window)
-        is_close = detector.is_close_enough(closest_window)
-        
-        if is_aligned and is_close:
-            print(f"✅ ALIGNED & CLOSE - Flying through window!")
-            
-            # Final push through the window
-            target = currentPose['position'].copy()
-            target[0] += 2.0  # Move forward 2 meters to ensure we're through
-            
-            currentPose = goToWaypoint(currentPose, target, velocity=1.0)
-            
-            print(f"🎯 Successfully passed through window {windowCount + 1}!")
-            return True, currentPose
-        
-        elif is_aligned:
-            print(f"→  Aligned but far - approaching...")
-            distance_factor = detector.get_approach_distance(closest_window)
-            move_distance = step_distance * distance_factor
-            
-            # Move straight forward (already aligned)
-            target = currentPose['position'].copy()
-            target[0] += move_distance
-            
-        else:
-            print(f"⟲ Not aligned - correcting position...")
-            
-            # Compute target with lateral correction
-            target = detector.compute_navigation_target(
-                currentPose['position'], 
-                closest_window, 
-                forward_distance=step_distance * 0.5  # Move slower while correcting
-            )
-        
-        # Step 8: Navigate to target
-        print(f"Moving to: {target}")
-        currentPose = goToWaypoint(currentPose, target, velocity=0.3)
-    
-    # If we exhausted iterations without passing through
-    print(f"⚠️  Max iterations reached without passing through window")
-    return False, currentPose
-
+from orientation_navigation import navigate_with_orientation_correction
+from navigation import goToWaypoint, navigate_through_window
+import os
+import shutil
+import glob
 
 ################################################
 #### Main Function ##############################
@@ -282,7 +27,7 @@ def main(renderer):
     segmentor = Window_Segmentaion(
         torch_network=Network,
         model_path=TRAINED_MODEL_PATH,
-        model_thresh=0.98,
+        model_thresh=0.90,
         in_ch=3, 
         out_ch=1, 
         img_h=256, 
@@ -290,11 +35,24 @@ def main(renderer):
     )
     
     # Set up window detector (adjust dimensions based on render_settings_2.json)
-    detector = WindowDetector(image_width=1440, image_height=1080)
-    
-    # Create log directory
-    import os
+    detector = WindowDetector(image_width=640, image_height=480)
+
+    # Create log directory and clean old image files
+
+    # Create log directory if it doesn't exist
     os.makedirs('./log', exist_ok=True)
+
+    # Clear only image files from previous runs
+    old_images = glob.glob('./log/*.png')
+    if old_images:
+        print(f"Cleaning {len(old_images)} old image files...")
+        for img_file in old_images:
+            try:
+                os.remove(img_file)
+            except Exception as e:
+                print(f"Warning: Could not remove {img_file}: {e}")
+    else:
+        print("No old image files to clean")
     
     # Initialize pose - NED frame
     currentPose = {
@@ -307,14 +65,13 @@ def main(renderer):
     
     # Main racing loop
     for windowCount in range(numWindows):
-        success, currentPose = navigate_through_window(
+        success, currentPose = navigate_with_orientation_correction(
             renderer=renderer,
             currentPose=currentPose,
             segmentor=segmentor,
             detector=detector,
             windowCount=windowCount,
-            max_iterations=10,
-            step_distance=0.5
+            max_iterations=30
         )
         
         if success:

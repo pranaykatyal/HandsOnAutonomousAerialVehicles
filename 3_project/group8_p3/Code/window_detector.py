@@ -22,7 +22,7 @@ class WindowDetector:
         self.image_area = image_width * image_height
         
         # Tuning parameters
-        self.min_area_threshold = 500  # Minimum area in pixels to be considered a window
+        self.min_area_threshold = 5000  # Minimum area in pixels to be considered a window
         self.alignment_threshold = 30  # Pixels - how aligned must we be before flying through
         self.close_area_ratio = 0.35  # When window fills 35% of image, it's close enough
         
@@ -203,11 +203,16 @@ class WindowDetector:
         # This is a rough heuristic - adjust based on camera FOV and distance
         
         # Scale pixel error to meters (you may need to tune these)
-        scale_x = 0.002  # meters per pixel
-        scale_y = 0.002  # meters per pixel
+        scale_x = 0.0005  # meters per pixel
+        scale_y = 0.0005  # meters per pixel
         
         lateral_x = -error_y * scale_y  # Image Y -> NED X (left/right)
         lateral_y = error_x * scale_x   # Image X -> NED Y (forward/back in horizontal)
+        
+        # ADD: Limit lateral corrections
+        max_lateral = 0.3  # meters
+        lateral_x = np.clip(lateral_x, -max_lateral, max_lateral)
+        lateral_y = np.clip(lateral_y, -max_lateral, max_lateral)
         
         # Compute target
         target = current_position.copy()
