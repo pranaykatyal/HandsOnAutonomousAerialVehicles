@@ -17,6 +17,7 @@ class pid:
 
         self.minVal = minVal
         self.maxVal = maxVal
+        self.target_orientation = None
 
         if dim == 1:
             self.prev_filter_val = 0.0
@@ -90,7 +91,7 @@ class quad_control:
         dt = 0.025
         filter_tau = 0.1
         self.dt = dt
-
+        self.target_orientation = None
         # tello params
         self.param_mass = 0.08
         self.linearThrustToU = self.param_mass*9.81*2/4
@@ -247,7 +248,7 @@ class QuadrotorController:
         self.trajectory_velocities = None
         self.trajectory_accelerations = None
         self.time_points = None
-        
+        self.target_orientation = None
         # Performance metrics
         self.position_errors = []
         self.velocity_errors = []
@@ -259,12 +260,14 @@ class QuadrotorController:
         self.desired_velocities = []
         self.time_log = []
         
-    def set_trajectory(self, trajectory_points, time_points, velocities, accelerations):
+    def set_trajectory(self, trajectory_points, time_points, velocities, accelerations,target_rpy=None):
         """Set the reference trajectory"""
         self.trajectory_points = trajectory_points
         self.time_points = time_points
         self.trajectory_velocities = velocities
         self.trajectory_accelerations = accelerations
+        self.target_orientation = target_rpy if target_rpy else [0,0,0]
+
 
     
     def get_desired_state(self, t):
@@ -306,9 +309,11 @@ class QuadrotorController:
         """Main control computation"""
         # Get desired trajectory state
         pos_des, vel_des, acc_des = self.get_desired_state(t)
+        target_yaw = self.target_orientation[2]
         
         # Create waypoint [x, y, z, yaw]
-        waypoint = np.append(pos_des, 0.0)  # Zero yaw
+        # waypoint = np.append(pos_des, 0.0)  # Zero yaw
+        waypoint = np.append(pos_des, target_yaw) 
         
         # Use the controller
         try:

@@ -259,16 +259,17 @@ def navigate_with_orientation_correction(renderer, currentPose, segmentor, detec
             print(f"  Rotating {np.degrees(rotation_mag):.1f}° (target rpy: {np.degrees(target_rpy)})")
             
             # Execute rotation (position stays same)
-            currentPose = goToWaypoint(currentPose, target_pos, velocity=0.05)
-            currentPose['rpy'] = target_rpy  # Force orientation update
+            currentPose = goToWaypoint(currentPose, target_pos, target_rpy, velocity=0.05)
+            # currentPose['rpy'] = target_rpy  # Force orientation update
             
         elif area_pct > CLOSE_AREA_THRESHOLD and is_frontal:
             # Oriented correctly AND close enough
             print(f"✅ Oriented correctly and close ({area_pct:.1f}%) - FLYING THROUGH!")
             
             target_pos = currentPose['position'].copy()
-            target_pos[0] += 2.0
-            currentPose = goToWaypoint(currentPose, target_pos, velocity=1.0)
+            target_pos[0] += 1.5
+            target_rpy = np.radians([0.0, 0.0, 0.0])
+            currentPose = goToWaypoint(currentPose, target_pos, target_rpy,velocity=0.6)
             
             return True, currentPose
             
@@ -278,8 +279,8 @@ def navigate_with_orientation_correction(renderer, currentPose, segmentor, detec
             
             target_pos = currentPose['position'].copy()
             target_pos[0] += 0.15  # 15cm forward
-            
-            currentPose = goToWaypoint(currentPose, target_pos, velocity=0.2)
+            target_rpy = np.radians([0.0, 0.0, 0.0])
+            currentPose = goToWaypoint(currentPose, target_pos,target_rpy, velocity=0.2)
     
     print(f"⚠️ Max iterations reached")
     return False, currentPose

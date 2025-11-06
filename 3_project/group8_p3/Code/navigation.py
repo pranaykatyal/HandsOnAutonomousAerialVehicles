@@ -6,7 +6,7 @@ from quad_dynamics import model_derivative
 import tello
 import cv2
 
-def goToWaypoint(currentPose, targetPose, velocity=0.1):
+def goToWaypoint(currentPose, targetPose, targetOrientation=None, velocity=0.1):
     """
     Navigate quadrotor to a target waypoint
     
@@ -16,7 +16,8 @@ def goToWaypoint(currentPose, targetPose, velocity=0.1):
         'rpy': [roll, pitch, yaw] in radians
     - targetPose: Dictionary OR array
         If dict: {'position': [x,y,z], 'rpy': [r,p,y]} - control both
-        If array: [x, y, z] - only control position (backward compatible)
+        If array: [x, y, z]
+    - targetOrientation: Optional target orientation [roll, pitch, yaw] in radians
     - velocity: cruise velocity (m/s), default 0.1
     """
     
@@ -121,7 +122,7 @@ def goToWaypoint(currentPose, targetPose, velocity=0.1):
     accelerations = np.array(accelerations)
     
     # Set trajectory in controller
-    controller.set_trajectory(trajectory_points, time_points, velocities, accelerations)
+    controller.set_trajectory(trajectory_points, time_points, velocities, accelerations, target_rpy)
     
     # Simulation loop
     state = current_state.copy()
