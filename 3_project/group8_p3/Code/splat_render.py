@@ -169,7 +169,6 @@ class SplatRenderer:
         rotation = R.from_matrix(Rot)
         quat = rotation.as_quat()  # x, y, z, w
         quat_wxyz = np.roll(quat, 1)  # w, x, y, z
-        getNEDPose
         # Convert the quaternion back to Euler angles (roll, pitch, yaw)
         euler_angles = rotation.as_euler('xyz', degrees=True)
         roll, pitch, yaw = euler_angles  # In degrees
