@@ -65,7 +65,7 @@ class Window_Segmentaion():
         return ((pred_probs > self.model_thresh).astype(np.uint8) * 255)
 
     
-    #asssuming input images are already opencv
+        #asssuming input images are already opencv
     def get_closest_frame(self, rgb, depth):
         #resize depth to be the same size as model output
         depth=cv2.resize(depth, (self.img_w, self.img_h))
@@ -74,20 +74,50 @@ class Window_Segmentaion():
         window_mask01 = (window_mask > 0).astype(np.uint16)
         print(f"depth shape {depth.shape}, max:{depth.max()}, min, {depth.min()}")
         print(f"window_mask shape {window_mask.shape}, max:{window_mask.max()}, min, {window_mask.min()}")
+
         #mask our depth image 
         window_depth = depth * window_mask01
         #find centerr of all closed contores
+
+        window_depth_normalized = cv2.normalize(window_depth, None, 0, 255, cv2.NORM_MINMAX)
+        window_depth_normalized = window_depth_normalized.astype(np.uint8)
+        cv2.imwrite(f'images/window_depth_normalized.png', window_depth_normalized)
+
+
         num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(
-            window_mask01, connectivity=8, ltype=cv2.CV_32S
+            window_mask01.astype(np.uint8), connectivity=8, ltype=cv2.CV_32S
         )
-        #find the closet closed contore
-        #make sure its not an overlapping frame
+        # print(f'num_labels{num_labels}, labels{labels}, stats{stats}, centroids{centroids} ')
+        areas = stats[1:, cv2.CC_STAT_AREA]
+        order_by_area = np.argsort(areas)[::-1] + 1 
+        # largest component's label id
+        largest_id = order_by_area[0]
 
+        # mask for largest blob
+        largest_mask = (labels == largest_id)
 
-        #get the min (closest) pixle
-        minVal, maxVal, minLoc, maxLoc = cv2.minMaxLoc(window_depth)
+        largest_window_mask = depth * largest_mask
+        largest_window_mask_normalized = cv2.normalize(largest_window_mask, None, 0, 255, cv2.NORM_MINMAX)
+        largest_window_mask_normalized = largest_window_mask_normalized.astype(np.uint8)
+        cv2.imwrite(f'images/largest_window_mask_normalized.png', largest_window_mask_normalized)
+        # # bounding box and centroid of largest blob
+        # x = stats[largest_id, cv2.CC_STAT_LEFT]
+        # y = stats[largest_id, cv2.CC_STAT_TOP]
+        # w = stats[largest_id, cv2.CC_STAT_WIDTH]
+        # h = stats[largest_id, cv2.CC_STAT_HEIGHT]
+        (cw, ch) = centroids[largest_id]
+        # print(f'x{x}')
+        # print(f'y{y}')
+        # print(f'w{w}')
+        # print(f'h{h}')
+        print(f'cw{cw}, ch{ch}')
+        avg_depth = largest_window_mask[largest_window_mask>0].mean()
+        print(f'avg depth {avg_depth}')
 
-        #then erode depth image arround each respective depth
+        ex = avg_depth
+        ey = cw - (self.img_w/2)
+        ez = ch - (self.img_h/2)
+        return ex, ey, ez        #then erode depth image arround each respective depth
 
     # def save_video(self)
 

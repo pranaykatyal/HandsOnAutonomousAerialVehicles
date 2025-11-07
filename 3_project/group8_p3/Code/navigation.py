@@ -37,8 +37,8 @@ def goToWaypoint(currentPose, targetPose, targetOrientation=None, velocity=0.1):
         control_orientation = False
     
     dt = 0.01  # 10ms timestep
-    tolerance = 0.01  # 10cm tolerance
-    max_time = 30.0  # Maximum 30 seconds
+    tolerance = 0.005  # 10cm tolerance
+    max_time = 60.0  # Maximum 30 seconds
     
     # Initialize controller
     controller = QuadrotorController(tello)
@@ -156,7 +156,7 @@ def goToWaypoint(currentPose, targetPose, targetOrientation=None, velocity=0.1):
         # Loop completed without break
         state_final = state
         error = np.linalg.norm(state_final[0:3] - target_position)
-        print(f"  Final error: {error:.3f}m")
+        print(f" WARNING: path did not fully complete! Final error: {error:.3f}m")
     
     # Extract final pose
     final_pos = state_final[0:3]
