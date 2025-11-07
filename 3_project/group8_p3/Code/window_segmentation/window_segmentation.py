@@ -40,7 +40,7 @@ class Window_Segmentaion():
         else: #its PIL
             rgb_resized = rgb.resize((self.img_w, self.img_h))
         cv2.imwrite(f'pre_seg_view.png', rgb_resized)
-        rgb_tensor = T.ToTensor()(rgb)
+        rgb_tensor = T.ToTensor()(rgb_resized)
         # Add batch dimension
         rgb_tensor = rgb_tensor.unsqueeze(0)  # Shape: [1, C, H, W]
 
@@ -62,7 +62,7 @@ class Window_Segmentaion():
             pred_probs = pred_probs.numpy()  # Shape: [out_ch, H, W]
         
         # Convert probabilities to binary mask (threshold at 0.5) and scale to 0-255
-        return ((pred_probs > 0.95).astype(np.uint8) * 255)
+        return ((pred_probs > self.model_thresh).astype(np.uint8) * 255)
 
     
     #asssuming input images are already opencv

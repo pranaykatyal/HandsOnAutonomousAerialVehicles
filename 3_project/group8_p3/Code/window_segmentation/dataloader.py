@@ -62,7 +62,7 @@ class WindowDataset(Dataset):
             rgb = self.guass_noise(rgb)
             rgb = self.blur(rgb)
             rgb = self.color_jit(rgb)
-            rgb, lebel = self.elastic_transform(rgb, label)
+            rgb, label = self.elastic_transform(rgb, label)
             rgb, label = self.center_crop(rgb, label)
         
         # get rid of alpha in the png
@@ -98,7 +98,7 @@ class WindowDataset(Dataset):
     
 
     def elastic_transform(self, rgb, label):
-        alpha = random.uniform(0, 200)
+        alpha = random.uniform(0, 100)
         elastic_transform = T.ElasticTransform(alpha)
         return elastic_transform(rgb), elastic_transform(label)
     
@@ -107,7 +107,7 @@ class WindowDataset(Dataset):
         zoom = random.uniform(0, 75)
         size_w = self.img_w - zoom
         size_h = self.img_h - zoom
-        return T.CenterCrop(size=(size_w, size_h))(rbg), T.CenterCrop(size=(size_w, size_h))(lebel)
+        return T.CenterCrop(size=(size_w, size_h))(rbg).resize([self.img_w, self.img_h]), T.CenterCrop(size=(size_w, size_h))(lebel).resize([self.img_w, self.img_h])
 
     def add_background(self, img):
         # randomly translate and rotate the background image
@@ -151,12 +151,15 @@ if __name__ == "__main__":
     import cv2
 
     rgb, label = dataset[0]
-    cv2.imwrite("test0.png" ,CombineImages(rgb,rgb,label))
+    cv2.imwrite("test0.png" ,CombineImages(pred=label,label=label,rgb=rgb))
     rgb, label = dataset[10]
-    cv2.imwrite("test10.png" ,CombineImages(rgb,rgb,label))
+    cv2.imwrite("test10.png" ,CombineImages(pred=label,label=label,rgb=rgb))
     rgb, label = dataset[11]
-    cv2.imwrite("test11.png" ,CombineImages(rgb,rgb,label))
+    cv2.imwrite("test11.png" ,CombineImages(pred=label,label=label,rgb=rgb))
     rgb, label = dataset[12]
-    cv2.imwrite("test12.png" ,CombineImages(rgb,rgb,label))
+    cv2.imwrite("test12.png" ,CombineImages(pred=label,label=label,rgb=rgb))
     rgb, label = dataset[13]
-    cv2.imwrite("test13.png" ,CombineImages(rgb,rgb,label))
+    cv2.imwrite("test13.png" ,CombineImages(pred=label,label=label,rgb=rgb))
+    for n in range(30):
+        rgb, label = dataset[n*11]
+        cv2.imwrite(f"log/test{n}.png" ,CombineImages(pred=label,label=label,rgb=rgb))

@@ -12,7 +12,7 @@ from window_segmentation.network import Network
 from params import *
 from window_detector import WindowDetector
 from orientation_navigation import navigate_with_orientation_correction
-from navigation import goToWaypoint, navigate_through_window
+from navigation import goToWaypoint
 import os
 import shutil
 import glob
@@ -27,7 +27,7 @@ def main(renderer):
     segmentor = Window_Segmentaion(
         torch_network=Network,
         model_path=TRAINED_MODEL_PATH,
-        model_thresh=0.90,
+        model_thresh=0.98,
         in_ch=3, 
         out_ch=1, 
         img_h=256, 
@@ -56,8 +56,8 @@ def main(renderer):
     
     # Initialize pose - NED frame
     currentPose = {
-        'position': np.array([0.0, 0.0, -0.2]),  # Start slightly elevated
-        'rpy': np.radians([0, 0.0, 0.0])       # Level orientation
+        'position': np.array([0.0, 0.0, 0.0]),  # Start slightly elevated
+        'rpy': np.radians([np.pi, 0.0, 0.0])       # Level orientation
     }
     # x = renderer.render(currentPose['position'], currentPose['rpy'])
     # cv2.imwrite('bla.png', x)
@@ -68,14 +68,39 @@ def main(renderer):
     
     # Main racing loop
     for windowCount in range(numWindows):
-        success, currentPose = navigate_with_orientation_correction(
-            renderer=renderer,
-            currentPose=currentPose,
-            segmentor=segmentor,
-            detector=detector,
-            windowCount=windowCount,
-            max_iterations=60
-        )
+        # success, currentPose = navigate_with_orientation_correction(
+        #     renderer=renderer,
+        #     currentPose=currentPose,
+        #     segmentor=segmentor,
+        #     detector=detector,
+        #     windowCount=windowCount,
+        #     max_iterations=60
+        # )
+
+        for n in range(30):
+            color_image, depth_image, metric_depth = renderer.render(
+                currentPose['position'], 
+                currentPose['rpy']
+                )
+            # Segment
+            segmented = segmentor.get_pred(color_image)
+            segmented = cv2.normalize(segmented, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+            
+            # Detect
+            detections = detector.process_segmentation(segmented)
+            
+            # Save images
+            iter_prefix = f'./log/window_{windowCount}_iter_{n:02d}'
+            cv2.imwrite(f'{iter_prefix}_rgb.png', cv2.cvtColor(color_image, cv2.COLOR_RGB2BGR))
+
+
+            cv2.imwrite(f'{iter_prefix}_segmentation.png', segmented)
+            print("  Moving forward 0.1m blindly...")
+            target_pos = currentPose['position'].copy()
+            target_pos[0] += 0.1
+            target_rpy = currentPose['rpy'].copy()  # Maintain current orientation
+            currentPose = goToWaypoint(currentPose, target_pos, target_rpy, velocity=0.05)
+
         
         if success:
             successful_windows += 1

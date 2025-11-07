@@ -187,7 +187,7 @@ def navigate_with_orientation_correction(renderer, currentPose, segmentor, detec
     print(f"Window {windowCount + 1} - Orientation-Aware Navigation")
     print(f"{'='*60}")
     
-    ORIENTATION_THRESHOLD = np.radians(2)  # 5 degrees
+    ORIENTATION_THRESHOLD = np.radians(30)  # 5 degrees
     CLOSE_AREA_THRESHOLD = 0.50  # 25% of image
     
     for iteration in range(max_iterations):
@@ -213,7 +213,7 @@ def navigate_with_orientation_correction(renderer, currentPose, segmentor, detec
         cv2.imwrite(f'{iter_prefix}_rgb.png', cv2.cvtColor(color_image, cv2.COLOR_RGB2BGR))
         cv2.imwrite(f'{iter_prefix}_segmentation.png', segmented)
         
-        if not detections:
+        if  not detections:
             print(" No windows detected")
             
             # Blind forward movement
@@ -250,6 +250,7 @@ def navigate_with_orientation_correction(renderer, currentPose, segmentor, detec
         
         # Decision: Rotate or Move?
         if orientation_error_magnitude > ORIENTATION_THRESHOLD:
+            print("this shouldnet happen, if your seeing this we are accounting for yaw which we shouldent be doing")
             # Need to correct orientation first
             print(f"Correcting orientation (error: {np.degrees(orientation_error_magnitude):.1f}°)...")
             
