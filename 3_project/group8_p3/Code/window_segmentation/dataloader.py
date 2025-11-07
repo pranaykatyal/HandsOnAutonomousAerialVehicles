@@ -62,6 +62,8 @@ class WindowDataset(Dataset):
             rgb = self.guass_noise(rgb)
             rgb = self.blur(rgb)
             rgb = self.color_jit(rgb)
+            rgb, lebel = self.elastic_transform(rgb, label)
+            rgb, label = self.center_crop(rgb, label)
         
         # get rid of alpha in the png
         rgb = rgb.convert("RGB")
@@ -93,6 +95,19 @@ class WindowDataset(Dataset):
             brightness=(0.3, 2.0), contrast=(0.33, 3.0),
             saturation=(0.3, 2.0), hue=(-0.35, 0.35))
         return color_jitter(input_img)
+    
+
+    def elastic_transform(self, rgb, label):
+        alpha = random.uniform(0, 200)
+        elastic_transform = T.ElasticTransform(alpha)
+        return elastic_transform(rgb), elastic_transform(label)
+    
+    def center_crop(self, rbg, lebel):
+        #original image is self.img_w, to zoom in, we need to subtract by some ammmount
+        zoom = random.uniform(0, 75)
+        size_w = self.img_w - zoom
+        size_h = self.img_h - zoom
+        return T.CenterCrop(size=(size_w, size_h))(rbg), T.CenterCrop(size=(size_w, size_h))(lebel)
 
     def add_background(self, img):
         # randomly translate and rotate the background image
@@ -145,3 +160,6 @@ if __name__ == "__main__":
     cv2.imwrite("test12.png" ,CombineImages(rgb,rgb,label))
     rgb, label = dataset[13]
     cv2.imwrite("test13.png" ,CombineImages(rgb,rgb,label))
+    for n in range(30):
+        rgb, label = dataset[n*10]
+        cv2.imwrite(f"logs/test{n}.png" ,CombineImages(rgb,rgb,label))
