@@ -1,17 +1,17 @@
 from splat_render import SplatRenderer
 import numpy as np
 import cv2
-import matplotlib.pyplot as plt
-from scipy.integrate import solve_ivp
-from pyquaternion import Quaternion
-from control import QuadrotorController
-from quad_dynamics import model_derivative
-import tello
+# import matplotlib.pyplot as plt
+# from scipy.integrate import solve_ivp
+# from pyquaternion import Quaternion
+# from control import QuadrotorController
+# from quad_dynamics import model_derivative
+# import tello
 from window_segmentation.window_segmentation import Window_Segmentaion
 from window_segmentation.network import Network
 from params import *
 from window_detector import WindowDetector
-from orientation_navigation import navigate_with_orientation_correction
+# from orientation_navigation import navigate_with_orientation_correction
 from navigation import goToWaypoint
 import os
 import shutil
@@ -35,10 +35,7 @@ def main(renderer):
     )
     ALIGNMENT_ATTEMPTS = 30
     WINDOW_THRESHOLD = 8 #pixle tolerance from center of image
-    # Set up window detector (adjust dimensions based on render_settings_2.json)
-    detector = WindowDetector(image_width=640, image_height=480)
 
-    # Create log directory and clean old image files
 
     # Create log directory if it doesn't exist
     os.makedirs('./log', exist_ok=True)
@@ -69,26 +66,12 @@ def main(renderer):
                 currentPose['position'], 
                 currentPose['rpy']
                 )
-    # x = renderer.render(currentPose['position'], currentPose['rpy'])
-    # cv2.imwrite('bla.png', x)
-    # exit()
-    
     numWindows = 3
     successful_windows = 0
     
     # Main racing loop
     for windowCount in range(numWindows):
-        # success, currentPose = navigate_with_orientation_correction(
-        #     renderer=renderer,
-        #     currentPose=currentPose,
-        #     segmentor=segmentor,
-        #     detector=detector,
-        #     windowCount=windowCount,
-        #     max_iterations=60
-        # )
-
         for n in range(ALIGNMENT_ATTEMPTS):
-            rpy = currentPose['rpy']
             # rpy[0] = (rpy[0]+np.pi) % (np.pi * 2)
             color_image, depth_image, metric_depth = renderer.render(
                 currentPose['position'], 
@@ -106,7 +89,7 @@ def main(renderer):
             print(f'{windowCount}, iter{n} window ex {ex}, ey {ey}, ez {ez}')
             # kx = .001
             ky = .005 #TODO tune this
-            kz = .003
+            kz = .005
             ctrl_y = ey * ex * ky #for y and z multiply the pixle error by how far away the object is with this scaleing term- we can mess with it, they should technically be the same
             ctrl_z = ez * ex * kz
 
@@ -118,7 +101,8 @@ def main(renderer):
                 target_pos = currentPose['position'].copy()
                 target_pos[0] += ex + .003 #add some tolerance
                 target_rpy = np.zeros_like(currentPose['rpy']) # Maintain current orientation
-                currentPose = goToWaypoint(currentPose, target_pos, target_rpy, velocity=0.01) #TODO make velocity value larget
+                currentPose = goToWaypoint(currentPose, target_pos, target_rpy, velocity=0.03) #TODO make velocity value larget
+                success = True
                 break
             else:
                 #if we still need to correct do that
@@ -132,13 +116,12 @@ def main(renderer):
 
 
         
-        # if success:
-        #     successful_windows += 1
-        #     print(f"\n Window {windowCount + 1} PASSED")
-        # else:
-        #     print(f"\n Window {windowCount + 1} FAILED")
-            # Optional: decide whether to continue or abort
-            # break  # Uncomment to stop on first failure
+        if success:
+            successful_windows += 1
+            print(f"\n Window {windowCount + 1} PASSED")
+        else:
+            print(f"\n Window {windowCount + 1} FAILED")
+            break  # Uncomment to stop on first failure
     
     # Final summary
     print(f"\n{'='*60}")

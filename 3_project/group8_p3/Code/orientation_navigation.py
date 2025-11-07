@@ -216,13 +216,17 @@ def navigate_with_orientation_correction(renderer, currentPose, segmentor, detec
         if  not detections:
             print(" No windows detected")
             
-            # Blind forward movement
+            # If we've lost sight of the window, try to scan
             if iteration < max_iterations - 2:
-                print("  Moving forward 0.1m blindly...")
+                print("  Lost window - scanning for target...")
+                # Move smaller distance and maintain orientation
                 target_pos = currentPose['position'].copy()
-                target_pos[0] += 0.1
-                target_rpy = currentPose['rpy'].copy()  # Maintain current orientation
-                currentPose = goToWaypoint(currentPose, target_pos, target_rpy, velocity=0.1)
+                target_pos[0] += 0.05  # Small forward motion while scanning
+                targetPose = {
+                    'position': target_pos,
+                    'rpy': currentPose['rpy'].copy()
+                }
+                currentPose = goToWaypoint(currentPose, targetPose, velocity=0.05)  # Slower for safety
                 continue
             else:
                 return False, currentPose
@@ -254,35 +258,72 @@ def navigate_with_orientation_correction(renderer, currentPose, segmentor, detec
             # Need to correct orientation first
             print(f"Correcting orientation (error: {np.degrees(orientation_error_magnitude):.1f}°)...")
             
-            target_pos, target_rpy, rotation_mag = compute_orientation_correction_target(
-                currentPose, yaw_error, pitch_error, max_rotation_per_step=np.radians(8)
-            )
+            # Keep same position but update orientation
+            target_rpy = currentPose['rpy'].copy()
             
-            print(f"  Rotating {np.degrees(rotation_mag):.1f} (target rpy: {np.degrees(target_rpy)})")
+            # Apply orientation corrections directly
+            target_rpy[2] += np.clip(yaw_error, -np.radians(5), np.radians(5))    # Yaw correction
+            target_rpy[1] += np.clip(pitch_error, -np.radians(5), np.radians(5))  # Pitch correction
+            target_rpy[0] = 0.0  # Keep roll level
             
+            print(f"  Current RPY: {np.degrees(currentPose['rpy'])}")
+            print(f"  Target RPY: {np.degrees(target_rpy)}")
+            
+<<<<<<< HEAD
             # Execute rotation (position stays same)
             currentPose = goToWaypoint(currentPose, target_pos, target_rpy, velocity=0.5)
             # currentPose['rpy'] = target_rpy  # Force orientation update
+=======
+            # Execute pure rotation (keep same position)
+            targetPose = {
+                'position': currentPose['position'].copy(),
+                'rpy': target_rpy
+            }
+            currentPose = goToWaypoint(currentPose, targetPose, velocity=0.05)
+>>>>>>> 3e82b6f05b00939c71560830e51d1ca6d4cb0614
             
         elif area_pct > CLOSE_AREA_THRESHOLD and is_frontal:
             # Oriented correctly AND close enough
             print(f" Oriented correctly and close ({area_pct:.1f}%) - FLYING THROUGH!")
             
+<<<<<<< HEAD
             target_pos = currentPose['position'].copy()
             target_pos[0] += 1.5
             target_rpy = np.radians([0.0, 0.0, 0.0])
             currentPose = goToWaypoint(currentPose, target_pos, target_rpy,velocity=1)
+=======
+            # Use window's position to compute target
+            target_pos = detector.compute_navigation_target(
+                currentPose['position'],
+                closest,
+                forward_distance=2.0  # Move through the window
+            )
+            
+            targetPose = {
+                'position': target_pos,
+                'rpy': np.radians([0.0, 0.0, 0.0])  # Keep level while traversing
+            }
+            currentPose = goToWaypoint(currentPose, targetPose, velocity=0.6)
+>>>>>>> 3e82b6f05b00939c71560830e51d1ca6d4cb0614
             
             return True, currentPose
             
         else:
-            # Oriented correctly but not close yet - move forward
-            print(f"Oriented correctly, moving forward...")
+            # Oriented correctly but not close yet - move toward window center
+            print(f"Oriented correctly, moving toward window...")
             
-            target_pos = currentPose['position'].copy()
-            target_pos[0] += 0.15  # 15cm forward
-            target_rpy = np.radians([0.0, 0.0, 0.0])
-            currentPose = goToWaypoint(currentPose, target_pos,target_rpy, velocity=0.2)
+            # Compute target based on window position
+            target_pos = detector.compute_navigation_target(
+                currentPose['position'],
+                closest,
+                forward_distance=0.3  # Smaller steps during approach
+            )
+            
+            targetPose = {
+                'position': target_pos,
+                'rpy': np.radians([0.0, 0.0, 0.0])
+            }
+            currentPose = goToWaypoint(currentPose, targetPose, velocity=0.2)
     
     print(f" Max iterations reached")
     return False, currentPose
