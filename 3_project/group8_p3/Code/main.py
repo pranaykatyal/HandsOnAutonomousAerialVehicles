@@ -37,8 +37,6 @@ def main(renderer):
     # Set up window detector (adjust dimensions based on render_settings_2.json)
     detector = WindowDetector(image_width=640, image_height=480)
 
-    # Create log directory and clean old image files
-
     # Create log directory if it doesn't exist
     os.makedirs('./log', exist_ok=True)
 
