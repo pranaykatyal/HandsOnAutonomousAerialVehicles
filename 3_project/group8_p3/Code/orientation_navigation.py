@@ -260,7 +260,7 @@ def navigate_with_orientation_correction(renderer, currentPose, segmentor, detec
             print(f"  Rotating {np.degrees(rotation_mag):.1f} (target rpy: {np.degrees(target_rpy)})")
             
             # Execute rotation (position stays same)
-            currentPose = goToWaypoint(currentPose, target_pos, target_rpy, velocity=0.05)
+            currentPose = goToWaypoint(currentPose, target_pos, target_rpy, velocity=0.5)
             # currentPose['rpy'] = target_rpy  # Force orientation update
             
         elif area_pct > CLOSE_AREA_THRESHOLD and is_frontal:
@@ -270,7 +270,7 @@ def navigate_with_orientation_correction(renderer, currentPose, segmentor, detec
             target_pos = currentPose['position'].copy()
             target_pos[0] += 1.5
             target_rpy = np.radians([0.0, 0.0, 0.0])
-            currentPose = goToWaypoint(currentPose, target_pos, target_rpy,velocity=0.6)
+            currentPose = goToWaypoint(currentPose, target_pos, target_rpy,velocity=1)
             
             return True, currentPose
             

@@ -35,7 +35,7 @@ def main(renderer):
     )
     
     # Set up window detector (adjust dimensions based on render_settings_2.json)
-    detector = WindowDetector(image_width=640, image_height=480)
+    detector = WindowDetector(image_width=256, image_height=256)
 
     # Create log directory and clean old image files
 
@@ -57,8 +57,11 @@ def main(renderer):
     # Initialize pose - NED frame
     currentPose = {
         'position': np.array([0.0, 0.0, -0.2]),  # Start slightly elevated
-        'rpy': np.radians([0.0, 0.0, 0.0])       # Level orientation
+        'rpy': np.radians([0, 0.0, 0.0])       # Level orientation
     }
+    # x = renderer.render(currentPose['position'], currentPose['rpy'])
+    # cv2.imwrite('bla.png', x)
+    # exit()
     
     numWindows = 3
     successful_windows = 0
@@ -71,7 +74,7 @@ def main(renderer):
             segmentor=segmentor,
             detector=detector,
             windowCount=windowCount,
-            max_iterations=30
+            max_iterations=60
         )
         
         if success:
