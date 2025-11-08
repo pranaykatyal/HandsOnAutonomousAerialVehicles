@@ -1,3 +1,3 @@
-TRAINED_MODEL_PATH = "/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/3_project/group8_p3/Code/window_segmentation/logs/window_seg_2_new_datalaoder/parameter3/0.pth"
+TRAINED_MODEL_PATH = "/home/pkatyal/HandsOnAutonomousAerialVehicles/3_project/group8_p3/Code/1.pth"
 ALIGNMENT_ATTEMPTS = 30
-WINDOW_THRESHOLD = 8 #pixle tolerance from center of image
+WINDOW_THRESHOLD = 3 #pixle tolerance from center of image

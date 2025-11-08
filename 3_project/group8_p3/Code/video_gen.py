@@ -1,118 +1,154 @@
-import numpy as np
-import matplotlib.pyplot as plt
-import mpl_toolkits.mplot3d as a3
-from mpl_toolkits.mplot3d import Axes3D
-from matplotlib.patches import Polygon
-import subprocess
+#!/usr/bin/env python3
+"""
+Generate videos from logged frames after simulation completes
+"""
 import os
+import sys
+import glob
+import shutil
+import subprocess
 
-def ffmpeging_video(img_dir,delineator,fps,save_dir,img_type='.png'):
-    # Check if directory exists and has frames
-    if not os.path.exists(img_dir):
-        print(f'directory {img_dir} does not exist!')
-        return False
+def ffmpeging_video(input_pattern, output_file, fps=5):
+    """Generate video from image sequence using ffmpeg"""
+    # Ensure output file has .mp4 extension
+    if not output_file.endswith('.mp4'):
+        output_file += '.mp4'
     
-    if not os.path.exists(save_dir):
-        print(f'directory {save_dir} did not exist ')
-        return False
-
-    # Check if there are any frame files
-    plot_files = [f for f in os.listdir(img_dir) if f.startswith(delineator) and f.endswith(img_type)]
-    if not plot_files:
-        print(f'No plot_files')
-        return False
-
-    video_path = os.path.join(save_dir, f'{delineator}.mp4')
-    
-    # ffmpeg command to create video from frames
     cmd = [
-        'ffmpeg', '-y', '-loglevel', 'error', '-framerate', str(fps),
-        '-pattern_type', 'glob', '-i', os.path.join(img_dir,f'{delineator}*{img_type}'),
-        '-c:v', 'libx264', '-pix_fmt', 'yuv420p', video_path
+        'ffmpeg', '-y',
+        '-pattern_type', 'glob',
+        '-framerate', str(fps),
+        '-i', input_pattern,
+        '-c:v', 'libx264',
+        '-pix_fmt', 'yuv420p',
+        output_file
     ]
     
-    print(f'Creating video with cmd {cmd}...')
-    
+    print(f"Running ffmpeg command: {' '.join(cmd)}")
     try:
-        subprocess.run(cmd, check=True)
-        print(f'Successfully created {video_path}')
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        print(f"Successfully created video: {output_file}")
+        return True
     except subprocess.CalledProcessError as e:
-        print(f'Error creating video for {video_path}: {e}')
-    except FileNotFoundError:
-        print(f'ffmpeg not found. Please install ffmpeg to create videos.')
-        return
-
+        print(f"Error creating video: {e}")
+        print(f"ffmpeg stderr: {e.stderr}")
+        return False
 
 def create_combined_video(dataset_dir, video_paths):
     """
-    Create a combined grid video from individual method videos.
-    
-    Args:
-        dataset_dir: Directory to save the combined video
-        video_paths: List of paths to individual videos
-        method_names: List of method names corresponding to video paths
+    Create a side-by-side video from two input videos
     """
-    combined_path = os.path.join(dataset_dir, 'combined.mp4')
-    if len(video_paths) == 2:
-        # 2 videos in a horizontal row
-        cmd_grid = [
-            'ffmpeg', '-y', '-loglevel', 'error',
-            '-i', video_paths[0], '-i', video_paths[1],
-            "-filter_complex",
-            "[0:v]rotate=PI,fps=10,scale=-2:720:flags=lanczos,setsar=1[v0];"
-            "[1:v]fps=10,scale=-2:720:flags=lanczos,setsar=1[v1];"
-            "[v0][v1]hstack=inputs=2:shortest=1[v]",
-            "-map", "[v]", "-r", "10",
-            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart",
-            "-an",
-            combined_path
-        ]
-        layout = "1x2 horizontal"
-           
-    elif len(video_paths) == 5:
-        # 5 videos in a horizontal row - simple and clean
-        cmd_grid = [
-            'ffmpeg', '-y', '-loglevel', 'error',
-            '-i', video_paths[0], '-i', video_paths[1], '-i', video_paths[2], 
-            '-i', video_paths[3], '-i', video_paths[4],
-            '-filter_complex',
-            '[0:v][1:v][2:v][3:v][4:v]hstack=inputs=5',
-            '-c:v', 'libx264', '-pix_fmt', 'yuv420p', combined_path
-        ]
-        layout = "1x5 horizontal"
-        
-    elif len(video_paths) == 6:
-        # 3x2 grid for 6 videos
-        cmd_grid = [
-            'ffmpeg', '-y', '-loglevel', 'error',
-            '-i', video_paths[0], '-i', video_paths[1], '-i', video_paths[2], 
-            '-i', video_paths[3], '-i', video_paths[4], '-i', video_paths[5],
-            '-filter_complex',
-            '[0:v][1:v][2:v]hstack=inputs=3[top];[3:v][4:v][5:v]hstack=inputs=3[bottom];[top][bottom]vstack=inputs=2',
-            '-c:v', 'libx264', '-pix_fmt', 'yuv420p', combined_path
-        ]
-        layout = "3x2"
-        
-    else:
-        # For other numbers, create a horizontal stack
-        inputs = ''.join([f'-i {path} ' for path in video_paths])
-        filter_str = ''.join([f'[{i}:v]' for i in range(len(video_paths))]) + f'hstack=inputs={len(video_paths)}'
-        
-        cmd_grid = [
-            'ffmpeg', '-y', '-loglevel', 'error'
-        ] + [item for path in video_paths for item in ['-i', path]] + [
-            '-filter_complex', filter_str,
-            '-c:v', 'libx264', '-pix_fmt', 'yuv420p', combined_path
-        ]
-        layout = f"1x{len(video_paths)}"
+    if len(video_paths) != 2:
+        print("Error: Exactly 2 video paths required for side-by-side combination")
+        return False
     
-    print(f'Combining videos into {layout} grid for {dataset_dir}...')
-    # print(f'Methods in grid: {", ".join(method_names)}')
+    output_path = os.path.join(dataset_dir, 'combined_visualization.mp4')
+    
+    cmd = [
+        'ffmpeg', '-y',
+        '-i', video_paths[0],
+        '-i', video_paths[1],
+        '-filter_complex', '[0:v][1:v]hstack=inputs=2[v]',
+        '-map', '[v]',
+        '-c:v', 'libx264',
+        '-pix_fmt', 'yuv420p',
+        output_path
+    ]
     
     try:
-        subprocess.run(cmd_grid, check=True)
-        print(f'Combined video saved at {combined_path}')
+        subprocess.run(cmd, check=True, capture_output=True)
+        return output_path
     except subprocess.CalledProcessError as e:
-        print(f'Error creating combined video: {e}')
-    except FileNotFoundError:
-        print(f'ffmpeg not found. Please install ffmpeg to create combined video.')
+        print(f"Error creating combined video: {e}")
+        return False
+
+def main():
+    # Directories
+    log_dir = './log'
+    video_output_dir = './videos'
+    
+    # Clear and recreate videos directory
+    if os.path.exists(video_output_dir):
+        shutil.rmtree(video_output_dir)
+    os.makedirs(video_output_dir)
+    
+    print("=" * 60)
+    print("Starting video generation from logged frames")
+    print("=" * 60)
+    
+    # Check if log directory exists
+    if not os.path.exists(log_dir):
+        print(f"Error: Log directory '{log_dir}' does not exist!")
+        sys.exit(1)
+    
+    # Find all frames
+    rgb_frames = sorted(glob.glob(os.path.join(log_dir, 'window_*_rgb.png')))
+    seg_frames = sorted(glob.glob(os.path.join(log_dir, 'window_*_segmentation.png')))
+    
+    print(f"\nFound {len(rgb_frames)} RGB frames")
+    print(f"Found {len(seg_frames)} segmentation frames")
+    
+    if not rgb_frames and not seg_frames:
+        print("\nWarning: No frames found to create videos!")
+        sys.exit(0)
+    
+    # Generate videos
+    fps = 5  # Adjust frame rate as needed
+    video_paths = []
+    
+    # RGB video
+    if rgb_frames:
+        print(f"\nGenerating RGB video at {fps} fps...")
+        if ffmpeging_video(
+            input_pattern=os.path.join(log_dir, 'window_*_rgb.png'),
+            output_file=os.path.join(video_output_dir, 'rgb_video.mp4'),
+            fps=fps
+        ):
+            video_paths.append(os.path.join(video_output_dir, 'rgb_video.mp4'))
+    
+    # Segmentation video
+    if seg_frames:
+        print(f"\nGenerating segmentation video at {fps} fps...")
+        if ffmpeging_video(
+            input_pattern=os.path.join(log_dir, 'window_*_segmentation.png'),
+            output_file=os.path.join(video_output_dir, 'segmentation_video.mp4'),
+            fps=fps
+        ):
+            video_paths.append(os.path.join(video_output_dir, 'segmentation_video.mp4'))
+    
+    # Create combined side-by-side video if both exist
+    if len(video_paths) == 2:
+        print(f"\nCreating combined side-by-side video...")
+        # Scale both videos to 720p height while maintaining aspect ratio
+        cmd = [
+            'ffmpeg', '-y',
+            '-i', video_paths[0],
+            '-i', video_paths[1],
+            '-filter_complex',
+            '[0:v]scale=-1:720[v0];[1:v]scale=-1:720[v1];[v0][v1]hstack=inputs=2[v]',
+            '-map', '[v]',
+            '-c:v', 'libx264',
+            '-pix_fmt', 'yuv420p',
+            os.path.join(video_output_dir, 'combined_visualization.mp4')
+        ]
+        try:
+            subprocess.run(cmd, check=True, capture_output=True, text=True)
+            print("Successfully created combined video")
+        except subprocess.CalledProcessError as e:
+            print(f"Error creating combined video: {e}")
+            print(f"ffmpeg stderr: {e.stderr}")
+    
+    print("\n" + "=" * 60)
+    print("Video generation complete!")
+    print(f"Videos saved in: {video_output_dir}/")
+    print("=" * 60)
+    
+    # List generated videos
+    videos = [f for f in os.listdir(video_output_dir) if f.endswith('.mp4')]
+    if videos:
+        print("\nGenerated videos:")
+        for vid in videos:
+            print(f"  - {vid}")
+
+if __name__ == "__main__":
+    main()

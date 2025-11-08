@@ -37,7 +37,7 @@ def init_log_dir():
     
 
 
-def fly_though_window(segmentor:Window_Segmentaion, windowCount:int=999) -> bool:
+def fly_though_window(segmentor:Window_Segmentaion, currentPose:dict, windowCount:int=999) -> bool:
         for n in range(ALIGNMENT_ATTEMPTS):
             # rpy[0] = (rpy[0]+np.pi) % (np.pi * 2)
             color_image, depth_image, metric_depth = renderer.render(
@@ -49,8 +49,8 @@ def fly_though_window(segmentor:Window_Segmentaion, windowCount:int=999) -> bool
             segmented = cv2.normalize(segmented, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)           
             # Save images- 
             iter_prefix = f'./log/window_{windowCount}_iter_{n:02d}'
-            cv2.imwrite(f'{iter_prefix}_rgb.png', cv2.cvtColor(color_image, cv2.COLOR_RGB2BGR))
-            cv2.imwrite(f'{iter_prefix}_segmentation.png', segmented)
+            cv2.imwrite(f'{iter_prefix}_rgb.png', cv2.flip(cv2.cvtColor(color_image, cv2.COLOR_RGB2BGR), 0))  # Vertical flip
+            cv2.imwrite(f'{iter_prefix}_segmentation.png', cv2.flip(segmented, 0))  # Vertical flip
             #get centriod of frame
             ex, ey, ez = segmentor.get_closest_frame(color_image, metric_depth) #get the location error in px of the centroid of the nearest frame
             print(f'{windowCount}, iter{n} window ex {ex}, ey {ey}, ez {ez}')
@@ -74,8 +74,8 @@ def fly_though_window(segmentor:Window_Segmentaion, windowCount:int=999) -> bool
             else:
                 #if we still need to correct do that
                 target_pos = currentPose['position'].copy()
-                target_pos[1] += -ctrl_y #imo this is more inturtive than -=
-                target_pos[2] += -ctrl_z
+                target_pos[1] += ctrl_y #imo this is more inturtive than -=
+                target_pos[2] += ctrl_z
                 target_rpy = np.zeros_like(currentPose['rpy']) # 
                 currentPose = goToWaypoint(currentPose, target_pos, target_rpy, velocity=0.005) #TODO make velocity value larget
         else:
@@ -95,6 +95,8 @@ def main(renderer):
     init_log_dir()
 
     # Set up segmentation model
+
+
     segmentor = Window_Segmentaion(
         torch_network=Network,
         model_path=TRAINED_MODEL_PATH,
@@ -123,7 +125,7 @@ def main(renderer):
     
     # Main racing loop
     for windowCount in range(numWindows):
-        success = fly_though_window(segmentor=segmentor, windowCount=windowCount)
+        success = fly_though_window(segmentor=segmentor, currentPose=currentPose, windowCount=windowCount)
         if success:
             successful_windows += 1
             print(f"\n Window {windowCount + 1} PASSED")
