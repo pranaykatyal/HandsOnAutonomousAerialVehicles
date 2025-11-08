@@ -269,29 +269,17 @@ def navigate_with_orientation_correction(renderer, currentPose, segmentor, detec
             print(f"  Current RPY: {np.degrees(currentPose['rpy'])}")
             print(f"  Target RPY: {np.degrees(target_rpy)}")
             
-<<<<<<< HEAD
-            # Execute rotation (position stays same)
-            currentPose = goToWaypoint(currentPose, target_pos, target_rpy, velocity=0.5)
-            # currentPose['rpy'] = target_rpy  # Force orientation update
-=======
             # Execute pure rotation (keep same position)
             targetPose = {
                 'position': currentPose['position'].copy(),
                 'rpy': target_rpy
             }
             currentPose = goToWaypoint(currentPose, targetPose, velocity=0.05)
->>>>>>> 3e82b6f05b00939c71560830e51d1ca6d4cb0614
             
         elif area_pct > CLOSE_AREA_THRESHOLD and is_frontal:
             # Oriented correctly AND close enough
             print(f" Oriented correctly and close ({area_pct:.1f}%) - FLYING THROUGH!")
             
-<<<<<<< HEAD
-            target_pos = currentPose['position'].copy()
-            target_pos[0] += 1.5
-            target_rpy = np.radians([0.0, 0.0, 0.0])
-            currentPose = goToWaypoint(currentPose, target_pos, target_rpy,velocity=1)
-=======
             # Use window's position to compute target
             target_pos = detector.compute_navigation_target(
                 currentPose['position'],
@@ -304,7 +292,6 @@ def navigate_with_orientation_correction(renderer, currentPose, segmentor, detec
                 'rpy': np.radians([0.0, 0.0, 0.0])  # Keep level while traversing
             }
             currentPose = goToWaypoint(currentPose, targetPose, velocity=0.6)
->>>>>>> 3e82b6f05b00939c71560830e51d1ca6d4cb0614
             
             return True, currentPose
             
