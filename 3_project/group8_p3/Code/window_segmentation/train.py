@@ -141,7 +141,7 @@ valLoader = torch.utils.data.DataLoader(valset, BATCH_SIZE, True, num_workers=NU
 
 # Network and optimzer --------------------------------------------------------------
 model = Network(3, 1)
-model.load_state_dict(torch.load(PRETRAINED_PATH, weights_only=True))
+# model.load_state_dict(torch.load(PRETRAINED_PATH, weights_only=True))
 model = model.to(device)
 
 # LOSS FUNCTION AND OPTIMIZER

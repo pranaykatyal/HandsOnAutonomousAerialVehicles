@@ -17,26 +17,9 @@ import os
 import shutil
 import glob
 
-################################################
-#### Main Function ##############################
-################################################
-def main(renderer):
-    """Main racing loop - navigate through multiple windows"""
-    
-    # Set up segmentation model
-    segmentor = Window_Segmentaion(
-        torch_network=Network,
-        model_path=TRAINED_MODEL_PATH,
-        model_thresh=0.96,
-        in_ch=3, 
-        out_ch=1, 
-        img_h=480, 
-        img_w=640
-    )
-    ALIGNMENT_ATTEMPTS = 30
-    WINDOW_THRESHOLD = 8 #pixle tolerance from center of image
 
 
+def init_log_dir():
     # Create log directory if it doesn't exist
     os.makedirs('./log', exist_ok=True)
 
@@ -52,25 +35,9 @@ def main(renderer):
     else:
         print("No old image files to clean")
     
-    # Initialize pose - NED frame
-    currentPose = {
-        'position': np.array([0.0, 0.0, 0.0]),  # Start slightly elevated
-        'rpy': np.radians([np.pi, 0.0, 0.0])       # Level orientation
-    }
-    target_pos = currentPose['position'].copy()
-    target_pos[0] += 0.1
-    target_rpy = np.zeros_like(currentPose['rpy'])  # Maintain current orientation
-    currentPose = goToWaypoint(currentPose, target_pos, target_rpy, velocity=0.02)
 
-    color_image, depth_image, metric_depth = renderer.render(
-                currentPose['position'], 
-                currentPose['rpy']
-                )
-    numWindows = 3
-    successful_windows = 0
-    
-    # Main racing loop
-    for windowCount in range(numWindows):
+
+def fly_though_window(segmentor:Window_Segmentaion, windowCount:int=999) -> bool:
         for n in range(ALIGNMENT_ATTEMPTS):
             # rpy[0] = (rpy[0]+np.pi) % (np.pi * 2)
             color_image, depth_image, metric_depth = renderer.render(
@@ -111,11 +78,52 @@ def main(renderer):
                 target_pos[2] += -ctrl_z
                 target_rpy = np.zeros_like(currentPose['rpy']) # 
                 currentPose = goToWaypoint(currentPose, target_pos, target_rpy, velocity=0.005) #TODO make velocity value larget
+        else:
+            print('ERROR!! FAILED TO ALIGN BODY TO FRAME')
+            print('increse ALIGNMENT_ATTEMPTS, if this keeps happening, look into tuneing')
+            return False
+
         print("done flying though frame:")
         print(currentPose['position'])
+    
 
 
-        
+################################################
+#### Main Function ##############################
+################################################
+def main(renderer):
+    init_log_dir()
+
+    # Set up segmentation model
+    segmentor = Window_Segmentaion(
+        torch_network=Network,
+        model_path=TRAINED_MODEL_PATH,
+        model_thresh=0.96,
+        in_ch=3, 
+        out_ch=1, 
+        img_h=480, 
+        img_w=640
+    )
+    # Initialize pose - NED frame
+    currentPose = {
+        'position': np.array([0.0, 0.0, 0.0]),  # Start slightly elevated
+        'rpy': np.radians([np.pi, 0.0, 0.0])       # Level orientation
+    }
+    target_pos = currentPose['position'].copy()
+    target_pos[0] += 0.1
+    target_rpy = np.zeros_like(currentPose['rpy'])  # Maintain current orientation
+    currentPose = goToWaypoint(currentPose, target_pos, target_rpy, velocity=0.02)
+
+    color_image, depth_image, metric_depth = renderer.render(
+                currentPose['position'], 
+                currentPose['rpy']
+                )
+    numWindows = 3
+    successful_windows = 0
+    
+    # Main racing loop
+    for windowCount in range(numWindows):
+        success = fly_though_window(segmentor=segmentor, windowCount=windowCount)
         if success:
             successful_windows += 1
             print(f"\n Window {windowCount + 1} PASSED")

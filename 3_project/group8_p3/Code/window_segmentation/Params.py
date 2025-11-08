@@ -1,7 +1,7 @@
 import os
 
 HOME_PATH   =   os.path.expanduser("~")
-JOB_ID      =   "window_seg_2_new_datalaoder"
+JOB_ID      =   "window_seg_3_scratch"
 MODEL_NAME  =   "windowseg"
 DS_PATH     =   "/home/hkortus/scratch/window_images/"
 OUT_PATH    =   "/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/3_project/group8_p3/Code/window_segmentation/logs/"
