@@ -3,6 +3,8 @@ from scipy.integrate import solve_ivp
 from pyquaternion import Quaternion
 from control import QuadrotorController
 from quad_dynamics import model_derivative
+from dataclasses import dataclass
+
 import tello
 import cv2
 import os
@@ -10,8 +12,26 @@ import os
 # Global frame counter for unique naming
 _frame_counter = 0
 
+
+@dataclass
+class timecounter:
+    time = 0
+
+    def increment_time(self, increment):
+        self.time += increment
+
+    def reset_time(self):
+        self.time = 0
+
+    def get_time(self):
+        return self.time
+
+
+# Time = timecounter()
+
+
 def goToWaypoint(currentPose, targetPose, targetOrientation=None, velocity=0.1, 
-                 renderer=None, segmentor=None, window_id=0, iteration_id=0, save_every=5):
+                 renderer=None, segmentor=None,  window_id=0, iteration_id=0, save_every=5, Time=None):
     """
     Navigate quadrotor to a target waypoint
     
@@ -76,7 +96,9 @@ def goToWaypoint(currentPose, targetPose, targetOrientation=None, velocity=0.1,
     # Calculate distance and estimated time
     distance = np.linalg.norm(target_position - pos)
     estimated_time = min(distance / velocity * 2.0, max_time)
-    
+    if Time:
+        Time.increment_time(estimated_time)
+
     print(f"  Navigating: {pos} to {target_position}")
     print(f"  Distance: {distance:.2f}m, Est. time: {estimated_time:.1f}s")
     
@@ -203,6 +225,8 @@ def goToWaypoint(currentPose, targetPose, targetOrientation=None, velocity=0.1,
     }
     
     return newPose
+
+
 
 
 def reset_frame_counter():

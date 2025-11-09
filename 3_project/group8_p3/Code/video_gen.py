@@ -71,9 +71,22 @@ def main():
     
     # Find all frames - including both alignment and intermediate frames
     # Pattern matches: window_X_iter_Y_align_rgb.png and window_X_iter_Y_frame_Z_rgb.png
-    rgb_frames = sorted(glob.glob(os.path.join(log_dir, '*_rgb.png')), key=natural_sort_key)
-    seg_frames = sorted(glob.glob(os.path.join(log_dir, '*_segmentation.png')), key=natural_sort_key)
-    
+    all_rgb_frames = glob.glob(os.path.join(log_dir, '*_rgb.png'))
+    rgb_frames = sorted([
+        f for f in all_rgb_frames
+        if not (
+            'window_-1' in f or 'window_-1_' in f or 'nav_frame' in f
+        )
+    ], key=natural_sort_key)
+    all_seg_frames = glob.glob(os.path.join(log_dir, '*_segmentation.png'))
+    seg_frames = sorted([
+        f for f in all_seg_frames
+        if not (
+            'window_-1' in f or 'window_-1_' in f or 'nav_frame' in f
+        )
+    ], key=natural_sort_key)
+
+
     print(f"\nFound {len(rgb_frames)} RGB frames")
     print(f"Found {len(seg_frames)} segmentation frames")
     

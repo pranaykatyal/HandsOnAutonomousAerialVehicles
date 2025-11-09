@@ -67,6 +67,7 @@ class Window_Segmentaion():
     
         #asssuming input images are already opencv
     def get_closest_frame(self, rgb, depth):
+        
         #resize depth to be the same size as model output
         depth=cv2.resize(depth, (self.img_w, self.img_h))
         window_mask = self.get_pred(rgb)

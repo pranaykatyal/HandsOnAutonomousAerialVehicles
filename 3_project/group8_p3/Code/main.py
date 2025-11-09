@@ -1,18 +1,13 @@
 from splat_render import SplatRenderer
 import numpy as np
 import cv2
-# import matplotlib.pyplot as plt
-# from scipy.integrate import solve_ivp
-# from pyquaternion import Quaternion
-# from control import QuadrotorController
-# from quad_dynamics import model_derivative
-# import tello
+
 from window_segmentation.window_segmentation import Window_Segmentaion
 from window_segmentation.network import Network
 from params import *
 from window_detector import WindowDetector
 # from orientation_navigation import navigate_with_orientation_correction
-from navigation import goToWaypoint, reset_frame_counter
+from navigation import goToWaypoint, reset_frame_counter, timecounter
 import os
 import shutil
 import glob
@@ -48,12 +43,13 @@ def main(renderer):
     segmentor = Window_Segmentaion(
         torch_network=Network,
         model_path=TRAINED_MODEL_PATH,
-        model_thresh=0.70,
+        model_thresh=0.65,
         in_ch=3, 
         out_ch=1, 
-        img_h=256, 
-        img_w=256
+        img_h=480, 
+        img_w=640
     )
+    Time = timecounter()
     
     # Initialize pose - NED frame
     currentPose = {
@@ -67,7 +63,7 @@ def main(renderer):
     target_rpy = np.zeros_like(currentPose['rpy'])  # Maintain current orientation
     currentPose = goToWaypoint(currentPose, target_pos, target_rpy, velocity=0.02,
                                renderer=renderer, segmentor=segmentor, 
-                               window_id=-1, iteration_id=0, save_every=50)
+                               window_id=-1, iteration_id=0, save_every=50, Time=Time)
 
     color_image, depth_image, metric_depth = renderer.render(
                 currentPose['position'], 
@@ -75,7 +71,7 @@ def main(renderer):
                 )
     numWindows = 3
     successful_windows = 0
-    
+    Time.reset_time()
     # Main racing loop
     for windowCount in range(numWindows):
 
@@ -97,6 +93,7 @@ def main(renderer):
             
             # Get centroid of frame
             ex, ey, ez = segmentor.get_closest_frame(color_image, metric_depth)
+            print(f"plxle errors {ex}, {ey}, {ez}")
             
             if np.abs(ey * ex) < WINDOW_THRESHOLD and np.abs(ez * ex) < WINDOW_THRESHOLD:
                 print("!!! aligned, flyting though gate")
@@ -105,9 +102,9 @@ def main(renderer):
                     target_pos = currentPose['position'].copy()
                     target_pos[0] += (ex - APPROACH_DISTANCE)
                     target_rpy = np.zeros_like(currentPose['rpy'])
-                    currentPose = goToWaypoint(currentPose, target_pos, target_rpy, velocity=0.1,
+                    currentPose = goToWaypoint(currentPose, target_pos, target_rpy, velocity=0.2,
                                             renderer=renderer, segmentor=segmentor,
-                                            window_id=windowCount, iteration_id=n, save_every=5)
+                                            window_id=windowCount, iteration_id=n, save_every=5,Time=Time)
                     
                 else:
                     print('Close enough, fully flying though gate')
@@ -116,7 +113,7 @@ def main(renderer):
                     target_rpy = np.zeros_like(currentPose['rpy'])
                     currentPose = goToWaypoint(currentPose, target_pos, target_rpy, velocity=0.2,
                                             renderer=renderer, segmentor=segmentor,
-                                            window_id=windowCount, iteration_id=n, save_every=5)
+                                            window_id=windowCount, iteration_id=n, save_every=5,Time=Time)
                     
                     print(f"Stage 1 complete. Position: {currentPose['position']}")
                     print("===== Window pass complete! =====")
@@ -136,9 +133,9 @@ def main(renderer):
                 target_pos[1] += -ctrl_y
                 target_pos[2] += -ctrl_z
                 target_rpy = np.zeros_like(currentPose['rpy'])
-                currentPose = goToWaypoint(currentPose, target_pos, target_rpy, velocity=0.1,
+                currentPose = goToWaypoint(currentPose, target_pos, target_rpy, velocity=0.05,
                                           renderer=renderer, segmentor=segmentor,
-                                          window_id=windowCount, iteration_id=n, save_every=10)
+                                          window_id=windowCount, iteration_id=n, save_every=10,Time=Time)
         else:
             print('ERROR!! FAILED TO ALIGN BODY TO FRAME')
             print('increase ALIGNMENT_ATTEMPTS, if this keeps happening, look into tuning')
@@ -157,7 +154,7 @@ def main(renderer):
     print(f"{'='*60}")
     print(f"Successfully passed: {successful_windows}/{numWindows} windows")
     print(f"Final position: {currentPose['position']}")
-    
+    print(f'took {Time.get_time()} secconds to complete')
     return successful_windows == numWindows
 
 
