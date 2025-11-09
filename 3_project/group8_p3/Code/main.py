@@ -99,63 +99,32 @@ def main(renderer):
             ex, ey, ez = segmentor.get_closest_frame(color_image, metric_depth)
             
             if np.abs(ey * ex) < WINDOW_THRESHOLD and np.abs(ez * ex) < WINDOW_THRESHOLD:
-                # TWO-STAGE FLY-THROUGH APPROACH
-                print("!!!!! Aligned - starting 2-stage window pass !!!!")
-                print(f"Initial distance to window: {ex:.3f}m")
-                
-                # ===== STAGE 1: Fly 70% of the distance =====
-                print("\n[STAGE 1] Flying 70% of distance...")
-                target_pos = currentPose['position'].copy()
-                target_pos[0] += ex * 0.7  # Fly 70% of distance
-                target_rpy = np.zeros_like(currentPose['rpy'])
-                currentPose = goToWaypoint(currentPose, target_pos, target_rpy, velocity=0.1,
-                                          renderer=renderer, segmentor=segmentor,
-                                          window_id=windowCount, iteration_id=n, save_every=5)
-                
-                print(f"Stage 1 complete. Position: {currentPose['position']}")
-                
-                # ===== RE-ALIGNMENT CHECK at closer range =====
-                print("\n[RE-ALIGNMENT] Checking alignment at closer range...")
-                color_image, depth_image, metric_depth = renderer.render(
-                    currentPose['position'], 
-                    currentPose['rpy']
-                )
-                
-                # Save re-alignment check image
-                segmented = segmentor.get_pred(color_image)
-                segmented = cv2.normalize(segmented, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
-                realign_prefix = f'./log/window_{windowCount}_iter_{n:02d}_realign'
-                cv2.imwrite(f'{realign_prefix}_rgb.png', cv2.flip(cv2.cvtColor(color_image, cv2.COLOR_RGB2BGR), 0))
-                cv2.imwrite(f'{realign_prefix}_segmentation.png', cv2.flip(segmented, 0))
-                
-                # Get updated centroid measurements
-                ex2, ey2, ez2 = segmentor.get_closest_frame(color_image, metric_depth)
-                print(f"Re-alignment errors - ex: {ex2:.3f}m, ey*ex: {ey2*ex2:.4f}, ez*ex: {ez2*ex2:.4f}")
-                
-                # ===== STAGE 2: Correct and fly remaining distance =====
-                print("\n[STAGE 2] Applying corrections and flying through window...")
-                ky = .003 
-                kz = .003
-                ctrl_y = ey2 * ex2 * ky
-                ctrl_z = ez2 * ex2 * kz
-                
-                target_pos = currentPose['position'].copy()
-                target_pos[0] += ex2  # Remaining distance (should be ~30% of original)
-                target_pos[1] += -ctrl_y  # Y correction based on closer measurement
-                target_pos[2] += -ctrl_z  # Z correction based on closer measurement
-                target_rpy = np.zeros_like(currentPose['rpy'])
-                
-                print(f"Final corrections applied - Y: {-ctrl_y:.4f}m, Z: {-ctrl_z:.4f}m")
-                
-                currentPose = goToWaypoint(currentPose, target_pos, target_rpy, velocity=0.1,
-                                          renderer=renderer, segmentor=segmentor,
-                                          window_id=windowCount, iteration_id=n, save_every=3)
-               
-                print("===== Window pass complete! =====")
-                print(f"Final position: {currentPose['position']}")
-                success = True
-                break
+                print("!!! aligned, flyting though gate")
+                if ex > APPROACH_DISTANCE:
+                    print("\n Too far, going most of the way")
+                    target_pos = currentPose['position'].copy()
+                    target_pos[0] += (ex - APPROACH_DISTANCE)
+                    target_rpy = np.zeros_like(currentPose['rpy'])
+                    currentPose = goToWaypoint(currentPose, target_pos, target_rpy, velocity=0.1,
+                                            renderer=renderer, segmentor=segmentor,
+                                            window_id=windowCount, iteration_id=n, save_every=5)
+                    
+                else:
+                    print('Close enough, fully flying though gate')
+                    target_pos = currentPose['position'].copy()
+                    target_pos[0] += ex
+                    target_rpy = np.zeros_like(currentPose['rpy'])
+                    currentPose = goToWaypoint(currentPose, target_pos, target_rpy, velocity=0.2,
+                                            renderer=renderer, segmentor=segmentor,
+                                            window_id=windowCount, iteration_id=n, save_every=5)
+                    
+                    print(f"Stage 1 complete. Position: {currentPose['position']}")
+                    print("===== Window pass complete! =====")
+                    print(f"Final position: {currentPose['position']}")
+                    success = True
+                    break
             else:
+
                 # Reposition with intermediate frame capture
                 print('repositioning')
                 ky = .003 
@@ -174,7 +143,6 @@ def main(renderer):
             print('ERROR!! FAILED TO ALIGN BODY TO FRAME')
             print('increase ALIGNMENT_ATTEMPTS, if this keeps happening, look into tuning')
             success = False
-
 
         if success:
             successful_windows += 1
