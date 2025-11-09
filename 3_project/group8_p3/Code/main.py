@@ -136,7 +136,7 @@ def main(renderer):
                 target_pos[1] += -ctrl_y
                 target_pos[2] += -ctrl_z
                 target_rpy = np.zeros_like(currentPose['rpy'])
-                currentPose = goToWaypoint(currentPose, target_pos, target_rpy, velocity=0.1,
+                currentPose = goToWaypoint(currentPose, target_pos, target_rpy, velocity=0.25,
                                           renderer=renderer, segmentor=segmentor,
                                           window_id=windowCount, iteration_id=n, save_every=10)
         else:

@@ -49,8 +49,8 @@ def goToWaypoint(currentPose, targetPose, targetOrientation=None, velocity=0.1,
         control_orientation = False
     
     dt = 0.01  # 10ms timestep
-    tolerance = 0.005  # 10cm tolerance
-    max_time = 60.0  # Maximum 30 seconds
+    tolerance = 0.001  # 10cm tolerance
+    max_time = 10.0  # Maximum 30 seconds
     
     # Initialize controller
     controller = QuadrotorController(tello)
