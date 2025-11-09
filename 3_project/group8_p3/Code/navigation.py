@@ -5,8 +5,13 @@ from control import QuadrotorController
 from quad_dynamics import model_derivative
 import tello
 import cv2
+import os
 
-def goToWaypoint(currentPose, targetPose, targetOrientation=None, velocity=0.1):
+# Global frame counter for unique naming
+_frame_counter = 0
+
+def goToWaypoint(currentPose, targetPose, targetOrientation=None, velocity=0.1, 
+                 renderer=None, segmentor=None, window_id=0, iteration_id=0, save_every=5):
     """
     Navigate quadrotor to a target waypoint
     
@@ -19,7 +24,14 @@ def goToWaypoint(currentPose, targetPose, targetOrientation=None, velocity=0.1):
         If array: [x, y, z]
     - targetOrientation: Optional target orientation [roll, pitch, yaw] in radians
     - velocity: cruise velocity (m/s), default 0.1
+    - renderer: SplatRenderer instance for capturing frames (optional)
+    - segmentor: Window_Segmentaion instance for segmentation (optional)
+    - window_id: Current window number for frame naming
+    - iteration_id: Current iteration number for frame naming
+    - save_every: Save every Nth frame (default: 5)
     """
+    
+    global _frame_counter
     
     # Handle both formats for backward compatibility
     if isinstance(targetPose, dict):
@@ -128,10 +140,31 @@ def goToWaypoint(currentPose, targetPose, targetOrientation=None, velocity=0.1):
     
     # Simulation loop
     state = current_state.copy()
+    local_frame_count = 0
     
     for i, t in enumerate(time_points):
         # Compute control input
         control_input = controller.compute_control(state, t)
+        
+        # Save intermediate frames if renderer is provided
+        if renderer is not None and segmentor is not None and (local_frame_count % save_every == 0):
+            current_pos = state[0:3]
+            current_quat = Quaternion(state[9], state[6], state[7], state[8])  # w, x, y, z
+            current_ypr = current_quat.yaw_pitch_roll
+            current_rpy = np.array([current_ypr[2], current_ypr[1], current_ypr[0]])
+            
+            # Render frame
+            color_image, depth_image, metric_depth = renderer.render(current_pos, current_rpy)
+            segmented = segmentor.get_pred(color_image)
+            segmented = cv2.normalize(segmented, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+            
+            # Save with unique frame counter
+            frame_prefix = f'./log/window_{window_id}_iter_{iteration_id:02d}_frame_{_frame_counter:04d}'
+            cv2.imwrite(f'{frame_prefix}_rgb.png', cv2.flip(cv2.cvtColor(color_image, cv2.COLOR_RGB2BGR), 0))
+            cv2.imwrite(f'{frame_prefix}_segmentation.png', cv2.flip(segmented, 0))
+            _frame_counter += 1
+        
+        local_frame_count += 1
         
         # Check if reached
         current_pos = state[0:3]
@@ -170,3 +203,9 @@ def goToWaypoint(currentPose, targetPose, targetOrientation=None, velocity=0.1):
     }
     
     return newPose
+
+
+def reset_frame_counter():
+    """Reset the global frame counter (call at start of simulation)"""
+    global _frame_counter
+    _frame_counter = 0
