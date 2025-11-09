@@ -37,57 +37,6 @@ def init_log_dir():
     
 
 
-def fly_though_window(segmentor:Window_Segmentaion, currentPose:dict, windowCount:int=999) -> bool:
-        for n in range(ALIGNMENT_ATTEMPTS):
-            # rpy[0] = (rpy[0]+np.pi) % (np.pi * 2)
-            color_image, depth_image, metric_depth = renderer.render(
-                currentPose['position'], 
-                currentPose['rpy']
-                )
-            # Segment for viewing porposes only, we never use segmented vareable
-            segmented = segmentor.get_pred(color_image)
-            segmented = cv2.normalize(segmented, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)           
-            # Save images- 
-            iter_prefix = f'./log/window_{windowCount}_iter_{n:02d}'
-            cv2.imwrite(f'{iter_prefix}_rgb.png', cv2.flip(cv2.cvtColor(color_image, cv2.COLOR_RGB2BGR), 0))  # Vertical flip
-            cv2.imwrite(f'{iter_prefix}_segmentation.png', cv2.flip(segmented, 0))  # Vertical flip
-            #get centriod of frame
-            ex, ey, ez = segmentor.get_closest_frame(color_image, metric_depth) #get the location error in px of the centroid of the nearest frame
-            print(f'{windowCount}, iter{n} window ex {ex}, ey {ey}, ez {ez}')
-            # kx = .001
-            ky = .005 #TODO tune this
-            kz = .005
-            ctrl_y = ey * ex * ky #for y and z multiply the pixle error by how far away the object is with this scaleing term- we can mess with it, they should technically be the same
-            ctrl_z = ez * ex * kz
-
-            print(f'{windowCount}, iter{n} ctrl_y{ctrl_y}, ctrl_z{ctrl_z}')
-            if np.abs(ey * ex) < WINDOW_THRESHOLD and np.abs(ez * ex) < WINDOW_THRESHOLD:
-                #if we are within a threshold, fly through the frame, using the frames depth to figure out how far to fly
-                print("!!!!! should be good to fly thogh frame now!!!!")
-                print("flying though window")
-                target_pos = currentPose['position'].copy()
-                target_pos[0] += ex + .003 #add some tolerance
-                target_rpy = np.zeros_like(currentPose['rpy']) # Maintain current orientation
-                currentPose = goToWaypoint(currentPose, target_pos, target_rpy, velocity=0.03) #TODO make velocity value larget
-                success = True
-                break
-            else:
-                #if we still need to correct do that
-                target_pos = currentPose['position'].copy()
-                target_pos[1] += ctrl_y #imo this is more inturtive than -=
-                target_pos[2] += ctrl_z
-                target_rpy = np.zeros_like(currentPose['rpy']) # 
-                currentPose = goToWaypoint(currentPose, target_pos, target_rpy, velocity=0.005) #TODO make velocity value larget
-        else:
-            print('ERROR!! FAILED TO ALIGN BODY TO FRAME')
-            print('increse ALIGNMENT_ATTEMPTS, if this keeps happening, look into tuneing')
-            return False
-
-        print("done flying though frame:")
-        print(currentPose['position'])
-    
-
-
 ################################################
 #### Main Function ##############################
 ################################################
@@ -100,11 +49,11 @@ def main(renderer):
     segmentor = Window_Segmentaion(
         torch_network=Network,
         model_path=TRAINED_MODEL_PATH,
-        model_thresh=0.96,
+        model_thresh=0.70,
         in_ch=3, 
         out_ch=1, 
-        img_h=480, 
-        img_w=640
+        img_h=256, 
+        img_w=256
     )
     # Initialize pose - NED frame
     currentPose = {
@@ -125,13 +74,80 @@ def main(renderer):
     
     # Main racing loop
     for windowCount in range(numWindows):
-        success = fly_though_window(segmentor=segmentor, currentPose=currentPose, windowCount=windowCount)
+
+        for n in range(ALIGNMENT_ATTEMPTS):
+            # rpy[0] = (rpy[0]+np.pi) % (np.pi * 2)
+            color_image, depth_image, metric_depth = renderer.render(
+                currentPose['position'], 
+                currentPose['rpy']
+                )
+            # Segment for viewing porposes only, we never use segmented vareable
+            segmented = segmentor.get_pred(color_image)
+            segmented = cv2.normalize(segmented, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)           
+            # Save images- 
+            iter_prefix = f'./log/window_{windowCount}_iter_{n:02d}'
+            cv2.imwrite(f'{iter_prefix}_rgb.png', cv2.flip(cv2.cvtColor(color_image, cv2.COLOR_RGB2BGR), 0))  # Vertical flip
+            cv2.imwrite(f'{iter_prefix}_segmentation.png', cv2.flip(segmented, 0))  # Vertical flip
+            #get centriod of frame
+            ex, ey, ez = segmentor.get_closest_frame(color_image, metric_depth) #get the location error in px of the centroid of the nearest frame
+            # print(f'{windowCount}, iter{n} window ex {ex}, ey {ey}, ez {ez}')
+            # # kx = .001
+            # ky = .003 #TODO tune this
+            # kz = .003
+            # ctrl_y = ey * ex * ky #for y and z multiply the pixle error by how far away the object is with this scaleing term- we can mess with it, they should technically be the same
+            # ctrl_z = ez * ex * kz
+
+            # print(f'{windowCount}, iter{n} ctrl_y{ctrl_y}, ctrl_z{ctrl_z}')
+            if np.abs(ey * ex) < WINDOW_THRESHOLD and np.abs(ez * ex) < WINDOW_THRESHOLD:
+                #if we are within a threshold, fly through the frame, using the frames depth to figure out how far to fly
+                print("!!!!! should be good to fly thogh frame now!!!!")
+                print("flying though window")
+                target_pos = currentPose['position'].copy()
+                target_pos[0] += ex #/ 2
+                target_rpy = np.zeros_like(currentPose['rpy']) # Maintain current orientation
+                currentPose = goToWaypoint(currentPose, target_pos, target_rpy, velocity=0.1) 
+               
+                print("done flying though frame:")
+                print(currentPose['position'])
+                success =  True
+                break
+            # elif np.abs(ey * ex) < WINDOW_THRESHOLD*5 and np.abs(ez * ex) < WINDOW_THRESHOLD*5: #we just need to fine tune, do this very slowly
+            #     print('fine tuneing')
+            #     ky = .002
+            #     kz = .002
+            #     ctrl_y = ey * ex * ky #for y and z multiply the pixle error by how far away the object is with this scaleing term- we can mess with it, they should technically be the same
+            #     ctrl_z = ez * ex * kz
+
+            #     #if we still need to correct do that
+            #     target_pos = currentPose['position'].copy()
+            #     target_pos[1] += -ctrl_y #imo this is more inturtive than -=
+            #     target_pos[2] += -ctrl_z
+            #     target_rpy = np.zeros_like(currentPose['rpy']) # 
+            #     currentPose = goToWaypoint(currentPose, target_pos, target_rpy, velocity=0.05)
+            else:
+                print('repositioning')
+                ky = .003 
+                kz = .003
+                ctrl_y = ey * ex * ky #for y and z multiply the pixle error by how far away the object is with this scaleing term- we can mess with it, they should technically be the same
+                ctrl_z = ez * ex * kz
+                #if we still need to correct do that
+                target_pos = currentPose['position'].copy()
+                target_pos[1] += -ctrl_y #imo this is more inturtive than -=
+                target_pos[2] += -ctrl_z
+                target_rpy = np.zeros_like(currentPose['rpy']) # 
+                currentPose = goToWaypoint(currentPose, target_pos, target_rpy, velocity=0.1)
+        else:
+            print('ERROR!! FAILED TO ALIGN BODY TO FRAME')
+            print('increse ALIGNMENT_ATTEMPTS, if this keeps happening, look into tuneing')
+            success = False
+
+
         if success:
             successful_windows += 1
             print(f"\n Window {windowCount + 1} PASSED")
         else:
             print(f"\n Window {windowCount + 1} FAILED")
-            break  # Uncomment to stop on first failure
+            # break  # Uncomment to stop on first failure
     
     # Final summary
     print(f"\n{'='*60}")
