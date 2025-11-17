@@ -83,15 +83,11 @@ class pid:
 class quad_control:
     def __init__(self):
 
-        # # CONTROLLER PROPERTIES AND GAINS
-        # dt = 0.010
-        # filter_tau = 0.04
-        # self.dt = dt
-        # TODO - SET CONTROLLER PROPERTIES AND GAINS 
-        dt = 0.025
-        filter_tau = 0.1
+        # CONTROLLER PROPERTIES AND GAINS
+        dt = 0.010
+        filter_tau = 0.04
         self.dt = dt
-        self.target_orientation = None
+
         # tello params
         self.param_mass = 0.08
         self.linearThrustToU = self.param_mass*9.81*2/4
