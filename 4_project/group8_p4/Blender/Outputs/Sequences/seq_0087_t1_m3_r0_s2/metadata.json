@@ -1,0 +1,14 @@
+{
+  "sequence_id": 87,
+  "sequence_name": "seq_0087_t1_m3_r0_s2",
+  "texture": "Granite",
+  "mask": "Window4",
+  "rotation_deg": 0,
+  "scale": 1.1,
+  "num_frames": 10,
+  "scan_distance": 2.0,
+  "scan_type": "diagonal",
+  "camera_start_distance": 11.0,
+  "frame_naming": "frame_XX.png = RGB frame, mask_XX.png = corresponding GT mask",
+  "note": "Each frame has its own ground truth mask from the same camera position"
+}

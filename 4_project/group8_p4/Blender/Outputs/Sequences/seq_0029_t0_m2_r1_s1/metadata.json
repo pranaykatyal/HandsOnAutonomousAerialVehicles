@@ -1,0 +1,14 @@
+{
+  "sequence_id": 29,
+  "sequence_name": "seq_0029_t0_m2_r1_s1",
+  "texture": "Bricks",
+  "mask": "Window3",
+  "rotation_deg": 15,
+  "scale": 1.0,
+  "num_frames": 10,
+  "scan_distance": 2.0,
+  "scan_type": "diagonal",
+  "camera_start_distance": 11.0,
+  "frame_naming": "frame_XX.png = RGB frame, mask_XX.png = corresponding GT mask",
+  "note": "Each frame has its own ground truth mask from the same camera position"
+}
