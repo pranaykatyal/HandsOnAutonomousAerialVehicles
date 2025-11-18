@@ -17,6 +17,7 @@ class pid:
 
         self.minVal = minVal
         self.maxVal = maxVal
+        self.target_orientation = None
 
         if dim == 1:
             self.prev_filter_val = 0.0
@@ -82,11 +83,15 @@ class pid:
 class quad_control:
     def __init__(self):
 
-        # CONTROLLER PROPERTIES AND GAINS
-        dt = 0.010
-        filter_tau = 0.04
+        # # CONTROLLER PROPERTIES AND GAINS
+        # dt = 0.010
+        # filter_tau = 0.04
+        # self.dt = dt
+        # TODO - SET CONTROLLER PROPERTIES AND GAINS 
+        dt = 0.025
+        filter_tau = 0.1
         self.dt = dt
-
+        self.target_orientation = None
         # tello params
         self.param_mass = 0.08
         self.linearThrustToU = self.param_mass*9.81*2/4
@@ -95,7 +100,7 @@ class quad_control:
         maxVel = 10.
         # maxAng = 30.*3.14159/180.
         self.maxRate = 1.5
-        maxAct = 0.3
+        maxAct = 0.5
 
         minAcc = -maxAcc
         minVel = -maxVel
@@ -106,21 +111,21 @@ class quad_control:
         
         ##################### SET YOUR GAINS FROM P2 #################################################
         # NED position controller. EDIT GAINS HERE
-        self.x_pid = pid(1.0, 1.0, 1.0, filter_tau, dt, minVal = minVel, maxVal=maxVel)
-        self.y_pid = pid(1.0, 1.0, 1.0, filter_tau, dt, minVal = minVel, maxVal=maxVel)
-        self.z_pid = pid(1.0, 1.0, 1.0, filter_tau, dt, minVal = minVel, maxVal=maxVel)
+        self.x_pid = pid(0.8, 0.0, 0.4, filter_tau, dt, minVal = minVel, maxVal=maxVel)
+        self.y_pid = pid(0.8, 0.0, 0.4, filter_tau, dt, minVal = minVel, maxVal=maxVel)
+        self.z_pid = pid(1.0, 0.0, 0.45, filter_tau, dt, minVal = minVel, maxVal=maxVel)
 
         # NED velocity controller. EDIT GAINS HERE
-        self.vx_pid = pid(1.0, 1.0, 1.0, filter_tau, dt, minVal = minAcc, maxVal=maxAcc)
-        self.vy_pid = pid(1.0, 1.0, 1.0, filter_tau, dt, minVal = minAcc, maxVal=maxAcc)
-        self.vz_pid = pid(1.0, 1.0, 1.0, filter_tau, dt, minVal = minAcc, maxVal = maxAcc)
+        self.vx_pid = pid(1.5, 0.1, 0.4, filter_tau, dt, minVal = minAcc, maxVal=maxAcc)
+        self.vy_pid = pid(1.5, 0.1, 0.4, filter_tau, dt, minVal = minAcc, maxVal=maxAcc)
+        self.vz_pid = pid(2.0, 0.2, 0.5, filter_tau, dt, minVal = minAcc, maxVal=maxAcc)
 
         # Quaternion based P Controller. Output is desired angular rate. tau is time constant of closed loop
-        self.tau_angle = 0
+        self.tau_angle = 0.3
         self.angle_sf = np.array((1, 1, 0.4)) # deprioritize yaw control using this scale factor
 
         # Angular velocity controller
-        kp_angvel = 1.0
+        kp_angvel = 6.0
         self.p_pid = pid(kp_angvel, 0, kp_angvel/15., filter_tau, dt, minVal = minAct, maxVal = maxAct)
         self.q_pid = pid(kp_angvel, 0, kp_angvel/15., filter_tau, dt, minVal = minAct, maxVal = maxAct)
         self.r_pid = pid(kp_angvel, 0, kp_angvel/15, filter_tau, dt, minVal = minAct, maxVal = maxAct)
@@ -243,17 +248,26 @@ class QuadrotorController:
         self.trajectory_velocities = None
         self.trajectory_accelerations = None
         self.time_points = None
-        
+        self.target_orientation = None
         # Performance metrics
         self.position_errors = []
         self.velocity_errors = []
         
-    def set_trajectory(self, trajectory_points, time_points, velocities, accelerations):
+        # Real-time logging for plotting
+        self.current_positions = []
+        self.desired_positions = []
+        self.current_velocities = []
+        self.desired_velocities = []
+        self.time_log = []
+        
+    def set_trajectory(self, trajectory_points, time_points, velocities, accelerations,target_rpy=None):
         """Set the reference trajectory"""
         self.trajectory_points = trajectory_points
         self.time_points = time_points
         self.trajectory_velocities = velocities
         self.trajectory_accelerations = accelerations
+        self.target_orientation = target_rpy if target_rpy is not None else np.array([0.0, 0.0, 0.0])
+
 
     
     def get_desired_state(self, t):
@@ -295,9 +309,11 @@ class QuadrotorController:
         """Main control computation"""
         # Get desired trajectory state
         pos_des, vel_des, acc_des = self.get_desired_state(t)
+        target_yaw = self.target_orientation[2]
         
         # Create waypoint [x, y, z, yaw]
-        waypoint = np.append(pos_des, 0.0)  # Zero yaw
+        # waypoint = np.append(pos_des, 0.0)  # Zero yaw
+        waypoint = np.append(pos_des, target_yaw) 
         
         # Use the controller
         try:
@@ -318,7 +334,109 @@ class QuadrotorController:
         self.position_errors.append(pos_error)
         self.velocity_errors.append(vel_error)
         
+        # Real-time logging for plotting
+        self.current_positions.append(current_pos)
+        self.desired_positions.append(pos_des)
+        self.current_velocities.append(current_vel)
+        self.desired_velocities.append(vel_des)
+        self.time_log.append(t)
+        
         return control_input
+    
+    def plot_tracking(self):
+        import matplotlib.pyplot as plt
+        times = np.array(self.time_log)
+        curr_pos = np.array(self.current_positions)
+        des_pos = np.array(self.desired_positions)
+        curr_vel = np.array(self.current_velocities)
+        des_vel = np.array(self.desired_velocities)
+
+        if times.size == 0 or curr_pos.size == 0:
+            print("No tracking data to plot.")
+            return
+
+        if curr_pos.ndim == 1:
+            curr_pos = curr_pos.reshape(1, -1)
+        if des_pos.ndim == 1:
+            des_pos = des_pos.reshape(1, -1)
+        if curr_vel.ndim == 1:
+            curr_vel = curr_vel.reshape(1, -1)
+        if des_vel.ndim == 1:
+            des_vel = des_vel.reshape(1, -1)
+
+        # Create 2x3 subplot grid
+        fig, axs = plt.subplots(2, 3, figsize=(18, 10))
+        
+        # Position plots (top row)
+        labels = ['X', 'Y', 'Z']
+        colors_curr = ['blue', 'green', 'red']
+        colors_des = ['cyan', 'lime', 'orange']
+        
+        for i, label in enumerate(labels):
+            axs[0, i].plot(times, curr_pos[:, i], color=colors_curr[i], 
+                        linewidth=2, label=f'Current {label}')
+            axs[0, i].plot(times, des_pos[:, i], '--', color=colors_des[i], 
+                        linewidth=2, label=f'Desired {label}')
+            axs[0, i].set_title(f'{label} Position Tracking', fontsize=12, fontweight='bold')
+            axs[0, i].set_xlabel('Time (s)')
+            axs[0, i].set_ylabel(f'{label} Position (m)')
+            axs[0, i].legend()
+            axs[0, i].grid(True, alpha=0.3)
+        
+        # Velocity plots (bottom row)
+        for i, label in enumerate(['Vx', 'Vy', 'Vz']):
+            axs[1, i].plot(times, curr_vel[:, i], color=colors_curr[i], 
+                        linewidth=2, label=f'Current {label}')
+            axs[1, i].plot(times, des_vel[:, i], '--', color=colors_des[i], 
+                        linewidth=2, label=f'Desired {label}')
+            axs[1, i].set_title(f'{label} Velocity Tracking', fontsize=12, fontweight='bold')
+            axs[1, i].set_xlabel('Time (s)')
+            axs[1, i].set_ylabel(f'{label} Velocity (m/s)')
+            axs[1, i].legend()
+            axs[1, i].grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        plt.show()
+
+        
+        if times.size == 0 or curr_pos.size == 0 or des_pos.size == 0 or curr_vel.size == 0 or des_vel.size == 0:
+            print("No tracking data to plot.")
+            return
+
+        
+        if curr_pos.ndim == 1:
+            curr_pos = curr_pos.reshape(1, -1)
+        if des_pos.ndim == 1:
+            des_pos = des_pos.reshape(1, -1)
+        if curr_vel.ndim == 1:
+            curr_vel = curr_vel.reshape(1, -1)
+        if des_vel.ndim == 1:
+            des_vel = des_vel.reshape(1, -1)
+
+        fig, axs = plt.subplots(2, 1, figsize=(12, 8))
+
+        # Position
+        for i, label in enumerate(['x', 'y', 'z']):
+            axs[0].plot(times, curr_pos[:, i], label=f'Current {label}')
+            axs[0].plot(times, des_pos[:, i], '--', label=f'Desired {label}')
+        axs[0].set_title('Position Tracking')
+        axs[0].set_xlabel('Time (s)')
+        axs[0].set_ylabel('Position (m)')
+        axs[0].legend()
+        axs[0].grid(True)
+
+        # Velocity
+        for i, label in enumerate(['vx', 'vy', 'vz']):
+            axs[1].plot(times, curr_vel[:, i], label=f'Current {label}')
+            axs[1].plot(times, des_vel[:, i], '--', label=f'Desired {label}')
+        axs[1].set_title('Velocity Tracking')
+        axs[1].set_xlabel('Time (s)')
+        axs[1].set_ylabel('Velocity (m/s)')
+        axs[1].legend()
+        axs[1].grid(True)
+
+        plt.tight_layout()
+        plt.show()
     
     def reset_metrics(self):
         """Reset performance tracking"""

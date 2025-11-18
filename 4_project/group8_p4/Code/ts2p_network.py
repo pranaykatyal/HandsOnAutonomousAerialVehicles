@@ -1,291 +1,392 @@
 """
-ts2p_network.py - TS²P (Temporally Stacked Spatial Parallax) Network
-Direct learning from multi-view sequences to window segmentation
+ts2p_gapflyt.py
+Correct TS²P implementation consistent with GapFlyt paper
+
+TS²P = Temporally Stacked Spatial Parallax
+Uses optical flow to detect depth discontinuities via motion parallax
 """
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import DataLoader
 import numpy as np
+import cv2
 from pathlib import Path
-from gapflytdataloader import GapFlytSequenceDataset, collate_fn
 
 
-class SpatialParallaxEncoder(nn.Module):
+# =============================================================================
+# Mathematical Notation (Following GapFlyt Paper)
+# =============================================================================
+"""
+Coordinate Frames:
+- ^W: World frame
+- ^B: Body (quadrotor) frame  
+- ^I: Image frame
+
+Variables (using paper's notation):
+- Z_F: Depth of foreground (window plane)
+- Z_B: Depth of background (wall behind window)
+- u, v: Optical flow components in x, y directions
+- F_ij: Optical flow between frame i and frame j
+- Ξ (Xi): Flow magnitude metric for gap detection
+- χ (chi): Classifier output (+1 for foreground, -1 for background)
+"""
+
+
+class OpticalFlowExtractor:
     """
-    Extracts features from individual frames
-    Uses ResNet-style encoder
+    Pretrained optical flow extractor
+    GapFlyt uses FlowNet2, we can use RAFT or FastFlowNet
     """
-    def __init__(self, in_channels=3):
-        super().__init__()
+    def __init__(self, model_type='raft', device='cuda'):
+        self.device = device
+        self.model_type = model_type
         
-        # Encoder blocks
-        self.conv1 = nn.Sequential(
-            nn.Conv2d(in_channels, 64, kernel_size=7, stride=2, padding=3),
-            nn.BatchNorm2d(64),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-        )
+        if model_type == 'raft':
+            self.model = self._load_raft()
+        elif model_type == 'fastflownet':
+            self.model = self._load_fastflownet()
         
-        self.conv2 = self._make_layer(64, 128, blocks=2)
-        self.conv3 = self._make_layer(128, 256, blocks=2)
-        self.conv4 = self._make_layer(256, 512, blocks=2)
-        
-    def _make_layer(self, in_channels, out_channels, blocks):
-        layers = []
-        layers.append(nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(out_channels),
-            nn.ReLU(inplace=True)
-        ))
-        for _ in range(blocks - 1):
-            layers.append(nn.Sequential(
-                nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
-                nn.BatchNorm2d(out_channels),
-                nn.ReLU(inplace=True)
-            ))
-        return nn.Sequential(*layers)
+        self.model.eval()
+        print(f"Loaded pretrained {model_type.upper()} for optical flow")
     
-    def forward(self, x):
-        # x: (B, C, H, W)
-        x1 = self.conv1(x)   # 1/4 resolution
-        x2 = self.conv2(x1)  # 1/8 resolution
-        x3 = self.conv3(x2)  # 1/16 resolution
-        x4 = self.conv4(x3)  # 1/32 resolution
-        return [x1, x2, x3, x4]
+    def _load_raft(self):
+        """Load pretrained RAFT"""
+        try:
+            import sys
+            sys.path.insert(0, './RAFT/core')  # Use insert instead of append
+            
+            from raft import RAFT
+            from argparse import Namespace
+            
+            # RAFT args
+            args = Namespace(
+                model='./RAFT/models/raft-things.pth',
+                small=False,
+                mixed_precision=False,
+                alternate_corr=False
+            )
+            
+            model = torch.nn.DataParallel(RAFT(args))  # RAFT expects DataParallel
+            model.load_state_dict(torch.load(args.model, map_location=self.device))
+            model = model.module  # Unwrap from DataParallel
+            model = model.to(self.device)
+            
+            return model
+        except Exception as e:
+            print(f"Error loading RAFT: {e}")
+            print("Make sure RAFT is cloned: git clone https://github.com/princeton-vl/RAFT.git")
+            print("And weights downloaded: cd RAFT && ./download_models.sh")
+            raise
+    
+    def _load_fastflownet(self):
+        """Load pretrained FastFlowNet"""
+        try:
+            import sys
+            sys.path.append('./FastFlowNet')
+            from models import FastFlowNet
+            
+            model = FastFlowNet()
+            checkpoint = torch.load('./FastFlowNet/checkpoints/fastflownet_ft_sintel.pth')
+            model.load_state_dict(checkpoint)
+            model = model.to(self.device)
+            return model
+        except:
+            print("FastFlowNet not found. Clone: git clone https://github.com/ltkong218/FastFlowNet.git")
+            raise
+    
+    @torch.no_grad()
+    def compute_flow(self, I_i, I_j):
+        """
+        Compute optical flow F_ij between frames I_i and I_j
+        
+        Args:
+            I_i: Frame i, shape (B, 3, H, W), range [0, 1]
+            I_j: Frame j, shape (B, 3, H, W), range [0, 1]
+        
+        Returns:
+            F_ij: Optical flow from i to j, shape (B, 2, H, W)
+                  F_ij[b, 0, y, x] = u (horizontal flow)
+                  F_ij[b, 1, y, x] = v (vertical flow)
+        """
+        if self.model_type == 'raft':
+            I_i = I_i * 255.0  # RAFT expects [0, 255]
+            I_j = I_j * 255.0
+            flow_predictions = self.model(I_i, I_j, iters=20, test_mode=True)
+            F_ij = flow_predictions[-1]  # Final refined flow
+        elif self.model_type == 'fastflownet':
+            F_ij = self.model(I_i, I_j)
+        
+        return F_ij
 
 
-class TemporalParallaxFusion(nn.Module):
+class TS2P_GapDetector:
     """
-    Fuses features from multiple views using attention
-    Key idea: Window regions have consistent appearance across views,
-    background changes due to parallax
+    Temporally Stacked Spatial Parallax (TS²P) Gap Detector
+    Following GapFlyt paper methodology
+    
+    Key Insight from Paper:
+    - Foreground (window) is closer → smaller optical flow magnitude
+    - Background (wall) is farther → larger optical flow magnitude
+    - Active vision (diagonal scan) amplifies this parallax effect
     """
-    def __init__(self, feature_dim=512):
-        super().__init__()
-        
-        # Cross-view attention
-        self.query = nn.Conv2d(feature_dim, feature_dim // 8, kernel_size=1)
-        self.key = nn.Conv2d(feature_dim, feature_dim // 8, kernel_size=1)
-        self.value = nn.Conv2d(feature_dim, feature_dim, kernel_size=1)
-        
-        # Fusion convolution
-        self.fusion_conv = nn.Sequential(
-            nn.Conv2d(feature_dim * 2, feature_dim, kernel_size=3, padding=1),
-            nn.BatchNorm2d(feature_dim),
-            nn.ReLU(inplace=True)
-        )
-        
-    def forward(self, ref_features, scan_features):
+    
+    def __init__(self, flow_extractor, device='cuda'):
         """
         Args:
-            ref_features: (B, C, H, W) - Reference frame features
-            scan_features: (B, N-1, C, H, W) - Scan frames features
-        Returns:
-            fused_features: (B, C, H, W)
+            flow_extractor: OpticalFlowExtractor instance
+            device: torch device
         """
-        B, N_minus_1, C, H, W = scan_features.shape
+        self.flow_extractor = flow_extractor
+        self.device = device
         
-        # Compute attention between reference and each scan frame
-        Q = self.query(ref_features)  # (B, C//8, H, W)
+        # Thresholds (tune based on your data)
+        self.threshold_percentile = 83  # Median split for foreground/background
         
-        # Average attention across all scan frames
-        attended_features = []
-        for i in range(N_minus_1):
-            scan_feat = scan_features[:, i]  # (B, C, H, W)
-            K = self.key(scan_feat)
-            V = self.value(scan_feat)
-            
-            # Attention
-            Q_flat = Q.view(B, C // 8, -1).permute(0, 2, 1)  # (B, HW, C//8)
-            K_flat = K.view(B, C // 8, -1)  # (B, C//8, HW)
-            
-            attention = torch.softmax(torch.bmm(Q_flat, K_flat) / np.sqrt(C // 8), dim=-1)  # (B, HW, HW)
-            
-            V_flat = V.view(B, C, -1)  # (B, C, HW)
-            attended = torch.bmm(V_flat, attention.permute(0, 2, 1))  # (B, C, HW)
-            attended = attended.view(B, C, H, W)
-            attended_features.append(attended)
-        
-        # Average attended features
-        avg_attended = torch.stack(attended_features, dim=1).mean(dim=1)  # (B, C, H, W)
-        
-        # Fuse with reference
-        fused = torch.cat([ref_features, avg_attended], dim=1)  # (B, 2C, H, W)
-        fused = self.fusion_conv(fused)  # (B, C, H, W)
-        
-        return fused
-
-
-class TS2PDecoder(nn.Module):
-    """
-    Decoder with skip connections for segmentation
-    """
-    def __init__(self):
-        super().__init__()
-        
-        # Upsampling blocks
-        self.up1 = self._make_up_block(512, 256)
-        self.up2 = self._make_up_block(256, 128)
-        self.up3 = self._make_up_block(128, 64)
-        self.up4 = self._make_up_block(64, 32)
-        
-        # Final prediction
-        self.final = nn.Sequential(
-            nn.Conv2d(32, 1, kernel_size=1),
-            nn.Sigmoid()
-        )
-        
-    def _make_up_block(self, in_channels, out_channels):
-        return nn.Sequential(
-            nn.ConvTranspose2d(in_channels, out_channels, kernel_size=4, stride=2, padding=1),
-            nn.BatchNorm2d(out_channels),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
-            nn.BatchNorm2d(out_channels),
-            nn.ReLU(inplace=True)
-        )
-    
-    def forward(self, features):
-        # features: list of [x1, x2, x3, x4] from encoder
-        x = features[-1]  # Start from deepest features
-        
-        x = self.up1(x)  # 1/16 -> 1/8
-        x = self.up2(x)  # 1/8 -> 1/4
-        x = self.up3(x)  # 1/4 -> 1/2
-        x = self.up4(x)  # 1/2 -> 1/1
-        
-        mask = self.final(x)
-        return mask
-
-
-class TS2PNetwork(nn.Module):
-    """
-    Complete TS²P Network
-    Input: Multi-view image sequence (B, N, 3, H, W)
-    Output: Window segmentation mask (B, 1, H, W)
-    """
-    def __init__(self):
-        super().__init__()
-        
-        self.encoder = SpatialParallaxEncoder(in_channels=3)
-        self.temporal_fusion = TemporalParallaxFusion(feature_dim=512)
-        self.decoder = TS2PDecoder()
-        
-    def forward(self, frames):
+    def compute_temporal_flow_stack(self, frames):
         """
+        Compute optical flow between consecutive frames
+        
         Args:
-            frames: (B, N, 3, H, W) - N frames (1 reference + N-1 scan)
+            frames: (B, N, 3, H, W) - N frames from diagonal scanning sequence
+                    frames[:, 0] = reference frame (I_0)
+                    frames[:, 1:] = scanning frames (I_1, ..., I_{N-1})
+        
         Returns:
-            mask: (B, 1, H, W) - Window segmentation
+            F_stack: (B, N-1, 2, H, W) - Temporal stack of optical flows
+                     F_stack[:, i] = F_{0,i+1} (flow from reference to scan frame i+1)
         """
         B, N, C, H, W = frames.shape
         
-        # Extract features from all frames
-        all_features = []
-        for i in range(N):
-            frame = frames[:, i]  # (B, 3, H, W)
-            features = self.encoder(frame)  # List of multi-scale features
-            all_features.append(features[-1])  # Use deepest features
+        # Reference frame (taken from stationary position)
+        I_ref = frames[:, 0]  # (B, 3, H, W)
         
-        # Reference frame (first) and scan frames (rest)
-        ref_features = all_features[0]  # (B, 512, H/32, W/32)
-        scan_features = torch.stack(all_features[1:], dim=1)  # (B, N-1, 512, H/32, W/32)
+        # Compute flows from reference to each scanning frame
+        F_stack = []
+        for i in range(1, N):
+            I_scan = frames[:, i]  # (B, 3, H, W)
+            
+            # F_{0,i}: Flow from reference (frame 0) to scan frame i
+            F_0i = self.flow_extractor.compute_flow(I_ref, I_scan)  # (B, 2, H, W)
+            F_stack.append(F_0i)
         
-        # Temporal fusion using parallax cues
-        fused_features = self.temporal_fusion(ref_features, scan_features)
-        
-        # Decode to segmentation mask
-        # For simplicity, pass fused features through decoder
-        # In practice, you'd use skip connections from encoder
-        mask = self.decoder([None, None, None, fused_features])
-        
-        # Upsample to input resolution
-        mask = F.interpolate(mask, size=(H, W), mode='bilinear', align_corners=False)
-        
-        return mask
-
-
-def train_ts2p():
-    """Training script for TS²P network"""
+        F_stack = torch.stack(F_stack, dim=1)  # (B, N-1, 2, H, W)
+        return F_stack
     
-    # Hyperparameters
-    batch_size = 4
-    num_epochs = 50
-    learning_rate = 1e-4
+    def compute_flow_magnitude(self, F_stack):
+        """
+        Compute flow magnitude Ξ (Xi) for gap detection
+        
+        Ξ(x, y) = ||F_{0,i}(x, y)||_2 averaged over all i
+        
+        Args:
+            F_stack: (B, N-1, 2, H, W) - Temporal flow stack
+        
+        Returns:
+            Xi: (B, 1, H, W) - Average flow magnitude
+        """
+        # Flow magnitude for each frame: ||F||_2 = sqrt(u^2 + v^2)
+        u = F_stack[:, :, 0]  # (B, N-1, H, W)
+        v = F_stack[:, :, 1]  # (B, N-1, H, W)
+        
+        flow_magnitude_per_frame = torch.sqrt(u**2 + v**2)  # (B, N-1, H, W)
+        
+        # Temporal averaging (stack spatial parallax)
+        Xi = flow_magnitude_per_frame.mean(dim=1, keepdim=True)  # (B, 1, H, W)
+        
+        return Xi
+    
+    def detect_gap_threshold(self, Xi):
+        """
+        Detect gap using threshold on flow magnitude
+        
+        Gap Detection Rule (GapFlyt):
+        χ(x, y) = +1  if Ξ(x, y) < threshold  (FOREGROUND - window, closer, less flow)
+        χ(x, y) = -1  if Ξ(x, y) >= threshold (BACKGROUND - wall, farther, more flow)
+        
+        Args:
+            Xi: (B, 1, H, W) - Flow magnitude
+        
+        Returns:
+            chi: (B, 1, H, W) - Binary mask
+                 1.0 = foreground (window/gap)
+                 0.0 = background
+        """
+        B, _, H, W = Xi.shape
+        
+        # Adaptive thresholding per image (use median)
+        # Foreground has LOWER flow magnitude
+        threshold = torch.quantile(Xi.reshape(B, -1), 
+                                   q=self.threshold_percentile/100.0, 
+                                   dim=1, keepdim=True)  # (B, 1)
+        threshold = threshold.view(B, 1, 1, 1)  # (B, 1, 1, 1)
+        
+        # Binary classification
+        chi = (Xi < threshold).float()  # (B, 1, H, W)
+        
+        return chi
+    
+    def morphological_refinement(self, chi):
+        """
+        Clean up binary mask using morphological operations
+        
+        Args:
+            chi: (B, 1, H, W) - Binary mask
+        
+        Returns:
+            chi_refined: (B, 1, H, W) - Cleaned mask
+        """
+        chi_np = chi.cpu().numpy()
+        chi_refined = []
+        
+        for b in range(chi_np.shape[0]):
+            mask = (chi_np[b, 0] * 255).astype(np.uint8)
+            
+            # Morphological opening (remove noise)
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+            mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+            
+            # Morphological closing (fill holes)
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (11, 11))
+            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+            
+            chi_refined.append(mask / 255.0)
+        
+        chi_refined = torch.tensor(np.array(chi_refined), 
+                                    dtype=torch.float32, 
+                                    device=self.device).unsqueeze(1)
+        return chi_refined
+    
+    def detect_gap(self, frames, refine=True):
+        """
+        Complete TS²P gap detection pipeline
+        
+        Args:
+            frames: (B, N, 3, H, W) - Diagonal scanning sequence
+            refine: Whether to apply morphological refinement
+        
+        Returns:
+            gap_mask: (B, 1, H, W) - Detected gap/window mask
+            Xi: (B, 1, H, W) - Flow magnitude (for visualization)
+        """
+        # Step 1: Compute temporal flow stack
+        F_stack = self.compute_temporal_flow_stack(frames)
+        
+        # Step 2: Compute flow magnitude Ξ
+        Xi = self.compute_flow_magnitude(F_stack)
+        
+        # Step 3: Threshold to get binary mask χ
+        chi = self.detect_gap_threshold(Xi)
+        
+        # Step 4: Morphological refinement (optional)
+        if refine:
+            chi = self.morphological_refinement(chi)
+        
+        return chi, Xi
+
+
+# =============================================================================
+# Training / Evaluation
+# =============================================================================
+
+def evaluate_ts2p():
+    """
+    Evaluate TS²P on your generated dataset
+    No training needed - this is classical + optical flow approach!
+    """
+    from gapflytdataloader import GapFlytSequenceDataset, collate_fn
+    from torch.utils.data import DataLoader
+    
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
-    # Dataset
-    train_dataset = GapFlytSequenceDataset(
+    # Load dataset
+    dataset = GapFlytSequenceDataset(
         sequences_dir="../Blender/Outputs/Sequences",
         num_frames=5,
-        random_subset=True
+        random_subset=False  # Use fixed frames for evaluation
     )
     
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=batch_size,
-        shuffle=True,
-        num_workers=4,
+    dataloader = DataLoader(
+        dataset,
+        batch_size=4,
+        shuffle=False,
+        num_workers=2,
         collate_fn=collate_fn
     )
     
-    # Model
-    model = TS2PNetwork().to(device)
+    # Initialize TS²P detector
+    flow_extractor = OpticalFlowExtractor(model_type='raft', device=device)
+    ts2p_detector = TS2P_GapDetector(flow_extractor, device=device)
     
-    # Loss and optimizer
-    criterion = nn.BCELoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-    
-    print(f"Training TS²P Network on {device}")
-    print(f"Total sequences: {len(train_dataset)}")
-    print(f"Batch size: {batch_size}")
+    print("="*70)
+    print("Evaluating TS²P Gap Detection (GapFlyt Method)")
     print("="*70)
     
-    # Training loop
-    for epoch in range(num_epochs):
-        model.train()
-        epoch_loss = 0.0
-        
-        for batch_idx, batch in enumerate(train_loader):
-            frames = batch['frames'].to(device)  # (B, 5, 3, 480, 640)
-            masks = batch['masks'].to(device)    # (B, 5, 1, 480, 640)
-            
-            # Use reference frame mask as target (frame 0)
-            target_mask = masks[:, 0]  # (B, 1, 480, 640)
-            
-            # Forward pass
-            pred_mask = model(frames)  # (B, 1, 480, 640)
-            
-            # Compute loss
-            loss = criterion(pred_mask, target_mask)
-            
-            # Backward pass
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            
-            epoch_loss += loss.item()
-            
-            if (batch_idx + 1) % 10 == 0:
-                print(f"Epoch [{epoch+1}/{num_epochs}] Batch [{batch_idx+1}/{len(train_loader)}] Loss: {loss.item():.4f}")
-        
-        avg_loss = epoch_loss / len(train_loader)
-        print(f"Epoch [{epoch+1}/{num_epochs}] Average Loss: {avg_loss:.4f}")
-        
-        # Save checkpoint
-        if (epoch + 1) % 10 == 0:
-            torch.save({
-                'epoch': epoch,
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'loss': avg_loss,
-            }, f'ts2p_checkpoint_epoch_{epoch+1}.pth')
+    total_iou = 0.0
+    num_samples = 0
     
-    print("Training complete!")
-    torch.save(model.state_dict(), 'ts2p_final.pth')
+    for batch_idx, batch in enumerate(dataloader):
+        frames = batch['frames'].to(device)  # (B, 5, 3, 480, 640)
+        gt_masks = batch['masks'][:, 0].to(device)  # (B, 1, 480, 640) - reference frame mask
+        
+        # Detect gap using TS²P
+        pred_masks, Xi = ts2p_detector.detect_gap(frames, refine=True)
+        
+        # Compute IoU
+        intersection = (pred_masks * gt_masks).sum(dim=[1, 2, 3])
+        union = ((pred_masks + gt_masks) > 0).float().sum(dim=[1, 2, 3])
+        iou = (intersection / (union + 1e-6)).mean()
+        
+        total_iou += iou.item()
+        num_samples += 1
+        
+        if (batch_idx + 1) % 10 == 0:
+            print(f"Batch [{batch_idx+1}/{len(dataloader)}] IoU: {iou.item():.4f}")
+        
+        # Visualize first batch
+        if batch_idx == 0:
+            import matplotlib.pyplot as plt
+            
+            fig, axes = plt.subplots(2, 4, figsize=(16, 8))
+            
+            for i in range(min(2, frames.shape[0])):
+                # Reference frame
+                axes[i, 0].imshow(frames[i, 0].cpu().permute(1, 2, 0))
+                axes[i, 0].set_title(f"Sample {i+1}: Reference Frame")
+                axes[i, 0].axis('off')
+                
+                # Flow magnitude
+                axes[i, 1].imshow(Xi[i, 0].cpu(), cmap='jet')
+                axes[i, 1].set_title(f"Flow Magnitude Ξ")
+                axes[i, 1].axis('off')
+                
+                # Predicted mask
+                axes[i, 2].imshow(pred_masks[i, 0].cpu(), cmap='gray')
+                axes[i, 2].set_title(f"Predicted Gap χ")
+                axes[i, 2].axis('off')
+                
+                # Ground truth
+                axes[i, 3].imshow(gt_masks[i, 0].cpu(), cmap='gray')
+                axes[i, 3].set_title(f"Ground Truth")
+                axes[i, 3].axis('off')
+            
+            plt.tight_layout()
+            plt.savefig('ts2p_evaluation_results.png', dpi=150, bbox_inches='tight')
+            print("Saved visualization to ts2p_evaluation_results.png")
+            plt.close()
+    
+    avg_iou = total_iou / num_samples
+    print("="*70)
+    print(f"Average IoU: {avg_iou:.4f}")
+    print("="*70)
 
 
 if __name__ == "__main__":
-    train_ts2p()
+    print("="*70)
+    print("TS²P Gap Detection - GapFlyt Method")
+    print("="*70)
+    print("Method: Optical Flow + Temporal Stacking")
+    print("NO TRAINING NEEDED - Uses pretrained optical flow!")
+    print("="*70)
+    
+    evaluate_ts2p()

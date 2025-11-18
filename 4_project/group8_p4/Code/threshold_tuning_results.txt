@@ -1,0 +1,17 @@
+TS²P Threshold Tuning Results
+======================================================================
+
+Threshold 30%: IoU = 0.2835
+Threshold 35%: IoU = 0.3307
+Threshold 40%: IoU = 0.3780
+Threshold 45%: IoU = 0.4254
+Threshold 50%: IoU = 0.4727
+Threshold 55%: IoU = 0.5181
+Threshold 60%: IoU = 0.5610
+Threshold 65%: IoU = 0.6024
+Threshold 70%: IoU = 0.6391 ← BEST
+
+======================================================================
+Best threshold: 70%
+Best IoU: 0.6391
+Improvement: +0.1664 over default
