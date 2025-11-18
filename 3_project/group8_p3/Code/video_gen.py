@@ -19,26 +19,30 @@ def ffmpeging_video(input_files, output_file, fps=5):
     if not output_file.endswith('.mp4'):
         output_file += '.mp4'
     
-    # Create a temporary file list for ffmpeg
-    file_list_path = '/tmp/ffmpeg_filelist.txt'
-    with open(file_list_path, 'w') as f:
-        for img_file in input_files:
-            # ffmpeg needs file paths to be relative or absolute
-            f.write(f"file '{os.path.abspath(img_file)}'\n")
+    # Create a temporary directory with symlinks to maintain order
+    import tempfile
+    temp_dir = tempfile.mkdtemp()
     
-    cmd = [
-        'ffmpeg', '-y',
-        '-f', 'concat',
-        '-safe', '0',
-        '-r', str(fps),
-        '-i', file_list_path,
-        '-c:v', 'libx264',
-        '-pix_fmt', 'yuv420p',
-        output_file
-    ]
-    
-    print(f"Creating video from {len(input_files)} frames at {fps} fps...")
     try:
+        # Create numbered symlinks
+        for idx, img_file in enumerate(input_files):
+            ext = os.path.splitext(img_file)[1]
+            symlink_path = os.path.join(temp_dir, f'frame_{idx:06d}{ext}')
+            os.symlink(os.path.abspath(img_file), symlink_path)
+        
+        # Use image2 demuxer with pattern matching - more reliable than concat
+        cmd = [
+            'ffmpeg', '-y',
+            '-framerate', str(fps),
+            '-pattern_type', 'glob',
+            '-i', os.path.join(temp_dir, 'frame_*.png'),
+            '-c:v', 'libx264',
+            '-pix_fmt', 'yuv420p',
+            '-vf', 'scale=256:256',  # Ensure dimensions are even
+            output_file
+        ]
+        
+        print(f"Creating video from {len(input_files)} frames at {fps} fps...")
         result = subprocess.run(cmd, check=True, capture_output=True, text=True)
         print(f"Successfully created video: {output_file}")
         return True
@@ -47,8 +51,8 @@ def ffmpeging_video(input_files, output_file, fps=5):
         print(f"ffmpeg stderr: {e.stderr}")
         return False
     finally:
-        if os.path.exists(file_list_path):
-            os.remove(file_list_path)
+        # Cleanup temp directory
+        shutil.rmtree(temp_dir)
 
 def main():
     # Directories
@@ -101,7 +105,7 @@ def main():
     print(f"  - {len(intermediate_frames)} intermediate motion frames")
     
     # Generate videos
-    fps = 10  # Adjust frame rate as needed
+    fps = 20  # Adjust frame rate as needed
     video_paths = []
     
     # RGB video

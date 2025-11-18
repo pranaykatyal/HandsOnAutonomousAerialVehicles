@@ -63,7 +63,7 @@ def main(renderer):
     target_rpy = np.zeros_like(currentPose['rpy'])  # Maintain current orientation
     currentPose = goToWaypoint(currentPose, target_pos, target_rpy, velocity=0.02,
                                renderer=renderer, segmentor=segmentor, 
-                               window_id=-1, iteration_id=0, save_every=50, Time=Time)
+                               window_id=-1, iteration_id=0, save_every=75, Time=Time)
 
     color_image, depth_image, metric_depth = renderer.render(
                 currentPose['position'], 

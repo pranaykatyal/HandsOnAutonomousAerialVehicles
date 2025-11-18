@@ -179,7 +179,8 @@ def goToWaypoint(currentPose, targetPose, targetOrientation=None, velocity=0.1,
             color_image, depth_image, metric_depth = renderer.render(current_pos, current_rpy)
             segmented = segmentor.get_pred(color_image)
             segmented = cv2.normalize(segmented, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
-            
+            color_image = cv2.resize(color_image, (256, 256))
+            segmented = cv2.resize(segmented, (256, 256))
             # Save with unique frame counter
             frame_prefix = f'./log/window_{window_id}_iter_{iteration_id:02d}_frame_{_frame_counter:04d}'
             cv2.imwrite(f'{frame_prefix}_rgb.png', cv2.flip(cv2.cvtColor(color_image, cv2.COLOR_RGB2BGR), 0))
