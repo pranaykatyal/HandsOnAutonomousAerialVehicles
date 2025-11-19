@@ -1,8 +1,8 @@
 """
 ts2p_gapflyt.py
-Correct TS²P implementation consistent with GapFlyt paper
+Correct TSÂ²P implementation consistent with GapFlyt paper
 
-TS²P = Temporally Stacked Spatial Parallax
+TSÂ²P = Temporally Stacked Spatial Parallax
 Uses optical flow to detect depth discontinuities via motion parallax
 """
 
@@ -28,8 +28,8 @@ Variables (using paper's notation):
 - Z_B: Depth of background (wall behind window)
 - u, v: Optical flow components in x, y directions
 - F_ij: Optical flow between frame i and frame j
-- Ξ (Xi): Flow magnitude metric for gap detection
-- χ (chi): Classifier output (+1 for foreground, -1 for background)
+- Îž (Xi): Flow magnitude metric for gap detection
+- Ï‡ (chi): Classifier output (+1 for foreground, -1 for background)
 """
 
 
@@ -122,12 +122,12 @@ class OpticalFlowExtractor:
 
 class TS2P_GapDetector:
     """
-    Temporally Stacked Spatial Parallax (TS²P) Gap Detector
+    Temporally Stacked Spatial Parallax (TSÂ²P) Gap Detector
     Following GapFlyt paper methodology
     
     Key Insight from Paper:
-    - Foreground (window) is closer → smaller optical flow magnitude
-    - Background (wall) is farther → larger optical flow magnitude
+    - Foreground (window) is closer â†’ smaller optical flow magnitude
+    - Background (wall) is farther â†’ larger optical flow magnitude
     - Active vision (diagonal scan) amplifies this parallax effect
     """
     
@@ -140,8 +140,10 @@ class TS2P_GapDetector:
         self.flow_extractor = flow_extractor
         self.device = device
         
-        # Thresholds (tune based on your data)
-        self.threshold_percentile = 83  # Median split for foreground/background
+        # Threshold for INVERTED detection (selecting HIGH flow regions as windows)
+        # Lower value = select MORE pixels (larger window)
+        # Higher value = select FEWER pixels (smaller window)  
+        self.threshold_percentile = 50  # Select top 50% flow pixels (very aggressive)
         
     def compute_temporal_flow_stack(self, frames):
         """
@@ -175,9 +177,9 @@ class TS2P_GapDetector:
     
     def compute_flow_magnitude(self, F_stack):
         """
-        Compute flow magnitude Ξ (Xi) for gap detection
+        Compute flow magnitude Îž (Xi) for gap detection
         
-        Ξ(x, y) = ||F_{0,i}(x, y)||_2 averaged over all i
+        Îž(x, y) = ||F_{0,i}(x, y)||_2 averaged over all i
         
         Args:
             F_stack: (B, N-1, 2, H, W) - Temporal flow stack
@@ -200,29 +202,32 @@ class TS2P_GapDetector:
         """
         Detect gap using threshold on flow magnitude
         
-        Gap Detection Rule (GapFlyt):
-        χ(x, y) = +1  if Ξ(x, y) < threshold  (FOREGROUND - window, closer, less flow)
-        χ(x, y) = -1  if Ξ(x, y) >= threshold (BACKGROUND - wall, farther, more flow)
+        Gap Detection Rule (INVERTED for openings/windows):
+        Ï‡(x, y) = +1  if Îž(x, y) > threshold  (WINDOW - opening, see background through it, MORE flow)
+        Ï‡(x, y) = -1  if Îž(x, y) <= threshold (FOREGROUND - solid wall/obstacles, LESS flow)
+        
+        NOTE: This is OPPOSITE of GapFlyt paper which assumes window is a physical obstacle closer than background.
+        For detecting openings/gaps where you see through to distant background, use HIGH flow regions.
         
         Args:
             Xi: (B, 1, H, W) - Flow magnitude
         
         Returns:
             chi: (B, 1, H, W) - Binary mask
-                 1.0 = foreground (window/gap)
-                 0.0 = background
+                 1.0 = window/gap (opening)
+                 0.0 = solid foreground
         """
         B, _, H, W = Xi.shape
         
-        # Adaptive thresholding per image (use median)
-        # Foreground has LOWER flow magnitude
+        # Adaptive thresholding per image
+        # Window/gap has HIGHER flow magnitude (seeing background through opening)
         threshold = torch.quantile(Xi.reshape(B, -1), 
                                    q=self.threshold_percentile/100.0, 
                                    dim=1, keepdim=True)  # (B, 1)
         threshold = threshold.view(B, 1, 1, 1)  # (B, 1, 1, 1)
         
-        # Binary classification
-        chi = (Xi < threshold).float()  # (B, 1, H, W)
+        # Binary classification - SELECT HIGH FLOW REGIONS as window
+        chi = (Xi > threshold).float()  # (B, 1, H, W) - INVERTED FROM PAPER
         
         return chi
     
@@ -259,7 +264,7 @@ class TS2P_GapDetector:
     
     def detect_gap(self, frames, refine=True):
         """
-        Complete TS²P gap detection pipeline
+        Complete TSÂ²P gap detection pipeline
         
         Args:
             frames: (B, N, 3, H, W) - Diagonal scanning sequence
@@ -272,10 +277,10 @@ class TS2P_GapDetector:
         # Step 1: Compute temporal flow stack
         F_stack = self.compute_temporal_flow_stack(frames)
         
-        # Step 2: Compute flow magnitude Ξ
+        # Step 2: Compute flow magnitude Îž
         Xi = self.compute_flow_magnitude(F_stack)
         
-        # Step 3: Threshold to get binary mask χ
+        # Step 3: Threshold to get binary mask Ï‡
         chi = self.detect_gap_threshold(Xi)
         
         # Step 4: Morphological refinement (optional)
@@ -291,7 +296,7 @@ class TS2P_GapDetector:
 
 def evaluate_ts2p():
     """
-    Evaluate TS²P on your generated dataset
+    Evaluate TSÂ²P on your generated dataset
     No training needed - this is classical + optical flow approach!
     """
     from gapflytdataloader import GapFlytSequenceDataset, collate_fn
@@ -314,12 +319,12 @@ def evaluate_ts2p():
         collate_fn=collate_fn
     )
     
-    # Initialize TS²P detector
+    # Initialize TSÂ²P detector
     flow_extractor = OpticalFlowExtractor(model_type='raft', device=device)
     ts2p_detector = TS2P_GapDetector(flow_extractor, device=device)
     
     print("="*70)
-    print("Evaluating TS²P Gap Detection (GapFlyt Method)")
+    print("Evaluating TSÂ²P Gap Detection (GapFlyt Method)")
     print("="*70)
     
     total_iou = 0.0
@@ -329,7 +334,7 @@ def evaluate_ts2p():
         frames = batch['frames'].to(device)  # (B, 5, 3, 480, 640)
         gt_masks = batch['masks'][:, 0].to(device)  # (B, 1, 480, 640) - reference frame mask
         
-        # Detect gap using TS²P
+        # Detect gap using TSÂ²P
         pred_masks, Xi = ts2p_detector.detect_gap(frames, refine=True)
         
         # Compute IoU
@@ -357,12 +362,12 @@ def evaluate_ts2p():
                 
                 # Flow magnitude
                 axes[i, 1].imshow(Xi[i, 0].cpu(), cmap='jet')
-                axes[i, 1].set_title(f"Flow Magnitude Ξ")
+                axes[i, 1].set_title(f"Flow Magnitude Îž")
                 axes[i, 1].axis('off')
                 
                 # Predicted mask
                 axes[i, 2].imshow(pred_masks[i, 0].cpu(), cmap='gray')
-                axes[i, 2].set_title(f"Predicted Gap χ")
+                axes[i, 2].set_title(f"Predicted Gap Ï‡")
                 axes[i, 2].axis('off')
                 
                 # Ground truth
@@ -383,7 +388,7 @@ def evaluate_ts2p():
 
 if __name__ == "__main__":
     print("="*70)
-    print("TS²P Gap Detection - GapFlyt Method")
+    print("TSÂ²P Gap Detection - GapFlyt Method")
     print("="*70)
     print("Method: Optical Flow + Temporal Stacking")
     print("NO TRAINING NEEDED - Uses pretrained optical flow!")

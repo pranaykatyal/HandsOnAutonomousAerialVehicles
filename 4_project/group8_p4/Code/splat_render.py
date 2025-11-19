@@ -191,13 +191,16 @@ class SplatRenderer:
         orientation_rpy: (3,) [roll, pitch, yaw] in radians (in NED frame)
         Returns: RGB and Depth images (uint8)
         """
-        # Position transform from NED → GSplat (NWU)
+        # Position transform from NED â†’ GSplat (NWU)
         pos_update = self.init_orientation @ np.array([
             [position[1]],  # East
             [-position[2]], # Up
             [-position[0]]  # Forward
         ])
         pos_cam = self.init_position + pos_update.flatten()
+        
+        # DEBUG: Print camera positions to verify motion
+        print(f"[RENDER] NED=[{position[0]:.3f}, {position[1]:.3f}, {position[2]:.3f}] -> Splat=[{pos_cam[0]:.3f}, {pos_cam[1]:.3f}, {pos_cam[2]:.3f}]")
 
         # Orientation (NED to GSplat)
         # R_ned = euler2mat(orientation_rpy[0], orientation_rpy[1], orientation_rpy[2])
