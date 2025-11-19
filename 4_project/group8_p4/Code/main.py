@@ -554,24 +554,26 @@ def main(renderer):
         print(f"  âœ“ Captured {len(scan_frames)} frames")
         
         #####################################################
-        ### STEP 2: WINDOW DETECTION
+        ### STEP 2: WINDOW DETECTION (SIMPLE OPTICAL FLOW)
         #####################################################
 
-        print("\n--- Phase 2: TS²P Detection ---")
+        print("\n--- Phase 2: Simple Flow Detection ---")
 
         # OLD methods (commented out for reference)
         # window_mask, window_center_2d, confidence = detector.detect_window(scan_frames)
         # window_mask, window_center_2d, confidence = detector.detect_window_with_flow_debug(scan_frames)
 
-        # NEW: Use improved detector with bounding box selection
-        from improved_window_detector import ImprovedWindowDetector
-        improved_detector = ImprovedWindowDetector(detector)  # Wrap existing detector
+        # NEW: Simple optical flow detector
+        from simple_flow_detector import SimpleFlowDetector
 
-        # Run improved detection
-        window_mask, window_center_2d, confidence, debug_info = improved_detector.detect_window_improved(scan_frames)
+        # Create simple detector using the flow extractor
+        simple_detector = SimpleFlowDetector(detector.flow_extractor, device='cuda')
 
-        # Visualize the detection process (creates ./log/detection_process.png)
-        improved_detector.visualize_detection_process(debug_info, './log/detection_process.png')
+        # Detect window using simple optical flow
+        window_mask, window_center_2d, confidence, debug_info = simple_detector.detect_window_simple(scan_frames)
+
+        # Visualize the detection process
+        simple_detector.visualize_simple(debug_info, './log/simple_detection.png')
 
         print(f"  Confidence: {confidence:.3f}")
 
