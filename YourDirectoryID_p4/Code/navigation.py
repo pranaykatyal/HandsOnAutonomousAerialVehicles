@@ -228,7 +228,7 @@ def goToWaypoint(currentPose, targetPose, flow_image_distance, targetOrientation
             
             # Save with unique frame counter
             frame_prefix = f'./imgs/_iter_{iteration_id:02d}_frame_{_frame_counter:04d}'
-            cv2.imwrite(f'{frame_prefix}_rgb.png', cv2.flip(color_image, 0))
+            cv2.imwrite(f'{frame_prefix}_rgb.png', cv2.flip(color_image, -1))
             _frame_counter += 1
         
         

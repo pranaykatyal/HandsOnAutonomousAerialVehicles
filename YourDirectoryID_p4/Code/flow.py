@@ -137,7 +137,7 @@ class RaftFlow():
         #threshold to get just small flow
         min_flow = mag_flow_image.min()
         max_flow = mag_flow_image.max()
-        flow_threshold = min_flow + np.abs(max_flow-min_flow) * .45
+        flow_threshold = min_flow + np.abs(max_flow-min_flow) * .35
         # print(f'flow shape {flow_image.shape}')
         # avg_flow = mag_flow_image.mean()
 
@@ -158,7 +158,7 @@ class RaftFlow():
         # cv2.imwrite('norm_largest_mask.png', norm_largest_mask)
         self.save_overlay_image(img1, largest_mask, ey, ez)
         self.save_visulized_flow_frame(img1, flow_image, mask, largest_mask, ey, ez)
-        
+
         return ey,ez
 
     def save_visulized_flow_frame(self, input_img, flow, masked_flow, largest_mask, ey, ez):
@@ -184,10 +184,7 @@ class RaftFlow():
         largest_mask_viz = cv2.cvtColor(largest_mask_viz, cv2.COLOR_GRAY2BGR)
         
         # Ensure input image is BGR for OpenCV
-        if input_img.shape[2] == 3:
-            input_img_bgr = cv2.cvtColor(input_img.astype(np.uint8), cv2.COLOR_RGB2BGR)
-        else:
-            input_img_bgr = input_img.astype(np.uint8)
+        input_img_bgr = input_img.astype(np.uint8)
         
         # Get target dimensions from input image
         target_h, target_w = input_img_bgr.shape[:2]
@@ -316,7 +313,7 @@ class RaftFlow():
                     0.7, (255, 255, 0), 2, cv2.LINE_AA)
         
         # Convert RGB to BGR for OpenCV saving
-        output_img_bgr = cv2.cvtColor(output_img, cv2.COLOR_RGB2BGR)
+        output_img_bgr = output_img# cv2.cvtColor(output_img, cv2.COLOR_RGB2BGR)
         
         # Save with frame counter
         filename = f'run/overlay_{self.frame_count:04d}.png'
