@@ -6,6 +6,7 @@ Fixes the detection to properly identify LOW flow regions (windows) and select t
 import torch
 import numpy as np
 import cv2
+from scanning_fix import compute_accumulated_flow_ts2p
 
 
 class ImprovedWindowDetector:
@@ -29,7 +30,7 @@ class ImprovedWindowDetector:
     
     def detect_window_improved(self, frames):
         """
-        Improved detection with bounding box selection
+        Improved detection using SIMPLE optical flow (like simple_detector)
         
         Args:
             frames: List of (H, W, 3) RGB numpy arrays
@@ -53,32 +54,42 @@ class ImprovedWindowDetector:
         
         print(f"  Downsampled to: {self.detection_resolution}x{self.detection_resolution}")
         
-        # Convert to torch tensor
-        frames_np = np.array(downsampled_frames)
-        frames_tensor = torch.from_numpy(frames_np).float() / 255.0
-        frames_tensor = frames_tensor.permute(0, 3, 1, 2)
-        frames_tensor = frames_tensor.unsqueeze(0).to(self.device)
+        print(f"  Computing TS²P accumulated flow (all consecutive pairs)...")
         
-        print(f"  Running TS²P detection...")
+        # Use the optimized accumulated flow function
+        Xi_np = compute_accumulated_flow_ts2p(downsampled_frames, 
+                                              self.flow_extractor, 
+                                              self.device)
         
-        with torch.no_grad():
-            # Compute flows
-            F_stack = self.gap_detector.compute_temporal_flow_stack(frames_tensor)
-            Xi = self.gap_detector.compute_flow_magnitude(F_stack)
-            
-            # Get threshold value
-            B, _, H, W = Xi.shape
-            threshold = torch.quantile(Xi.reshape(B, -1), 
-                                    q=self.gap_detector.threshold_percentile/100.0, 
-                                    dim=1, keepdim=True)
-            threshold_val = threshold.item()
-            
-            # CORRECT LOGIC: LOW flow = window (closer object)
-            chi = (Xi < threshold).float()
+        print(f"    Flow range: [{Xi_np.min():.2f}, {Xi_np.max():.2f}]")
+        print(f"    Flow mean: {Xi_np.mean():.2f}")
+        print(f"    Flow median: {np.median(Xi_np):.2f}")
         
-        # Convert to numpy
-        Xi_np = Xi[0, 0].cpu().numpy()
-        chi_np = chi[0, 0].cpu().numpy()
+        # Adaptive threshold strategy for MIN flow:
+        # MIN flow creates much cleaner separation, so we need LOWER percentiles
+        threshold_low = np.percentile(Xi_np, 10)   # Slightly more inclusive
+        threshold_high = np.percentile(Xi_np, 20)  # Capture both windows fully
+        
+        print(f"    Low threshold (10%): {threshold_low:.2f}")
+        print(f"    High threshold (20%): {threshold_high:.2f}")
+        
+        # Use the higher threshold to capture both windows
+        threshold_val = threshold_high
+        
+        # Safety bounds - raise upper bound to capture flow ~6-7
+        if threshold_val > 8:
+            print(f"    WARNING: Threshold too high ({threshold_val:.2f}), capping at 8")
+            threshold_val = 8
+        elif threshold_val < 4:
+            print(f"    WARNING: Threshold too low ({threshold_val:.2f}), raising to 4")
+            threshold_val = 4
+        
+        print(f"    Using threshold: {threshold_val:.2f}")
+        
+        # Binary mask: LOW flow = windows
+        chi_np = (Xi_np < threshold_val).astype(np.float32)
+        
+        print(f"    Pixels below threshold: {np.sum(chi_np > 0):.0f}")
         
         # Find connected components and select best bounding box
         mask_refined = self.select_best_bounding_box(chi_np)
@@ -122,11 +133,11 @@ class ImprovedWindowDetector:
         Select the best bounding box from LOW flow regions (blue regions in flow map)
         
         Strategy:
-        1. Light morphology to clean noise
-        2. Find connected components
-        3. Filter invalid components (too small, at edges, wrong aspect ratio)
-        4. Select LARGEST valid component
-        5. Apply light closing to smooth result
+        1. REMOVE FLOOR FIRST (bottom 40% of image)
+        2. Light morphology to clean noise
+        3. Find connected components
+        4. Filter (edges, size, aspect ratio)
+        5. Select LARGEST valid window
         
         Args:
             mask: (H, W) binary mask
@@ -136,9 +147,20 @@ class ImprovedWindowDetector:
         H, W = mask.shape
         mask_uint8 = (mask * 255).astype(np.uint8)
         
-        # Step 1: Light morphological opening to remove small noise
-        kernel_small = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-        mask_uint8 = cv2.morphologyEx(mask_uint8, cv2.MORPH_OPEN, kernel_small)
+        # Step 0: CRITICAL - Remove floor region BEFORE morphology
+        # Floor is typically in bottom 40% of image
+        floor_cutoff = int(H * 0.6)  # Keep only top 60%
+        mask_no_floor = mask_uint8.copy()
+        mask_no_floor[floor_cutoff:, :] = 0  # Zero out bottom 40%
+        
+        print(f"    Removed floor (bottom 40%, {H - floor_cutoff}px)")
+        print(f"    Pixels after floor removal: {np.sum(mask_no_floor > 0)}")
+        
+        # Step 1: Light morphology to clean noise (like simple detector)
+        kernel_open = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        mask_clean = cv2.morphologyEx(mask_no_floor, cv2.MORPH_OPEN, kernel_open)
+        
+        mask_uint8 = mask_clean
         
         # Step 2: Find connected components
         num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(
@@ -146,49 +168,54 @@ class ImprovedWindowDetector:
         
         print(f"    Found {num_labels - 1} connected components")
         
-        if num_labels <= 1:  # No foreground regions
+        if num_labels <= 1:
             return np.zeros((H, W), dtype=np.float32)
         
-        # Step 3: Evaluate each component (skip background label 0)
+        # Step 3: Filter components - relaxed for MIN flow (very clean signal)
         valid_regions = []
         for label_id in range(1, num_labels):
             x, y, w, h, area = stats[label_id]
+            cx, cy = centroids[label_id]
             
-            # Validity checks
-            # 1. Minimum size (at least 500 pixels for 512x512 image)
-            min_area = int(0.002 * H * W)  # 0.2% of image
+            # 1. Size bounds - VERY RELAXED
+            min_area = int(0.001 * H * W)  # At least 0.1% (was 0.3%)
+            max_area = int(0.6 * H * W)    # At most 60% (was 50%)
             if area < min_area:
-                print(f"      Component {label_id}: REJECTED (too small: {area} < {min_area})")
+                print(f"      Component {label_id}: REJECTED (too small: {area})")
+                continue
+            if area > max_area:
+                print(f"      Component {label_id}: REJECTED (too large: {area})")
                 continue
             
-            # 2. Not too close to edges (20 pixel margin)
-            margin = 20
+            # 2. Edge rejection - RELAXED (10px margin)
+            margin = 10  # Was 20px
             if x < margin or y < margin or x+w > W-margin or y+h > H-margin:
                 print(f"      Component {label_id}: REJECTED (at edge)")
                 continue
             
-            # 3. Reasonable aspect ratio (not too elongated)
+            # 3. Aspect ratio - VERY RELAXED
             aspect_ratio = w / (h + 1e-6)
-            if aspect_ratio < 0.15 or aspect_ratio > 6.0:
+            if aspect_ratio < 0.1 or aspect_ratio > 10.0:  # Was 0.2 to 5.0
                 print(f"      Component {label_id}: REJECTED (bad aspect: {aspect_ratio:.2f})")
                 continue
             
-            # 4. Reasonable size (not too large - probably artifacts)
-            if area > 0.8 * H * W:
-                print(f"      Component {label_id}: REJECTED (too large)")
-                continue
+            # 4. Compactness check - RELAXED
+            bbox_area = w * h
+            if bbox_area > 0:
+                compactness = area / bbox_area
+                if compactness < 0.2:  # Was 0.3
+                    print(f"      Component {label_id}: REJECTED (low compactness: {compactness:.2f})")
+                    continue
             
-            # Compute score: larger area + more central = better
-            cx, cy = centroids[label_id]
-            img_center_x, img_center_y = W / 2, H / 2
-            dist_from_center = np.sqrt((cx - img_center_x)**2 + (cy - img_center_y)**2)
-            max_dist = np.sqrt((W/2)**2 + (H/2)**2)
-            centrality_score = 1.0 - (dist_from_center / max_dist)
+            # Score: larger area + higher position = better
+            vertical_score = 1.0 - (cy / H)  # Higher in image = better
+            img_center_x = W / 2
+            horizontal_centrality = 1.0 - abs(cx - img_center_x) / (W / 2)
             
-            # Combined score: area is primary (70%), centrality is secondary (30%)
-            score = area * (0.7 + 0.3 * centrality_score)
+            # Prioritize: size (60%), horizontal centrality (25%), height (15%)
+            score = area * (0.6 + 0.25 * horizontal_centrality + 0.15 * vertical_score)
             
-            print(f"      Component {label_id}: VALID (area={area}, score={score:.0f})")
+            print(f"      Component {label_id}: VALID (area={area}, cy={cy:.0f}, score={score:.0f})")
             
             valid_regions.append({
                 'label_id': label_id,
@@ -197,28 +224,21 @@ class ImprovedWindowDetector:
                 'area': area
             })
         
-        # Step 4: Select best region
+        # Step 4: Select highest scoring region
         if not valid_regions:
-            print("    No valid regions found, using largest component")
-            # Fallback: use largest component ignoring validity checks
-            areas = stats[1:, cv2.CC_STAT_AREA]  # Skip background
-            if len(areas) > 0:
-                best_label = np.argmax(areas) + 1
-                result_mask = (labels == best_label).astype(np.uint8) * 255
-            else:
-                result_mask = np.zeros((H, W), dtype=np.uint8)
-        else:
-            # Use highest scoring region
-            valid_regions.sort(key=lambda x: x['score'], reverse=True)
-            best_region = valid_regions[0]
-            best_label = best_region['label_id']
-            
-            print(f"    Selected component {best_label} (area={best_region['area']}, bbox={best_region['bbox']})")
-            
-            # Create mask from selected component
-            result_mask = (labels == best_label).astype(np.uint8) * 255
+            print("    No valid regions found")
+            return np.zeros((H, W), dtype=np.float32)
         
-        # Step 5: Apply light closing to fill small holes within selected region
+        valid_regions.sort(key=lambda x: x['score'], reverse=True)
+        best_region = valid_regions[0]
+        best_label = best_region['label_id']
+        
+        print(f"    Selected component {best_label} (area={best_region['area']}, bbox={best_region['bbox']})")
+        
+        # Create mask from selected component
+        result_mask = (labels == best_label).astype(np.uint8) * 255
+        
+        # Step 5: Light closing to smooth
         kernel_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
         result_mask = cv2.morphologyEx(result_mask, cv2.MORPH_CLOSE, kernel_close)
         
@@ -314,16 +334,36 @@ class ImprovedWindowDetector:
         mask_overlay[chi_after > 0.5] = [0, 255, 0]
         overlay = cv2.addWeighted(overlay, 0.7, mask_overlay, 0.3, 0)
         
-        # Draw final bounding box
+        # Draw final bounding box and arrow
         if np.sum(chi_after > 0.5) > 0:
             y_coords, x_coords = np.where(chi_after > 0.5)
             x_min, x_max = x_coords.min(), x_coords.max()
             y_min, y_max = y_coords.min(), y_coords.max()
+            
+            # Bounding box (blue)
             cv2.rectangle(overlay, (x_min, y_min), (x_max, y_max), (255, 0, 0), 3)
-            # Draw center
+            
+            # Window center (red circle)
             cx = (x_min + x_max) // 2
             cy = (y_min + y_max) // 2
             cv2.circle(overlay, (cx, cy), 10, (255, 0, 0), -1)
+            
+            # Image center (cyan cross)
+            H_viz, W_viz = overlay.shape[:2]
+            img_cx = W_viz // 2
+            img_cy = H_viz // 2
+            cv2.drawMarker(overlay, (img_cx, img_cy), (255, 255, 0), 
+                          markerType=cv2.MARKER_CROSS, 
+                          markerSize=30, thickness=3)
+            
+            # Arrow from image center to window center (yellow)
+            cv2.arrowedLine(overlay, (img_cx, img_cy), (cx, cy), 
+                           (0, 255, 255), 3, tipLength=0.05)
+            
+            # Distance text
+            distance_px = np.sqrt((cx - img_cx)**2 + (cy - img_cy)**2)
+            cv2.putText(overlay, f'Offset: {distance_px:.0f}px', (20, 40), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
         
         axes[2, 2].imshow(overlay)
         axes[2, 2].set_title('Final Detection\n(Blue box = selected window)', 
@@ -336,21 +376,3 @@ class ImprovedWindowDetector:
         plt.savefig(save_path, dpi=150, bbox_inches='tight')
         print(f"  ✓ Saved visualization to {save_path}")
         plt.close()
-
-
-# Example integration with your existing code:
-"""
-# In your main.py, replace detector.detect_window() with:
-
-from improved_window_detector import ImprovedWindowDetector
-
-# Initialize
-detector = WindowDetector(device='cuda')
-improved_detector = ImprovedWindowDetector(detector)
-
-# Use improved detection
-mask, center, confidence, debug_info = improved_detector.detect_window_improved(scan_frames)
-
-# Visualize the process
-improved_detector.visualize_detection_process(debug_info)
-"""

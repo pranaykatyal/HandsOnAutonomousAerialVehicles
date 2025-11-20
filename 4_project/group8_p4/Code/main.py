@@ -46,24 +46,24 @@ class WindowDetector:
         print("âœ“ TSÂ²P Detector initialized (IoU: 0.69)")
         print(f"  Detection resolution: {self.detection_resolution}x{self.detection_resolution}")
     
-    def generate_scanning_positions(self, current_position):
-        """Generate diagonal scanning trajectory positions"""
-        positions = []
-        positions.append(current_position.copy())
+    # def generate_scanning_positions(self, current_position):
+    #     """Generate diagonal scanning trajectory positions"""
+    #     positions = []
+    #     positions.append(current_position.copy())
         
-        for i in range(1, self.num_scan_frames):
-            progress = i / (self.num_scan_frames - 1)
-            offset_x = -progress * self.scan_distance / np.sqrt(2)
-            offset_y = progress * self.scan_distance / np.sqrt(2)
-            offset_z = progress * self.scan_distance / np.sqrt(2)
+    #     for i in range(1, self.num_scan_frames):
+    #         progress = i / (self.num_scan_frames - 1)
+    #         offset_x = -progress * self.scan_distance / np.sqrt(2)
+    #         offset_y = progress * self.scan_distance / np.sqrt(2)
+    #         offset_z = progress * self.scan_distance / np.sqrt(2)
             
-            scan_pos = current_position.copy()
-            # scan_pos[0] += offset_x
-            scan_pos[1] += offset_y * 2.0 # Scale to match splat units
-            scan_pos[2] += offset_z * 2.0 # Scale to match splat units 
-            positions.append(scan_pos)
+    #         scan_pos = current_position.copy()
+    #         # scan_pos[0] += offset_x
+    #         scan_pos[1] += offset_y * 5.0 # Scale to match splat units
+    #         scan_pos[2] += offset_z * 5.0 # Scale to match splat units 
+    #         positions.append(scan_pos)
         
-        return positions
+    #     return positions
     
     def detect_window(self, frames):
         """
@@ -528,7 +528,7 @@ def main(renderer):
         
         # Initial pose - Gaussian splat coordinates
         currentPose = {
-            'position': np.array([0.2, -0.2, 0.0]),  # Working start position
+            'position': np.array([0.0, 0.0, 0.0]),  # Working start position [0.2, -0.2, 0.0]
             'rpy': np.radians([0.0, 0.0, 0.0])
         }
         
@@ -539,7 +539,9 @@ def main(renderer):
         #####################################################
         
         print("\n--- Phase 1: Active Scanning ---")
-        scan_positions = detector.generate_scanning_positions(currentPose['position'])
+        from scanning_fix import generate_scanning_positions_fixed
+
+        scan_positions = generate_scanning_positions_fixed(currentPose['position'], scan_distance=0.01)
         print(f"Generated {len(scan_positions)} scan positions")
         
         scan_frames = []
@@ -554,26 +556,22 @@ def main(renderer):
         print(f"  âœ“ Captured {len(scan_frames)} frames")
         
         #####################################################
-        ### STEP 2: WINDOW DETECTION (SIMPLE OPTICAL FLOW)
+        ### STEP 2: WINDOW DETECTION (IMPROVED)
         #####################################################
 
-        print("\n--- Phase 2: Simple Flow Detection ---")
+        print("\n--- Phase 2: Improved Window Detection ---")
 
-        # OLD methods (commented out for reference)
-        # window_mask, window_center_2d, confidence = detector.detect_window(scan_frames)
-        # window_mask, window_center_2d, confidence = detector.detect_window_with_flow_debug(scan_frames)
+        # Use improved detector with strict filtering
+        from improved_window_detector import ImprovedWindowDetector
 
-        # NEW: Simple optical flow detector
-        from simple_flow_detector import SimpleFlowDetector
+        # Create improved detector
+        improved_detector = ImprovedWindowDetector(detector)
 
-        # Create simple detector using the flow extractor
-        simple_detector = SimpleFlowDetector(detector.flow_extractor, device='cuda')
-
-        # Detect window using simple optical flow
-        window_mask, window_center_2d, confidence, debug_info = simple_detector.detect_window_simple(scan_frames)
+        # Detect window using improved method
+        window_mask, window_center_2d, confidence, debug_info = improved_detector.detect_window_improved(scan_frames)
 
         # Visualize the detection process
-        simple_detector.visualize_simple(debug_info, './log/simple_detection.png')
+        improved_detector.visualize_detection_process(debug_info, './log/detection_process.png')
 
         print(f"  Confidence: {confidence:.3f}")
 
