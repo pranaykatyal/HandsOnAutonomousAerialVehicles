@@ -18,10 +18,10 @@ from utils.utils import InputPadder
 
 
 class RaftFlow():
-    def __init__(self,model_pth:str,alternative_corr:bool, small_model:bool=False):
+    def __init__(self,model_pth:str,alternative_corr:bool,mask_threshold:float=.2, small_model:bool=False):
         self.frame_count = 0
         self.clear_old_visualizations()
-
+        self.mask_threshold = mask_threshold
         model_params = argparse.Namespace(
             small=small_model,
             dropout=False,
@@ -98,7 +98,7 @@ class RaftFlow():
 
         if not closed_labels:
             # No closed zero-blob found
-            return np.zeros_like(segment_01, dtype=np.uint8), None
+            return np.zeros_like(segment_01, dtype=np.uint8), None, None
 
         # Pick the blob with the largest area
         largest_label = max(
@@ -116,7 +116,7 @@ class RaftFlow():
         ey = cx - (W / 2)  # cx is column position, W is width
         ez = cy - (H / 2)  # cy is row position, H is height
 
-        return largest_mask, (ey,ez)
+        return largest_mask,ey,ez
     
 
     def get_displacement_from_img_pair(self,img1,img2):
@@ -132,12 +132,12 @@ class RaftFlow():
 
         #save flow image 
         # norm_sumed_flow_image = cv2.normalize(mag_flow_image.astype(np.uint8), None, 0, 255, cv2.NORM_MINMAX)
-        # cv2.imwrite('squeezed_flow.png', norm_sumed_flow_image)
+        # cv2.imwrite(f'run/squeezed_flow{self.frame_count}.png', norm_sumed_flow_image)
 
         #threshold to get just small flow
         min_flow = mag_flow_image.min()
         max_flow = mag_flow_image.max()
-        flow_threshold = min_flow + np.abs(max_flow-min_flow) * .35
+        flow_threshold = min_flow + np.abs(max_flow-min_flow) * self.mask_threshold
         # print(f'flow shape {flow_image.shape}')
         # avg_flow = mag_flow_image.mean()
 
@@ -151,13 +151,16 @@ class RaftFlow():
         # cv2.imwrite('mask2.png', norm_mask[1])
 
         #get largest closed blob
-        largest_mask, (ey,ez) = self.get_closest_frame(mask)
+        largest_mask, ey, ez  = self.get_closest_frame(mask)
 
+        if ey is None or ez is None:
+            ey = 0
+            ez = 0
         #save largest mask for debigging
         # norm_largest_mask = cv2.normalize(largest_mask.astype(np.uint8), None, 0, 255, cv2.NORM_MINMAX)
         # cv2.imwrite('norm_largest_mask.png', norm_largest_mask)
         self.save_overlay_image(img1, largest_mask, ey, ez)
-        self.save_visulized_flow_frame(img1, flow_image, mask, largest_mask, ey, ez)
+        self.save_visulized_flow_frame(img1, flow_image, mag_flow_image, largest_mask, ey, ez)
 
         return ey,ez
 

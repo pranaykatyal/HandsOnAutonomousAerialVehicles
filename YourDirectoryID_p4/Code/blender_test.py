@@ -98,8 +98,8 @@ def main(renderer):
         if targetPose is not None:
             currentPose, img1, img2 = goToWaypoint(currentPose=currentPose, 
                                                    targetPose=targetPose,
-                                                   flow_image_distance=0.02, 
-                                                   velocity=0.08, 
+                                                   flow_image_distance=0.025, 
+                                                   velocity=0.1, 
                                                    renderer=renderer,
                                                    save_every=10, 
                                                    iteration_id=frame_cnt,
@@ -130,7 +130,8 @@ def analyze_sequence_folders(base_path='/home/hkortus/scratch/Outputs/Sequences/
     if flow_model is None:
         flow_model = RaftFlow(
             model_pth='/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/YourDirectoryID_p4/RAFT/models/raft-things.pth',
-            alternative_corr=True
+            alternative_corr=True,
+            
         )
     
     results = {}
@@ -189,9 +190,9 @@ if __name__ == "__main__":
     config_path = "../data/p4_colmap_nov6_1000_splat/p4_colmap_nov6_1000/splatfacto/2025-11-06_161816/config.yml"
     json_path = "../render_settings/render_settings.json"
 
-    renderer = SplatRenderer(config_path, json_path)
-    # analyze_sequence_folders()
-    main(renderer)
+    # renderer = SplatRenderer(config_path, json_path)
+    analyze_sequence_folders()
+    # main(renderer)
     print('creating videos')
     succ = create_overlay_animation_video(overlay_dir='/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/YourDirectoryID_p4/Code/run',
                                    frames_dir='/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/YourDirectoryID_p4/Code/imgs', 

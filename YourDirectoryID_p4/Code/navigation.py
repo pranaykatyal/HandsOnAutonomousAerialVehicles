@@ -196,6 +196,7 @@ def goToWaypoint(currentPose, targetPose, flow_image_distance, targetOrientation
     threshold = flow_image_distance  # Adjust this value
     last_point, prev_point_above_threshold = find_trajectory_points_by_threshold(trajectory_points, threshold)
     if last_point is None or prev_point_above_threshold is None:
+        print('FAILED TO GET POINTS')
         return currentPose, False, False
     print(f"Last point: {last_point}, Previous point above threshold: {prev_point_above_threshold}")
 
