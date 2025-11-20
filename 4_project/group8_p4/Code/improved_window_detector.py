@@ -94,6 +94,9 @@ class ImprovedWindowDetector:
         # Find connected components and select best bounding box
         mask_refined = self.select_best_bounding_box(chi_np)
         
+        # Compute confidence using downsampled refined mask + flow map
+        conf, conf_comp = self.compute_confidence(mask_refined, Xi_np)
+        
         # Upsample back to original resolution
         mask = cv2.resize(mask_refined, (original_W, original_H), 
                          interpolation=cv2.INTER_NEAREST)
@@ -105,12 +108,11 @@ class ImprovedWindowDetector:
             center_x = int(x_coords.mean())
             center_y = int(y_coords.mean())
             center = (center_x, center_y)
-            
-            mask_area = mask.sum()
-            confidence = min(1.0, mask_area / (original_H * original_W * 0.5))
         else:
             center = None
-            confidence = 0.0
+        
+        # Keep backward-compatible confidence behavior: ensure numeric in [0,1]
+        confidence = float(np.clip(conf, 0.0, 1.0))
         
         # Debug info
         debug_info = {
@@ -118,15 +120,123 @@ class ImprovedWindowDetector:
             'threshold': threshold_val,
             'chi_before': chi_np,
             'chi_after': mask_refined,
-            'frames': downsampled_frames
+            'frames': downsampled_frames,
+            'confidence_components': conf_comp
         }
         
         print(f"  Threshold: {threshold_val:.2f}")
         print(f"  Pixels before bbox selection: {np.sum(chi_np > 0.5):.0f}")
         print(f"  Pixels after bbox selection: {np.sum(mask_refined > 0.5):.0f}")
-        print(f"  Confidence: {confidence:.3f}")
+        print(f"  Confidence: {confidence:.3f} (sol={conf_comp['solidity']:.3f}, ar={conf_comp['aspect']:.3f}, contrast={conf_comp['contrast']:.3f})")
         
         return mask, center, confidence, debug_info
+    
+    def compute_confidence(self, mask_down, Xi_np):
+        """
+        Compute a distance-invariant confidence for a detected mask.
+
+        Inputs:
+          - mask_down: (H, W) binary mask at detection_resolution (values 0..1)
+          - Xi_np: (H, W) flow magnitude map used to compute mask_down
+
+        Returns:
+          - confidence: float in [0,1]
+          - components: dict with sub-scores for debugging
+        Principles:
+          - Do NOT penalize large masks just for being large.
+          - Use region solidity (area / convex-hull-area).
+          - Use aspect-ratio score (windows usually have reasonable AR).
+          - Use local contrast: mean_flow_outside - mean_flow_inside (normalized).
+        """
+        # Convert to uint8 mask
+        H, W = mask_down.shape
+        eps = 1e-9
+        mask_u8 = (mask_down > 0.5).astype(np.uint8)  # 0/1
+        mask_u8_255 = (mask_u8 * 255).astype(np.uint8)
+        
+        # Default (no detection)
+        if mask_u8.sum() == 0:
+            return 0.0, {'solidity': 0.0, 'aspect': 0.0, 'contrast': 0.0}
+        
+        # Find contours and pick the largest contour by area
+        contours, _ = cv2.findContours(mask_u8_255, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not contours:
+            return 0.0, {'solidity': 0.0, 'aspect': 0.0, 'contrast': 0.0}
+        
+        # choose the biggest contour
+        contour = max(contours, key=cv2.contourArea)
+        area = cv2.contourArea(contour)
+        if area <= 0:
+            return 0.0, {'solidity': 0.0, 'aspect': 0.0, 'contrast': 0.0}
+        
+        # Bounding box
+        x, y, w, h = cv2.boundingRect(contour)
+        bbox_area = max(1, w * h)
+        
+        # Solidity: area / convex hull area
+        hull = cv2.convexHull(contour)
+        hull_area = cv2.contourArea(hull)
+        if hull_area <= 0:
+            solidity = 0.0
+        else:
+            solidity = float(area / (hull_area + eps))
+            solidity = float(np.clip(solidity, 0.0, 1.0))
+        
+        # Aspect ratio score: prefer AR in [0.4, 2.5] but smoothly decay otherwise
+        ar = (w / (h + eps))
+        # map ar to score in (0,1]
+        # when ar==1 ->1.0; as |log(ar)| grows, score decreases
+        ar_log = abs(np.log(ar + eps))
+        aspect_score = float(np.clip(1.0 - (ar_log / 2.0), 0.0, 1.0))
+        
+        # Local contrast: compare mean flow inside mask vs in a surrounding ring
+        # Build ring mask: expanded bbox minus the mask itself
+        pad = int(max(w, h) * 0.5) + 5
+        x0 = max(0, x - pad)
+        y0 = max(0, y - pad)
+        x1 = min(W, x + w + pad)
+        y1 = min(H, y + h + pad)
+        
+        ring_mask = np.zeros((H, W), dtype=np.uint8)
+        ring_mask[y0:y1, x0:x1] = 1
+        # zero inner bbox region so ring excludes the bbox interior
+        ring_mask[y:y+h, x:x+w] = 0
+        # exclude existing detected mask pixels from ring (so ring is truly outside)
+        ring_mask = ring_mask & (1 - mask_u8)
+        
+        inside_vals = Xi_np[mask_u8.astype(bool)]
+        outside_vals = Xi_np[ring_mask.astype(bool)]
+        
+        mean_inside = float(np.mean(inside_vals)) if inside_vals.size > 0 else float(np.mean(Xi_np))
+        mean_outside = float(np.mean(outside_vals)) if outside_vals.size > 0 else float(np.mean(Xi_np))
+        
+        # We expect outside > inside (higher flow outside the low-flow window).
+        # contrast_raw in (-inf, +inf). Convert to [0,1] with sigmoid-like mapping.
+        contrast_raw = (mean_outside - mean_inside) / (abs(mean_outside) + eps)
+        # clip negative -> 0, since negative means inside isn't lower than outside
+        contrast = float(np.clip(contrast_raw, 0.0, 1.0))
+        
+        # Combine components with weights
+        # solidity: 35%, aspect: 25%, contrast: 40%
+        conf = 0.35 * solidity + 0.25 * aspect_score + 0.40 * contrast
+        
+        # Small-area safeguard: if detected region extremely tiny relative to frame, downweight
+        min_area = max(1, int(0.0005 * H * W))
+        if area < min_area:
+            conf *= 0.0  # too small, no confidence
+        # clamp and return
+        conf = float(np.clip(conf, 0.0, 1.0))
+        
+        components = {
+            'solidity': float(solidity),
+            'aspect': float(aspect_score),
+            'contrast': float(contrast),
+            'area_px': float(area),
+            'bbox': (int(x), int(y), int(w), int(h)),
+            'mean_inside_flow': float(mean_inside),
+            'mean_outside_flow': float(mean_outside)
+        }
+        return conf, components
     
     def select_best_bounding_box(self, mask):
         """

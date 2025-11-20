@@ -463,7 +463,7 @@ def goToWaypoint(currentPose, targetPose, velocity=0.1):
         current_pos = state[0:3]
         error = np.linalg.norm(current_pos - target_position)
         if error < tolerance and t > 1.0:
-            print(f"  âœ“ Reached at t={t:.2f}s, error={error:.3f}m")
+            print(f"  Reached at t={t:.2f}s, error={error:.3f}m")
             state_final = state
             break
         
@@ -530,9 +530,9 @@ def main(renderer):
         currentPose = {
             # 'position': np.array([0.4, -0.2, 0.0]),  # too close
             # 'position': np.array([0.3, -0.2, 0.0]), # closer good start
-            'position': np.array([0.2, -0.2, 0.0]), # good start
+            # 'position': np.array([0.2, -0.2, 0.0]), # good start
             # 'position': np.array([0.0, -0.2, 0.0]), 
-            # 'position': np.array([0.0, 0.0, 0.0]), # origin
+            'position': np.array([0.0, 0.0, 0.0]), # origin
             'rpy': np.radians([0.0, 0.0, 0.0])
         }
         
