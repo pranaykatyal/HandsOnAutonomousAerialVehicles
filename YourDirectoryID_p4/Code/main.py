@@ -11,7 +11,7 @@ from quad_dynamics import model_derivative
 import tello
 from navigation import goToWaypoint, clear_old_imgs, timecounter
 from flow import RaftFlow
-from video_gen import create_overlay_animation_video
+from video_gen import create_overlay_animation_video, create_detailed_flow_video
 
 class State(Enum):
     START = auto()
@@ -31,8 +31,8 @@ def main(renderer):
     Time = timecounter()
     # Initialize pose - Position: x, y, z in meters | Orientation: roll, pitch, yaw in radians
     currentPose = {
-        # 'position': np.array([0.0, 0.0, 0.0]),  # NED origin
-        'position': np.array([-0.20, -0.20, 0.0]),  # NED origin
+        'position': np.array([-0.150, -0.20, 0.05]),  # NED origin
+        # 'position': np.array([-0.20, -0.20, 0.0]),  # NED origin
         'rpy': np.radians([0, 0.0, 0.0])      # Orientation origin
     }
     
@@ -56,15 +56,15 @@ def main(renderer):
         match state:
             case State.START:
                 #move a little bit to generate some flow
-                targetPose = np.array([-0.04, -0.04, 0.005])    
+                targetPose = currentPose['position'] + np.array([0.0, -0.04, 0.04])    
                 state = State.SENSE
 
             case State.SENSE:
                 if img1 is None or img2 is None:
-                    print("No images available for flow calculation")
+                    print("__ERROR__ No images available for flow calculation")
                     break
 
-                ey, ez = flow.get_displacement_from_img_pair(img1, img2)
+                ey, ez, _ = flow.get_displacement_from_img_pair(img1, img2)
 
                 if abs(ey) <= CENTER_THRESHOLD_PX and abs(ez) <= CENTER_THRESHOLD_PX:
                     state = State.FLY_THROUGH
@@ -86,7 +86,7 @@ def main(renderer):
             case State.FLY_THROUGH:
                 print("!!!!!!!!!FLYTING THOUGH GAP!!!!!!")
                 targetPose = currentPose['position'].copy()
-                targetPose[0] += 0.6
+                targetPose[0] += 0.8
                 state = State.FINISHED
 
             case State.FINISHED:
@@ -193,9 +193,15 @@ if __name__ == "__main__":
     # analyze_sequence_folders()
     main(renderer)
     print('creating videos')
-    succ = create_overlay_animation_video(overlay_dir='/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/YourDirectoryID_p4/Code/run',
+    # succ1 = create_overlay_animation_video(overlay_dir='/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/YourDirectoryID_p4/Code/run',
+                                #    frames_dir='/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/YourDirectoryID_p4/Code/imgs', 
+                                #    output_dir='/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/YourDirectoryID_p4/Code',
+                                #    fps=35)
+    succ2 = create_detailed_flow_video(overlay_dir='/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/YourDirectoryID_p4/Code/run',
                                    frames_dir='/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/YourDirectoryID_p4/Code/imgs', 
                                    output_dir='/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/YourDirectoryID_p4/Code',
                                    fps=35)
-    print(f'succses = {succ}')
+    
+
+    print(f'succses1 = {succ2}, succ2')
 # /data/p4_colmap_nov6_1000_splat/p4_colmap_nov6_1000/splatfacto/2025-11-06_161816/config.yml

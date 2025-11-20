@@ -112,6 +112,25 @@ def main(renderer):
                 print("this is a shitty patch and will bite me in the ass later")
                 state = State.FLY_THROUGH
 
+
+def calculate_iou(mask1, mask2):
+    """Calculate Intersection over Union between two binary masks"""
+    # Ensure masks are binary
+    mask1_binary = (mask1 > 0).astype(np.uint8)
+    mask2_binary = (mask2 > 0).astype(np.uint8)
+    
+    # Calculate intersection and union
+    intersection = np.logical_and(mask1_binary, mask2_binary).sum()
+    union = np.logical_or(mask1_binary, mask2_binary).sum()
+    
+    # Avoid division by zero
+    if union == 0:
+        return 0.0
+    
+    iou = intersection / union
+    return iou
+    
+
 def analyze_sequence_folders(base_path='/home/hkortus/scratch/Outputs/Sequences/', flow_model=None):
     """
     Iterate through all folders in the base path, select frame_00.png and frame_02.png,
@@ -131,7 +150,7 @@ def analyze_sequence_folders(base_path='/home/hkortus/scratch/Outputs/Sequences/
         flow_model = RaftFlow(
             model_pth='/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/YourDirectoryID_p4/RAFT/models/raft-things.pth',
             alternative_corr=True,
-            
+            mask_threshold=.35
         )
     
     results = {}
@@ -173,11 +192,41 @@ def analyze_sequence_folders(base_path='/home/hkortus/scratch/Outputs/Sequences/
         
         # Calculate displacement
         try:
-            ey, ez = flow_model.get_displacement_from_img_pair(img1, img2)
-            results[folder_name] = (ey, ez)
-            print(f"{folder_name}: ey={ey:.2f}px, ez={ez:.2f}px")
+            ey, ez, predicted_mask = flow_model.get_displacement_from_img_pair(img1, img2)
+
+            # Load ground truth mask - mask_03.png since we used frame_03
+            gt_mask_path = os.path.join(folder_path, 'mask_03.png')
+            
+            if not os.path.exists(gt_mask_path):
+                print(f"Warning: {folder_name} - Ground truth mask not found at {gt_mask_path}")
+                results[folder_name] = (ey, ez, None)
+                continue
+            
+            gt_mask = cv2.imread(gt_mask_path, cv2.IMREAD_GRAYSCALE)
+            
+            if gt_mask is None:
+                print(f"Warning: {folder_name} - Failed to load ground truth mask")
+                results[folder_name] = (ey, ez, None)
+                continue
+            
+            # Ensure predicted mask is grayscale if it's not already
+            if len(predicted_mask.shape) == 3:
+                predicted_mask = cv2.cvtColor(predicted_mask, cv2.COLOR_BGR2GRAY)
+            
+            # Resize masks to match if needed
+            if predicted_mask.shape != gt_mask.shape:
+                gt_mask = cv2.resize(gt_mask, (predicted_mask.shape[1], predicted_mask.shape[0]))
+            
+            # Calculate IoU
+            iou = calculate_iou(predicted_mask, gt_mask)
+            
+            results[folder_name] = (ey, ez, iou)
+            print(f"{folder_name}: ey={ey:.2f}px, ez={ez:.2f}px, IoU={iou:.4f}")
+            
         except Exception as e:
             print(f"Error processing {folder_name}: {e}")
+            import traceback
+            traceback.print_exc()
             continue
     
     print(f"\nProcessed {len(results)} folders successfully")

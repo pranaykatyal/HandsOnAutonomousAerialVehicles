@@ -72,6 +72,21 @@ class RaftFlow():
     
         print('getting flow')
 
+    def save_frame(self, flo):
+        flo = flo.transpose(1, 2, 0)
+        # print(f'flow shape: {flo.shape}, min:{flo.min()}, max:{flo.max()}, \n')
+        # map flow to rgb image
+        img_flo = flow_viz.flow_to_image(flo)
+        # print(f' mromalized{flo} \n flow shape: {flo.shape}, min:{flo.min()}, max:{flo.max()}, \n')
+        # import matplotlib.pyplot as plt
+        # cv2.imwrite('image2.png',img_flo)
+        # plt.show()
+
+        cv2.imwrite(f'run/flow_image_{self.frame_count}.png', img_flo[:, :, [0,1,2]])
+        # cv2.waitKey()
+    
+        print('getting flow')
+
     def get_closest_frame(self, segment):
         
 
@@ -138,11 +153,13 @@ class RaftFlow():
         min_flow = mag_flow_image.min()
         max_flow = mag_flow_image.max()
         flow_threshold = min_flow + np.abs(max_flow-min_flow) * self.mask_threshold
+        # flow_threshold = max_flow - np.abs(max_flow-min_flow) * self.mask_threshold
         # print(f'flow shape {flow_image.shape}')
         # avg_flow = mag_flow_image.mean()
 
         #mask based off threshold
         mask = mag_flow_image < flow_threshold
+        # mask = mag_flow_image > flow_threshold
 
         #save mask
         # print(f'mask shape {mask.shape}')
@@ -159,10 +176,11 @@ class RaftFlow():
         #save largest mask for debigging
         # norm_largest_mask = cv2.normalize(largest_mask.astype(np.uint8), None, 0, 255, cv2.NORM_MINMAX)
         # cv2.imwrite('norm_largest_mask.png', norm_largest_mask)
+        self.save_frame(flow_image)
         self.save_overlay_image(img1, largest_mask, ey, ez)
         self.save_visulized_flow_frame(img1, flow_image, mag_flow_image, largest_mask, ey, ez)
 
-        return ey,ez
+        return ey,ez, largest_mask
 
     def save_visulized_flow_frame(self, input_img, flow, masked_flow, largest_mask, ey, ez):
         """
@@ -198,6 +216,14 @@ class RaftFlow():
         largest_mask_resized = cv2.resize(largest_mask, (target_w, target_h))
         largest_mask_viz = cv2.resize(largest_mask_viz, (target_w, target_h))
         
+        cv2.imwrite(f'run/flow_rgb_{self.frame_count}.png', flow_rgb)
+        cv2.imwrite(f'run/masked_flow_viz_{self.frame_count}.png', masked_flow_viz)
+        # cv2.imwrite(f'run/largest_mask_resized_{self.frame_count}.png', largest_mask_resized)
+        cv2.imwrite(f'run/largest_mask_viz_{self.frame_count}.png', largest_mask_viz)
+
+
+
+
         # Calculate the actual centroid of the blob
         moments = cv2.moments(largest_mask_resized)
         if moments['m00'] != 0:

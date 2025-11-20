@@ -111,19 +111,20 @@ def goToWaypoint(currentPose, targetPose, flow_image_distance, targetOrientation
     # Extract current state
     pos = np.array(currentPose['position'])
     rpy = np.array([0,0,0])#np.array(currentPose['rpy'])  # roll, pitch, yaw in radians
-    rpy[0] = rpy[0] - np.pi
+    # rpy[0] = rpy[0] - np.pi
     # Initialize velocities to zero (starting from hover)
     vel = np.zeros(3)
     pqr = np.zeros(3)
     
     # Convert roll, pitch, yaw to quaternion
     roll, pitch, yaw = rpy
-    quat = Quaternion(axis=[0, 0, 1], radians=yaw) * \
-           Quaternion(axis=[0, 1, 0], radians=pitch) * \
-           Quaternion(axis=[1, 0, 0], radians=roll)
+    # quat = Quaternion(axis=[0, 0, 1], radians=yaw) * \
+    #        Quaternion(axis=[0, 1, 0], radians=pitch) * \
+    #        Quaternion(axis=[1, 0, 0], radians=roll)
     
     # Build state vector [x, y, z, vx, vy, vz, qx, qy, qz, qw, p, q, r]
-    current_state = np.concatenate([pos, vel, [quat.x, quat.y, quat.z, quat.w], pqr])
+    # current_state = np.concatenate([pos, vel, [quat.x, quat.y, quat.z, quat.w], pqr])
+    current_state = np.concatenate([pos, vel, [1, 0, 0, 0], pqr])
     
     # Calculate distance and estimated time
     distance = np.linalg.norm(target_position - pos)
