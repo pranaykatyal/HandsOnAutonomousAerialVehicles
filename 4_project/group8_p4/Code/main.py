@@ -528,7 +528,11 @@ def main(renderer):
         
         # Initial pose - Gaussian splat coordinates
         currentPose = {
-            'position': np.array([0.0, 0.0, 0.0]),  # Working start position [0.2, -0.2, 0.0]
+            # 'position': np.array([0.4, -0.2, 0.0]),  # too close
+            # 'position': np.array([0.3, -0.2, 0.0]), # closer good start
+            'position': np.array([0.2, -0.2, 0.0]), # good start
+            # 'position': np.array([0.0, -0.2, 0.0]), 
+            # 'position': np.array([0.0, 0.0, 0.0]), # origin
             'rpy': np.radians([0.0, 0.0, 0.0])
         }
         

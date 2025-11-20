@@ -132,117 +132,114 @@ class ImprovedWindowDetector:
         """
         Select the best bounding box from LOW flow regions (blue regions in flow map)
         
-        Strategy:
-        1. REMOVE FLOOR FIRST (bottom 40% of image)
-        2. Light morphology to clean noise
-        3. Find connected components
-        4. Filter (edges, size, aspect ratio)
-        5. Select LARGEST valid window
+        Behavior:
+        - Run strict filtering first (edge-touching components rejected).
+        - If no valid regions found, re-run filtering with edge constraint relaxed.
         
         Args:
             mask: (H, W) binary mask
         Returns:
-            result_mask: (H, W) refined binary mask
+            result_mask: (H, W) refined binary mask (values 0.0/1.0)
         """
         H, W = mask.shape
         mask_uint8 = (mask * 255).astype(np.uint8)
         
-        # Step 0: CRITICAL - Remove floor region BEFORE morphology
-        # Floor is typically in bottom 40% of image
-        floor_cutoff = int(H * 0.6)  # Keep only top 60%
+        # Keep full mask (floor removal disabled)
         mask_no_floor = mask_uint8.copy()
-        mask_no_floor[floor_cutoff:, :] = 0  # Zero out bottom 40%
+        print(f"    Floor removal DISABLED - keeping full frame for bbox selection")
+        print(f"    Pixels before morphology: {np.sum(mask_no_floor > 0)}")
         
-        print(f"    Removed floor (bottom 40%, {H - floor_cutoff}px)")
-        print(f"    Pixels after floor removal: {np.sum(mask_no_floor > 0)}")
-        
-        # Step 1: Light morphology to clean noise (like simple detector)
+        # Light morphology to clean noise
         kernel_open = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
         mask_clean = cv2.morphologyEx(mask_no_floor, cv2.MORPH_OPEN, kernel_open)
         
-        mask_uint8 = mask_clean
-        
-        # Step 2: Find connected components
-        num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(
-            mask_uint8, connectivity=8)
-        
-        print(f"    Found {num_labels - 1} connected components")
-        
-        if num_labels <= 1:
-            return np.zeros((H, W), dtype=np.float32)
-        
-        # Step 3: Filter components - relaxed for MIN flow (very clean signal)
-        valid_regions = []
-        for label_id in range(1, num_labels):
-            x, y, w, h, area = stats[label_id]
-            cx, cy = centroids[label_id]
+        # Inner helper: filter components with optional edge allowance
+        def _filter_and_score(mask_u8, allow_edge=False):
+            num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(
+                mask_u8, connectivity=8)
             
-            # 1. Size bounds - VERY RELAXED
-            min_area = int(0.001 * H * W)  # At least 0.1% (was 0.3%)
-            max_area = int(0.6 * H * W)    # At most 60% (was 50%)
-            if area < min_area:
-                print(f"      Component {label_id}: REJECTED (too small: {area})")
-                continue
-            if area > max_area:
-                print(f"      Component {label_id}: REJECTED (too large: {area})")
-                continue
-            
-            # 2. Edge rejection - RELAXED (10px margin)
-            margin = 10  # Was 20px
-            if x < margin or y < margin or x+w > W-margin or y+h > H-margin:
-                print(f"      Component {label_id}: REJECTED (at edge)")
-                continue
-            
-            # 3. Aspect ratio - VERY RELAXED
-            aspect_ratio = w / (h + 1e-6)
-            if aspect_ratio < 0.1 or aspect_ratio > 10.0:  # Was 0.2 to 5.0
-                print(f"      Component {label_id}: REJECTED (bad aspect: {aspect_ratio:.2f})")
-                continue
-            
-            # 4. Compactness check - RELAXED
-            bbox_area = w * h
-            if bbox_area > 0:
-                compactness = area / bbox_area
-                if compactness < 0.2:  # Was 0.3
-                    print(f"      Component {label_id}: REJECTED (low compactness: {compactness:.2f})")
+            valid_regions = []
+            for label_id in range(1, num_labels):
+                x, y, w, h, area = stats[label_id]
+                cx, cy = centroids[label_id]
+                
+                # Basic size bounds (keep relatively permissive)
+                min_area = int(0.001 * H * W)  # 0.1% of image
+                max_area = int(0.95 * H * W)   # allow up to 95% (big windows when close)
+                if area < min_area:
+                    # too small
+                    # print(f"      Component {label_id}: REJECTED (too small: {area})")
                     continue
+                if area > max_area:
+                    # too large (unlikely but safe)
+                    # print(f"      Component {label_id}: REJECTED (too large: {area})")
+                    continue
+                
+                # Edge rejection (strict mode): reject if touching image edges
+                margin = 10
+                touches_edge = (x < margin or y < margin or (x + w) > (W - margin) or (y + h) > (H - margin))
+                if (not allow_edge) and touches_edge:
+                    # rejected in strict mode
+                    # print(f"      Component {label_id}: REJECTED (touches edge)")
+                    continue
+                
+                # Aspect ratio filter (permissive)
+                aspect_ratio = w / (h + 1e-6)
+                if aspect_ratio < 0.05 or aspect_ratio > 20.0:
+                    # print(f"      Component {label_id}: REJECTED (bad aspect: {aspect_ratio:.2f})")
+                    continue
+                
+                # Compactness (allow concave / irregular shapes)
+                bbox_area = w * h
+                if bbox_area > 0:
+                    compactness = area / bbox_area
+                    if compactness < 0.05:
+                        # print(f"      Component {label_id}: REJECTED (low compactness: {compactness:.3f})")
+                        continue
+                
+                # Score: prefer larger area, slightly prefer central & higher components
+                vertical_score = 1.0 - (cy / H)
+                img_center_x = W / 2
+                horizontal_centrality = 1.0 - abs(cx - img_center_x) / (W / 2)
+                score = area * (0.6 + 0.25 * horizontal_centrality + 0.15 * vertical_score)
+                
+                valid_regions.append({
+                    'label_id': label_id,
+                    'score': score,
+                    'bbox': (x, y, w, h),
+                    'area': area
+                })
             
-            # Score: larger area + higher position = better
-            vertical_score = 1.0 - (cy / H)  # Higher in image = better
-            img_center_x = W / 2
-            horizontal_centrality = 1.0 - abs(cx - img_center_x) / (W / 2)
+            if not valid_regions:
+                return None, None, None
             
-            # Prioritize: size (60%), horizontal centrality (25%), height (15%)
-            score = area * (0.6 + 0.25 * horizontal_centrality + 0.15 * vertical_score)
-            
-            print(f"      Component {label_id}: VALID (area={area}, cy={cy:.0f}, score={score:.0f})")
-            
-            valid_regions.append({
-                'label_id': label_id,
-                'score': score,
-                'bbox': (x, y, w, h),
-                'area': area
-            })
+            # pick best region
+            valid_regions.sort(key=lambda r: r['score'], reverse=True)
+            best = valid_regions[0]
+            best_mask = (labels == best['label_id']).astype(np.uint8) * 255
+            return best_mask, labels, valid_regions
         
-        # Step 4: Select highest scoring region
-        if not valid_regions:
-            print("    No valid regions found")
-            return np.zeros((H, W), dtype=np.float32)
+        # First try: strict mode (do not allow edge-touching components)
+        best_mask_strict, labels_strict, valid_strict = _filter_and_score(mask_clean, allow_edge=False)
+        if best_mask_strict is not None:
+            print(f"    select_best_bounding_box: strict mode succeeded ({len(valid_strict)} valid regions)")
+            # smooth and return
+            kernel_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
+            result_mask = cv2.morphologyEx(best_mask_strict, cv2.MORPH_CLOSE, kernel_close)
+            return (result_mask / 255.0).astype(np.float32)
         
-        valid_regions.sort(key=lambda x: x['score'], reverse=True)
-        best_region = valid_regions[0]
-        best_label = best_region['label_id']
+        # Fallback: relax edge constraint (allow edge-touching blobs)
+        print("    select_best_bounding_box: no valid regions in strict mode → relaxing edge constraint (fallback).")
+        best_mask_relaxed, labels_relaxed, valid_relaxed = _filter_and_score(mask_clean, allow_edge=True)
+        if best_mask_relaxed is not None:
+            print(f"    select_best_bounding_box: fallback succeeded ({len(valid_relaxed)} valid regions)")
+            kernel_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
+            result_mask = cv2.morphologyEx(best_mask_relaxed, cv2.MORPH_CLOSE, kernel_close)
+            return (result_mask / 255.0).astype(np.float32)
         
-        print(f"    Selected component {best_label} (area={best_region['area']}, bbox={best_region['bbox']})")
-        
-        # Create mask from selected component
-        result_mask = (labels == best_label).astype(np.uint8) * 255
-        
-        # Step 5: Light closing to smooth
-        kernel_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
-        result_mask = cv2.morphologyEx(result_mask, cv2.MORPH_CLOSE, kernel_close)
-        
-        return result_mask / 255.0
+        # Still nothing
+        print("    select_best_bounding_box: fallback also found no valid regions → returning empty mask")
+        return np.zeros((H, W), dtype=np.float32)
     
     def visualize_detection_process(self, debug_info, save_path='./log/detection_process.png'):
         """
