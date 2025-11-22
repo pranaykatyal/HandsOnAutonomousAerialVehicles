@@ -1,5 +1,5 @@
 """
-Fixed scanning pattern and flow computation for TS²P
+Fixed scanning pattern and flow computation for TSÂ²P
 """
 
 import numpy as np
@@ -8,7 +8,7 @@ import torch
 
 def generate_scanning_positions_fixed(current_position, scan_distance=0.05):
     """
-    Generate oscillating scanning trajectory for TS²P parallax
+    Generate oscillating scanning trajectory for TSÂ²P parallax
     
     Motion pattern creates parallax by moving in 4 different directions:
     - Frame 0: Reference position
@@ -57,14 +57,14 @@ def generate_scanning_positions_fixed(current_position, scan_distance=0.05):
 
 def compute_accumulated_flow_ts2p(frames, flow_extractor, device='cuda'):
     """
-    Compute temporal flow for TS²P detection using MINIMUM
+    Compute temporal flow for TSÂ²P detection using MINIMUM
     
     Strategy: Take the MINIMUM flow magnitude across all consecutive pairs.
     
     Why MIN works best:
-    - Windows (close): LOW flow in ALL directions → MIN is low
-    - Walls (far): HIGH flow in ALL directions → MIN is still high
-    - Edges/artifacts: Might have low flow in ONE direction but high in others → MIN catches this
+    - Windows (close): LOW flow in ALL directions â†’ MIN is low
+    - Walls (far): HIGH flow in ALL directions â†’ MIN is still high
+    - Edges/artifacts: Might have low flow in ONE direction but high in others â†’ MIN catches this
     
     This is more robust than averaging or max.
     
@@ -96,13 +96,11 @@ def compute_accumulated_flow_ts2p(frames, flow_extractor, device='cuda'):
             flow_mag = torch.sqrt(u**2 + v**2)
             
             flow_magnitudes.append(flow_mag)
-            print(f"    Flow {i}->{i+1}: range [{flow_mag.min():.1f}, {flow_mag.max():.1f}], mean {flow_mag.mean():.1f}")
+            # Removed verbose flow print
     
     # Stack and take MINIMUM
     flow_stack = torch.stack(flow_magnitudes, dim=0)
     Xi_min = torch.min(flow_stack, dim=0)[0]  # Min across temporal dimension
-    
-    print(f"    After MIN: range [{Xi_min.min():.1f}, {Xi_min.max():.1f}], mean {Xi_min.mean():.1f}")
     
     return Xi_min.cpu().numpy()
 

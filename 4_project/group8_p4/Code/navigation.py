@@ -202,12 +202,13 @@ def goToWaypoint(currentPose, targetPose, flow_image_distance, targetOrientation
         return currentPose, False, False
     print(f"Last point: {last_point}, Previous point above threshold: {prev_point_above_threshold}")
 
-    color_image, depth_image, metric_depth = renderer.render(last_point, [0,0,0])
-    img1 = color_image #cv2.flip(color_image, 0)
+    # Render frames for flow (only need RGB)
+    color_image, _, _ = renderer.render(last_point, [0,0,0])
+    img1 = color_image
     cv2.imwrite(f'./flow/flow_1_rgb.png', img1)
     
-    color_image, depth_image, metric_depth = renderer.render(prev_point_above_threshold, [0,0,0])
-    img2 = color_image# cv2.flip(color_image, 0)
+    color_image, _, _ = renderer.render(prev_point_above_threshold, [0,0,0])
+    img2 = color_image
     cv2.imwrite(f'./flow/flow_2_rgb.png', img2)
 
 
@@ -226,8 +227,8 @@ def goToWaypoint(currentPose, targetPose, flow_image_distance, targetOrientation
             current_ypr = current_quat.yaw_pitch_roll
             current_rpy = np.array([current_ypr[2], current_ypr[1], current_ypr[0]])
             
-            # Render frame
-            color_image, depth_image, metric_depth = renderer.render(current_pos, current_rpy)
+            # Render frame (only need RGB)
+            color_image, _, _ = renderer.render(current_pos, current_rpy)
             
             # Save with unique frame counter
             frame_prefix = f'./imgs/_iter_{iteration_id:02d}_frame_{_frame_counter:04d}'
