@@ -31,7 +31,7 @@ def main(renderer):
     Time = timecounter()
     # Initialize pose - Position: x, y, z in meters | Orientation: roll, pitch, yaw in radians
     currentPose = {
-        'position': np.array([-0.150, -0.20, 0.05]),  # NED origin
+        'position': np.array([0.150, -0.090, -0.05]),  # NED origin
         # 'position': np.array([-0.20, -0.20, 0.0]),  # NED origin
         'rpy': np.radians([0, 0.0, 0.0])      # Orientation origin
     }

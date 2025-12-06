@@ -13,105 +13,76 @@ from navigation import goToWaypoint, clear_old_imgs, timecounter
 from flow import RaftFlow
 from video_gen import create_overlay_animation_video
 
-class State(Enum):
-    START = auto()
-    SENSE = auto()
-    SERVO = auto()
-    FLY_THROUGH = auto()
-    FINISHED = auto()
-
-
-
-
-def main(renderer):
-    # Create log directory if it doesn't exist
-    import os
-    os.makedirs('./log', exist_ok=True)
-    clear_old_imgs()
-    Time = timecounter()
-    # Initialize pose - Position: x, y, z in meters | Orientation: roll, pitch, yaw in radians
-    currentPose = {
-        # 'position': np.array([0.0, 0.0, 0.0]),  # NED origin
-        'position': np.array([-0.20, -0.20, 0.0]),  # NED origin
-        'rpy': np.radians([0, 0.0, 0.0])      # Orientation origin
-    }
+def save_comparison_with_iou(predicted_mask, gt_mask,img, iou, output_path, folder_name):
+    """
+    Save a side-by-side comparison of predicted mask and ground truth mask with IoU overlay.
     
-
-    flow = RaftFlow(model_pth='/home/hkortus/RBE595/HandsOnAutonomousAerialVehicles/YourDirectoryID_p4/RAFT/models/raft-things.pth',
-                    alternative_corr=True,
-                    mask_threshold=.2)
+    Parameters:
+    - predicted_mask: Predicted binary mask (grayscale)
+    - gt_mask: Ground truth binary mask (grayscale)
+    - iou: IoU score to display
+    - output_path: Path to save the comparison image
+    - folder_name: Name of the sequence folder for title
+    """
     
-    state = State.START
-    # renderer
-    color_image, depth_image, metric_depth = renderer.render(
-        currentPose['position'], 
-        currentPose['rpy'])
-    img1= None
-    img2 = None
-    CENTER_THRESHOLD_PX = 20
-    frame_cnt = 0
+    # Ensure masks are binary for visualization
+    # pred_viz = ((predicted_mask > 0) * 255).astype(np.uint8)
+    # gt_viz = ((gt_mask > 0) * 255).astype(np.uint8)
+    
+    # Convert to BGR for color text
+    pred_bgr = cv2.cvtColor(predicted_mask, cv2.COLOR_GRAY2BGR)
+    gt_bgr = cv2.cvtColor(gt_mask, cv2.COLOR_GRAY2BGR)
+    img = img.astype(np.uint8)
 
-    for n in range(200):
-        targetPose = None
-        match state:
-            case State.START:
-                #move a little bit to generate some flow
-                targetPose = np.array([-0.04, -0.04, 0.005])    
-                state = State.SENSE
-
-            case State.SENSE:
-                if img1 is None or img2 is None:
-                    print("No images available for flow calculation")
-                    break
-
-                ey, ez = flow.get_displacement_from_img_pair(img1, img2)
-
-                if abs(ey) <= CENTER_THRESHOLD_PX and abs(ez) <= CENTER_THRESHOLD_PX:
-                    state = State.FLY_THROUGH
-                else:
-                    state = State.SERVO
-            case State.SERVO:
-                # Reposition with intermediate frame capture
-                ky = .0008 
-                kz = .0008
-                ctrl_y = ey * ky
-                ctrl_z = ez * kz
-                print(f'repositioning - ey: {ey}, ez: {ez}, ctrl_y {ctrl_y}, ctrl_z{ctrl_z}')
-
-                targetPose = currentPose['position'].copy()
-                targetPose[1] += ctrl_y
-                targetPose[2] += ctrl_z
-                state = State.SENSE
-
-            case State.FLY_THROUGH:
-                print("!!!!!!!!!FLYTING THOUGH GAP!!!!!!")
-                targetPose = currentPose['position'].copy()
-                targetPose[0] += 0.6
-                state = State.FINISHED
-
-            case State.FINISHED:
-                print("done with run!!!!")
-                print(f'run took {Time.get_time()}s')
-                break
-
-# Only call goToWaypoint if targetPose was set
-        if targetPose is not None:
-            currentPose, img1, img2 = goToWaypoint(currentPose=currentPose, 
-                                                   targetPose=targetPose,
-                                                   flow_image_distance=0.025, 
-                                                   velocity=0.1, 
-                                                   renderer=renderer,
-                                                   save_every=10, 
-                                                   iteration_id=frame_cnt,
-                                                   Time=Time)
-            
-            frame_cnt = frame_cnt + 1
-            # print(f"frame count: {frame_cnt}")
-            #if our path is so small that we cant resolve the flow, dont move and fly streight
-            if img1 is None or img2 is None:
-                print("this is a shitty patch and will bite me in the ass later")
-                state = State.FLY_THROUGH
-
+    # Add text labels to each mask
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 0.8
+    thickness = 2
+    color = (0, 255, 0)  # Green text
+    
+    # Add "Predicted" label
+    cv2.putText(pred_bgr, 'Predicted', (10, 30), font, font_scale, color, thickness)
+    
+    # Add "Ground Truth" label
+    cv2.putText(gt_bgr, 'Ground Truth', (10, 30), font, font_scale, color, thickness)
+    
+    # Stack horizontally
+    comparison = np.hstack([img,gt_bgr,pred_bgr ])
+    
+    # Add IoU text at the bottom center
+    h, w = comparison.shape[:2]
+    iou_text = f'IoU: {iou:.4f}'
+    text_size = cv2.getTextSize(iou_text, font, 1.2, 3)[0]
+    text_x = (w - text_size[0]) // 2
+    text_y = h - 20
+    
+    # Add black background rectangle for text
+    rect_margin = 10
+    cv2.rectangle(comparison, 
+                  (text_x - rect_margin, text_y - text_size[1] - rect_margin),
+                  (text_x + text_size[0] + rect_margin, text_y + rect_margin),
+                  (0, 0, 0), -1)
+    
+    # Add IoU text
+    cv2.putText(comparison, iou_text, (text_x, text_y), font, 1.2, (0, 255, 255), 3)
+    
+    # Add title at the top
+    title = f'Sequence: {folder_name}'
+    title_size = cv2.getTextSize(title, font, 0.7, 2)[0]
+    title_x = (w - title_size[0]) // 2
+    
+    # Add black background for title
+    cv2.rectangle(comparison,
+                  (title_x - rect_margin, 5),
+                  (title_x + title_size[0] + rect_margin, 5 + title_size[1] + rect_margin),
+                  (0, 0, 0), -1)
+    
+    cv2.putText(comparison, title, (title_x, 5 + title_size[1]), font, 0.7, (255, 255, 255), 2)
+    
+    # Save the comparison image
+    cv2.imwrite(output_path, comparison)
+    
+    return comparison
 
 def calculate_iou(mask1, mask2):
     """Calculate Intersection over Union between two binary masks"""
@@ -179,7 +150,7 @@ def analyze_sequence_folders(base_path='/home/hkortus/scratch/Outputs/Sequences/
             continue
         
         if not os.path.exists(frame_02_path):
-            print(f"Warning: {folder_name} - frame_02.png not found")
+            print(f"Warning: {folder_name} - frame_03.png not found")
             continue
         
         # Load images
@@ -194,6 +165,10 @@ def analyze_sequence_folders(base_path='/home/hkortus/scratch/Outputs/Sequences/
         try:
             ey, ez, predicted_mask = flow_model.get_displacement_from_img_pair(img1, img2)
 
+            if ey is None or ez == 0 or ez is None or ey == 0:
+                print("skipping")
+                continue
+            
             # Load ground truth mask - mask_03.png since we used frame_03
             gt_mask_path = os.path.join(folder_path, 'mask_03.png')
             
@@ -203,23 +178,65 @@ def analyze_sequence_folders(base_path='/home/hkortus/scratch/Outputs/Sequences/
                 continue
             
             gt_mask = cv2.imread(gt_mask_path, cv2.IMREAD_GRAYSCALE)
-            
+            print(f'compareing gt_mask og shape {gt_mask.shape}, min {gt_mask.min()} max {gt_mask.max()}')
+
             if gt_mask is None:
                 print(f"Warning: {folder_name} - Failed to load ground truth mask")
                 results[folder_name] = (ey, ez, None)
                 continue
             
+            # Invert ground truth mask (assuming black is hole, white is background)
+            gt_mask = cv2.bitwise_not(gt_mask)
+            gt_mask = cv2.normalize(gt_mask.astype(np.uint8), None, 0, 1, cv2.NORM_MINMAX)
             # Ensure predicted mask is grayscale if it's not already
             if len(predicted_mask.shape) == 3:
                 predicted_mask = cv2.cvtColor(predicted_mask, cv2.COLOR_BGR2GRAY)
             
-            # Resize masks to match if needed
-            if predicted_mask.shape != gt_mask.shape:
-                gt_mask = cv2.resize(gt_mask, (predicted_mask.shape[1], predicted_mask.shape[0]))
+            # Get original image dimensions to use as reference
+            target_height, target_width = img1.shape[:2]
             
+            # Resize both masks to match the original image dimensions
+            if predicted_mask.shape != (target_height, target_width):
+                predicted_mask = cv2.resize(predicted_mask, (target_width, target_height), 
+                                           interpolation=cv2.INTER_NEAREST)
+            
+            if gt_mask.shape != (target_height, target_width):
+                gt_mask = cv2.resize(gt_mask, (target_width, target_height), 
+                                    interpolation=cv2.INTER_NEAREST)
+            
+            if img2.shape != (target_height, target_width):
+                img2 = cv2.resize(img2, (target_width, target_height), 
+                    interpolation=cv2.INTER_NEAREST)
+            # Verify dimensions match
+            assert predicted_mask.shape == gt_mask.shape, \
+                f"Mask dimensions don't match: predicted {predicted_mask.shape} vs gt {gt_mask.shape}"
+            
+            # Save comparison image for debugging
+            comparison_dir = os.path.join(folder_path, 'comparison')
+            os.makedirs(comparison_dir, exist_ok=True)
+            predicted_mask_norm = cv2.normalize(predicted_mask.astype(np.uint8), None, 0, 255, cv2.NORM_MINMAX)
+            gt_mask_norm = cv2.normalize(gt_mask.astype(np.uint8), None, 0, 255, cv2.NORM_MINMAX)
+            # Create side-by-side comparison
+            comparison = np.hstack([
+                cv2.cvtColor(predicted_mask_norm, cv2.COLOR_GRAY2BGR),
+                cv2.cvtColor(gt_mask_norm, cv2.COLOR_GRAY2BGR)
+            ])
+            cv2.imwrite(os.path.join(comparison_dir, 'mask_comparison.png'), comparison)
+
+            print(f'compareing predicted_mask snape {predicted_mask.shape}, min {predicted_mask.min()} max {predicted_mask.max()}')
+            print(f'compareing gt_mask snape {gt_mask.shape}, min {gt_mask.min()} max {gt_mask.max()}')
+
             # Calculate IoU
             iou = calculate_iou(predicted_mask, gt_mask)
             
+            # Save comparison image for debugging
+            comparison_dir = os.path.join(folder_path, 'comparison')
+            os.makedirs(comparison_dir, exist_ok=True)
+            
+            # Create and save enhanced comparison with IoU
+            comparison_path = os.path.join(comparison_dir, 'mask_comparison_with_iou.png')
+            save_comparison_with_iou(predicted_mask_norm, gt_mask_norm,img2, iou, comparison_path, folder_name)
+
             results[folder_name] = (ey, ez, iou)
             print(f"{folder_name}: ey={ey:.2f}px, ez={ez:.2f}px, IoU={iou:.4f}")
             
@@ -230,9 +247,17 @@ def analyze_sequence_folders(base_path='/home/hkortus/scratch/Outputs/Sequences/
             continue
     
     print(f"\nProcessed {len(results)} folders successfully")
+    
+    # Print summary statistics
+    ious = [iou for _, _, iou in results.values() if iou is not None]
+    if ious:
+        print(f"\nIoU Statistics:")
+        print(f"  Mean IoU: {np.mean(ious):.4f}")
+        print(f"  Median IoU: {np.median(ious):.4f}")
+        print(f"  Min IoU: {np.min(ious):.4f}")
+        print(f"  Max IoU: {np.max(ious):.4f}")
+    
     return results
-
-
 
 
 if __name__ == "__main__":
