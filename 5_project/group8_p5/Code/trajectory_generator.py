@@ -12,8 +12,8 @@ class TrajectoryGenerator:
         self.waypoints = np.array(waypoints)
         self.trajectory_func = None
         self.trajectory_duration = 15.0  # seconds
-        self.max_velocity = 2.0  # m/s
-        self.max_acceleration = 1.0  # m/s^2
+        self.max_velocity = 5.0  # m/s
+        self.max_acceleration = 2.5  # m/s^2
     
     def calculate_segment_times(self):
         """Calculate time allocation for each segment based on distance"""
