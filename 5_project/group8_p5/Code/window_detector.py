@@ -116,44 +116,52 @@ class SimpleFlowDetector:
         
         print(f"  Downsampled to: {self.detection_resolution}x{self.detection_resolution}")
         
-        # Convert to torch tensors
-        frame_0 = torch.from_numpy(downsampled_frames[0]).float().permute(2, 0, 1).unsqueeze(0) / 255.0
-        frame_last = torch.from_numpy(downsampled_frames[-1]).float().permute(2, 0, 1).unsqueeze(0) / 255.0
+        # CRITICAL: Use TS²P accumulated flow (like P4)
+        # Computes flow between ALL consecutive pairs, takes MINIMUM
+        # This gives clean separation: windows=low flow, walls=high flow
         
-        frame_0 = frame_0.to(self.device)
-        frame_last = frame_last.to(self.device)
+        print(f"  Computing TS²P optical flow (minimum across all pairs)...")
         
-        print(f"  Computing optical flow...")
-        
-        # Compute optical flow
-        with torch.no_grad():
-            flow = self.flow_extractor.compute_flow(frame_0, frame_last)
-            
-            # Flow magnitude
-            u = flow[0, 0]
-            v = flow[0, 1]
-            flow_magnitude = torch.sqrt(u**2 + v**2)
-        
-        Xi_np = flow_magnitude.cpu().numpy()
+        from scanning_fix import compute_accumulated_flow_ts2p
+        Xi_np = compute_accumulated_flow_ts2p(downsampled_frames, self.flow_extractor, self.device)
         
         print(f"    Flow range: [{Xi_np.min():.2f}, {Xi_np.max():.2f}]")
         print(f"    Flow mean: {Xi_np.mean():.2f}, median: {np.median(Xi_np):.2f}")
         
-        # Threshold for LOW flow regions (windows)
-        # Windows typically have flow < 60, walls have flow > 80
-        threshold_percentile = 5  # Bottom 5% (most static regions)
+        # With TS²P MIN flow, use LOWER percentile for selectivity
+        # 20% was too high (12% of image = floor included)
+        # Try 10% for cleaner window-only selection
+        threshold_percentile = 10
         threshold = np.percentile(Xi_np, threshold_percentile)
         
-        # Cap threshold to avoid selecting walls
-        if threshold > 60:
-            print(f"    WARNING: Threshold too high ({threshold:.2f}), capping at 60")
-            threshold = 60
+        # Safety bounds (adjusted for TS²P MIN flow characteristics)
+        if threshold > 8:
+            print(f"    WARNING: Threshold too high ({threshold:.2f}), capping at 8")
+            threshold = 8
+        elif threshold < 5:
+            print(f"    WARNING: Threshold too low ({threshold:.2f}), raising to 5")
+            threshold = 5
         
-        print(f"    Threshold ({threshold_percentile}%ile): {threshold:.2f}")
+        print(f"    Using threshold ({threshold_percentile}%ile): {threshold:.2f}")
         
-        # Binary mask: 1 where flow < threshold
+        # Binary mask: LOW flow = windows
         binary_mask = (Xi_np < threshold).astype(np.uint8) * 255
-        print(f"    Pixels below threshold: {np.sum(binary_mask > 0)}")
+        
+        # DEBUG before morphology
+        pixels_before_morph = np.sum(binary_mask > 0)
+        percentage = pixels_before_morph / binary_mask.size * 100
+        print(f"    Pixels below threshold (before morphology): {pixels_before_morph} ({percentage:.1f}%)")
+        print(f"    Min flow value: {Xi_np.min():.2f}")
+        print(f"    Max flow value: {Xi_np.max():.2f}")
+        
+        # Clean up with morphology
+        kernel_open = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+        kernel_close = cv2.getStructuringElement(cv2.MORPH_RECT, (11, 11))
+        binary_mask = cv2.morphologyEx(binary_mask, cv2.MORPH_OPEN, kernel_open)
+        binary_mask = cv2.morphologyEx(binary_mask, cv2.MORPH_CLOSE, kernel_close)
+        
+        pixels_after_morph = np.sum(binary_mask > 0)
+        print(f"    Pixels after morphology: {pixels_after_morph} ({pixels_after_morph/binary_mask.size*100:.1f}%)")
         
         # Select best bounding box
         mask_refined = self._select_best_bbox(binary_mask)
@@ -181,7 +189,7 @@ class SimpleFlowDetector:
         
         debug_info = {
             'Xi': Xi_np,
-            'threshold': threshold,
+            'threshold': threshold,  # Use the actual threshold computed
             'binary_mask': binary_mask,
             'mask_refined': mask_refined,
             'frames': downsampled_frames
@@ -272,8 +280,10 @@ class SimpleFlowDetector:
             else:  # > 0.6
                 vertical_score = (1.0 - vertical_norm) / 0.4  # Penalize bottom
             
-            # Combined score: size + horizontal centrality + STRONG vertical preference
-            score = area * (0.3 + 0.2 * horizontal_centrality + 0.5 * vertical_score)
+            # Combined score: STRONGLY prefer horizontal center + size + vertical preference
+            # Horizontal centrality weighted 4x more to prefer CENTER windows over edge windows
+            score = area * (0.2 + 0.5 * horizontal_centrality + 0.3 * vertical_score)
+            #                     ^^^ INCREASED from 0.2 to 0.5 to prefer CENTER
             
             print(f"      Component {label_id}: VALID (area={area}, cy={cy:.0f}/{H}, v_score={vertical_score:.2f}, score={score:.0f})")
             
@@ -392,11 +402,11 @@ class ActiveScanner:
             t = i / (self.num_waypoints - 1)
             offset = t * self.scan_distance
             
-            # Diagonal scan in YZ plane
-            # Move in Y (East) and Z (Down) simultaneously
+            # HORIZONTAL scan in Y-axis ONLY (keep camera level!)
+            # Moving diagonally in YZ causes drone to tilt downward
             x = x0  # Keep X (North) constant
-            y = y0 + offset / np.sqrt(2)  # East
-            z = z0 + offset / np.sqrt(2)  # Down
+            y = y0 + offset  # Move sideways (East)
+            z = z0  # Keep Z (Down) constant - DON'T FALL!
             
             waypoints.append(np.array([x, y, z]))
         

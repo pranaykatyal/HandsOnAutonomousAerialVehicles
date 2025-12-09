@@ -1,7 +1,9 @@
 """
-Drone Racing Navigation System - FIXED VERSION
-Sequential reactive window detection and navigation
-With comprehensive collision avoidance
+Drone Racing Navigation System - FIXED VERSION v3
+- Pose history tracking
+- Better component selection (prefers CENTER over edges)
+- Proper renderer usage
+- Collision parameter fixes
 """
 
 from splat_render import SplatRenderer
@@ -14,8 +16,17 @@ from control import QuadrotorController
 from quad_dynamics import model_derivative
 import tello
 from collisionChecker import doesItCollide
+
+# NOTE: Using DEFAULT collision parameters until we calibrate the scale
+# The Gaussian splat coordinate system may not be 1:1 with meters
+# Default: drone_radius=0.001, collision_threshold=0.01
+# 
+# Run test_collision_scale.py to find the actual scale!
+# After calibration, you can create a wrapper with appropriate parameters
+
 from window_detector import OpticalFlowExtractor, SimpleFlowDetector, ActiveScanner
 import os
+import json
 
 
 def wrap_angle(angle):
@@ -23,18 +34,7 @@ def wrap_angle(angle):
 
 
 def is_path_clear(start, end, num_checks=10):
-    """
-    Check if straight-line path between two points is collision-free
-    
-    Args:
-        start: Starting position [x, y, z]
-        end: Ending position [x, y, z]
-        num_checks: Number of points to check along path
-        
-    Returns:
-        is_clear: True if path is clear
-        first_collision_idx: Index of first collision (-1 if clear)
-    """
+    """Check if straight-line path is collision-free"""
     for i in range(num_checks):
         t = i / (num_checks - 1) if num_checks > 1 else 0
         pos = start + t * (end - start)
@@ -46,9 +46,7 @@ def is_path_clear(start, end, num_checks=10):
 
 
 class WindowNavigator:
-    """
-    Manages window detection and navigation
-    """
+    """Manages window detection and navigation"""
     
     def __init__(self, renderer, device='cuda'):
         self.renderer = renderer
@@ -58,37 +56,44 @@ class WindowNavigator:
         raft_model_path = './RAFT/models/raft-things.pth'
         self.flow_extractor = OpticalFlowExtractor(raft_model_path, device=device)
         self.detector = SimpleFlowDetector(self.flow_extractor, device=device)
-        self.scanner = ActiveScanner(scan_distance=0.15, num_waypoints=5)  # Increased scan distance
         
-        # Store detected windows
+        # CRITICAL: Scan distance must be >> goToWaypoint tolerance (0.1m)
+        # Otherwise drone doesn't actually move and we get zero parallax!
+        # Each waypoint step = scan_distance / (num_waypoints - 1)
+        # With 5 waypoints: step = 0.6 / 4 = 0.15m per step >> 0.1m tolerance ✓
+        self.scanner = ActiveScanner(scan_distance=0.6, num_waypoints=5)
+        
+        
         self.detected_windows = []
         self.window_count = 0
-        
-        # Video recording
         self.video_frames = []
         
         print("✓ Window Navigator initialized")
     
-    def scan_for_window(self, current_pose):
-        """
-        Perform scanning motion to detect window
-        """
+    def scan_for_window(self, current_pose, pose_history):
+        """Perform scanning motion to detect window"""
         print("\n=== SCANNING FOR WINDOW ===")
         
-        # Generate scanning waypoints
         scan_waypoints = self.scanner.generate_scan_trajectory(current_pose)
-        
         print(f"  Generated {len(scan_waypoints)} scan waypoints")
         
-        # Execute scanning motion and capture frames
+        # DEBUG: Print waypoint distances
+        print(f"  Scan waypoint distances from current:")
+        for i, wp in enumerate(scan_waypoints):
+            dist = np.linalg.norm(wp - current_pose['position'])
+            print(f"    WP{i}: distance = {dist:.4f}m")
+        
         scan_frames = []
         scan_poses = []
-        
         temp_pose = current_pose.copy()
         
         for i, waypoint in enumerate(scan_waypoints):
-            # Navigate to waypoint
-            result = goToWaypoint(temp_pose, waypoint, velocity=0.05)
+            print(f"\n  Navigating to scan waypoint {i+1}/{len(scan_waypoints)}")
+            print(f"    Current: {temp_pose['position']}")
+            print(f"    Target: {waypoint}")
+            
+            result = goToWaypoint(temp_pose, waypoint, velocity=0.05, pose_history=pose_history, 
+                                 action=f'SCAN_WP{i+1}', lock_roll_pitch=True)
             
             if result == -1:
                 print(f"  Collision during scanning at waypoint {i}")
@@ -97,22 +102,26 @@ class WindowNavigator:
             temp_pose = result
             scan_poses.append(temp_pose)
             
-            # Capture frame with camera orientation correction
-            # CRITICAL: Camera might be upside down - apply 180° roll correction
-            corrected_rpy = temp_pose['rpy'].copy()
-            corrected_rpy[0] += np.pi  # Add 180° to roll (rotate around X-axis)
+            print(f"    Reached: {temp_pose['position']}")
+            print(f"    Actual movement: {np.linalg.norm(temp_pose['position'] - current_pose['position']):.4f}m")
+            #                                              ^^^^^^^^^^^^^^^^ Lock roll/pitch, allow yaw
             
-            rgb, _, _ = self.renderer.render(temp_pose['position'], corrected_rpy)
+            if result == -1:
+                print(f"  Collision during scanning at waypoint {i}")
+                return None, scan_frames
             
-            # Also flip image if needed (in case renderer doesn't handle it)
-            # Uncomment if camera orientation correction in render doesn't work:
-            # rgb = cv2.flip(rgb, -1)  # Flip both horizontally and vertically (180° rotation)
+            temp_pose = result
+            scan_poses.append(temp_pose)
+            
+            # Camera orientation: NO correction needed if camera is right-side up
+            rgb, _, _ = self.renderer.render(temp_pose['position'], temp_pose['rpy'])
             
             scan_frames.append(rgb)
+            self.record_frame(rgb, frame_id=len(self.video_frames))
             
             print(f"  Captured frame {i+1}/{len(scan_waypoints)}")
         
-        # Detect window from frames
+        # Detect window
         print("\n  Detecting window from scanned frames...")
         mask, center_2d, confidence, debug_info = self.detector.detect_window(scan_frames)
         
@@ -120,19 +129,18 @@ class WindowNavigator:
         os.makedirs('./log', exist_ok=True)
         self.detector.visualize(debug_info, f'./log/window_detection_{self.window_count}.png')
         
-        if center_2d is None or confidence < 0.015:  # Lowered from 0.05 to 0.015
+        if center_2d is None or confidence < 0.015:
             print(f"  ✗ No window detected (confidence: {confidence:.3f})")
             return None, scan_frames
         
         print(f"  ✓ Window detected at pixel {center_2d} (confidence: {confidence:.3f})")
         
-        # Estimate 3D position of window
+        # Estimate 3D position
         mid_idx = len(scan_poses) // 2
         ref_pose = scan_poses[mid_idx]
         ref_pos = ref_pose['position']
         ref_rpy = ref_pose['rpy']
         
-        # Adaptive depth estimation
         img_h, img_w = scan_frames[0].shape[:2]
         u_pix = center_2d[0]
         v_pix = center_2d[1]
@@ -141,7 +149,7 @@ class WindowNavigator:
         img_pixels = img_h * img_w
         window_size_ratio = window_pixels / img_pixels
         
-        # Conservative depth estimation (closer = safer)
+        # Depth estimation
         if window_size_ratio > 0.15:
             estimated_depth = 1.2
         elif window_size_ratio > 0.08:
@@ -153,11 +161,11 @@ class WindowNavigator:
         
         print(f"  Window size ratio: {window_size_ratio:.3f}, estimated depth: {estimated_depth:.1f}m")
         
-        # Normalized image coordinates
+        # Normalized coordinates
         u_norm = (u_pix - img_w/2) / img_w
         v_norm = (v_pix - img_h/2) / img_h
         
-        # Camera intrinsics
+        # Camera parameters
         fov_rad = 1.3089969389957472
         aspect_ratio = img_w / img_h
         
@@ -181,25 +189,19 @@ class WindowNavigator:
             ref_pos[2] + offset_down
         ])
         
-        # Clamp vertical range
         window_3d[2] = np.clip(window_3d[2], -1.5, 1.5)
         
         print(f"  Estimated window 3D position: [{window_3d[0]:.2f}, {window_3d[1]:.2f}, {window_3d[2]:.2f}]")
         
-        # Validate and adjust window position
+        # Validate position
         if doesItCollide(window_3d):
-            print(f"  ✗ Window position collides!")
+            print(f"  ✗ Window position collides, trying adjustments...")
             
-            # Try multiple adjustments
             adjustments = [
                 ('closer', 0.7, None),
-                ('closer', 0.8, None),
-                ('further', 1.1, None),
                 ('further', 1.3, None),
                 ('left', None, np.array([0, -0.3, 0])),
                 ('right', None, np.array([0, 0.3, 0])),
-                ('up', None, np.array([0, 0, -0.3])),
-                ('down', None, np.array([0, 0, 0.3])),
             ]
             
             for adj_name, scale, offset in adjustments:
@@ -218,10 +220,8 @@ class WindowNavigator:
         
         return window_3d, scan_frames
     
-    def navigate_to_window(self, current_pose, window_3d_pos, approach_distance=0.7):
-        """
-        Navigate towards and through window with smart collision avoidance
-        """
+    def navigate_to_window(self, current_pose, window_3d_pos, pose_history, approach_distance=0.7):
+        """Navigate to window with yaw alignment"""
         print(f"\n=== NAVIGATING TO WINDOW ===")
         print(f"  Current: {current_pose['position']}")
         print(f"  Target: {window_3d_pos}")
@@ -233,25 +233,41 @@ class WindowNavigator:
             print("  Already at window")
             return current_pose
         
+        # CRITICAL: Calculate desired yaw to face the window
+        desired_yaw = np.arctan2(direction[1], direction[0])  # atan2(East, North) in NED
+        current_yaw = current_pose['rpy'][2]
+        
+        yaw_error = wrap_angle(desired_yaw - current_yaw)
+        
+        print(f"  Current yaw: {np.degrees(current_yaw):.1f}°")
+        print(f"  Desired yaw (toward window): {np.degrees(desired_yaw):.1f}°")
+        print(f"  Yaw error: {np.degrees(yaw_error):.1f}°")
+        
+        # If yaw error > 10°, first rotate to face window
+        if abs(yaw_error) > np.radians(10):
+            print(f"  ✓ Rotating to face window...")
+            aligned_pose = current_pose.copy()
+            aligned_pose['rpy'] = np.array([0.0, 0.0, desired_yaw])
+            current_pose = aligned_pose
+            
+            # Record yaw alignment in pose history
+            if pose_history is not None:
+                pose_history.append({
+                    'step': len(pose_history),
+                    'action': 'YAW_ALIGN',
+                    'position': current_pose['position'].copy(),
+                    'rpy_deg': np.degrees(current_pose['rpy']),
+                    'rpy_rad': current_pose['rpy'].copy()
+                })
+        
         direction_norm = direction / distance
         approach_point = window_3d_pos - direction_norm * approach_distance
         
-        # Check if approach point is accessible
         if doesItCollide(approach_point):
             print(f"  ✗ Approach point collides!")
-            
-            for new_dist in [1.0, 0.5, 1.5]:
-                test_point = window_3d_pos - direction_norm * new_dist
-                if not doesItCollide(test_point):
-                    approach_point = test_point
-                    approach_distance = new_dist
-                    print(f"  ✓ Adjusted approach distance to {new_dist:.2f}m")
-                    break
-            else:
-                print(f"  ✗ Cannot find collision-free approach")
-                return -1
+            return -1
         
-        # Check if direct path is clear
+        # Check path
         path_clear, first_collision = is_path_clear(current_pose['position'], approach_point, num_checks=20)
         
         if path_clear:
@@ -259,151 +275,40 @@ class WindowNavigator:
             waypoints = [approach_point]
         else:
             print(f"  ✗ Direct path blocked at check {first_collision}/20")
-            print(f"  Searching for alternate path...")
-            
-            # Try systematic alternate paths
-            waypoints = self.find_alternate_path(current_pose['position'], approach_point)
-            
-            if waypoints is None:
-                print(f"  ✗ Cannot find collision-free path")
-                return -1
+            return -1
         
-        # Navigate through waypoints
+        # Navigate
         temp_pose = current_pose
         
         for i, waypoint in enumerate(waypoints):
             print(f"  Navigating to waypoint {i+1}/{len(waypoints)}: [{waypoint[0]:.2f}, {waypoint[1]:.2f}, {waypoint[2]:.2f}]")
             
-            result = goToWaypoint(temp_pose, waypoint, velocity=0.08)
+            result = goToWaypoint(temp_pose, waypoint, velocity=0.08, pose_history=pose_history,
+                                 action=f'NAV_WP{i+1}')
             
             if result == -1:
                 print(f"  ✗ Collision during navigation")
+                print(f"  Last valid pose: pos={temp_pose['position']}, rpy_deg={np.degrees(temp_pose['rpy'])}")
                 return -1
             
             temp_pose = result
             print(f"  ✓ Reached waypoint {i+1}/{len(waypoints)}")
+            print(f"    Current pose: pos=[{temp_pose['position'][0]:.3f}, {temp_pose['position'][1]:.3f}, {temp_pose['position'][2]:.3f}], "
+                  f"rpy=[{np.degrees(temp_pose['rpy'][0]):.1f}, {np.degrees(temp_pose['rpy'][1]):.1f}, {np.degrees(temp_pose['rpy'][2]):.1f}]°")
         
         print(f"  ✓ Reached approach point")
-        
-        # Navigate through window
-        through_point = window_3d_pos + direction_norm * 0.3
-        
-        if not doesItCollide(through_point):
-            result = goToWaypoint(temp_pose, through_point, velocity=0.06)
-            
-            if result != -1:
-                print(f"  ✓ Passed through window")
-                return result
-        
-        print(f"  Stopping at approach point (through point blocked)")
         return temp_pose
     
-    def find_alternate_path(self, start, goal, max_waypoints=20):
-        """
-        Find collision-free path using greedy exploration
-        """
-        direction = goal - start
-        distance = np.linalg.norm(direction)
-        direction_norm = direction / distance
+    def record_frame(self, rgb_frame, mask=None, frame_id=None):
+        """Save frame to disk"""
+        if len(self.video_frames) == 0:
+            import glob
+            for f in glob.glob('./log/frames/*.png'):
+                try:
+                    os.remove(f)
+                except:
+                    pass
         
-        # Strategy 1: Offset paths with SMALLER steps
-        perpendicular = np.array([-direction_norm[1], direction_norm[0], 0])
-        perpendicular = perpendicular / (np.linalg.norm(perpendicular) + 1e-6)
-        
-        vertical = np.array([0, 0, -1])
-        
-        offsets_to_try = [
-            (perpendicular, 0.3, 'right-close'),
-            (-perpendicular, 0.3, 'left-close'),
-            (perpendicular, 0.5, 'right-med'),
-            (-perpendicular, 0.5, 'left-med'),
-            (perpendicular, 0.7, 'right-far'),
-            (-perpendicular, 0.7, 'left-far'),
-            (vertical, 0.2, 'up-slight'),
-            (-vertical, 0.2, 'down-slight'),
-            (vertical, 0.4, 'up-med'),
-            (-vertical, 0.4, 'down-med'),
-        ]
-        
-        # Use smaller segments for better granularity
-        num_segments = max(5, min(int(distance / 0.3), max_waypoints))  # One every 0.3m
-        
-        for offset_dir, offset_mag, offset_name in offsets_to_try:
-            waypoints = []
-            all_clear = True
-            
-            for i in range(1, num_segments + 1):
-                t = i / num_segments
-                base = start + t * (goal - start)
-                # Smooth offset (sine wave)
-                offset_scale = np.sin(t * np.pi)
-                pos = base + offset_dir * offset_mag * offset_scale
-                
-                # Check this point AND path to it from previous
-                if doesItCollide(pos):
-                    all_clear = False
-                    break
-                
-                # Also check path from previous waypoint
-                if len(waypoints) > 0:
-                    prev = waypoints[-1]
-                    mid_check = (prev + pos) / 2
-                    if doesItCollide(mid_check):
-                        all_clear = False
-                        break
-                
-                waypoints.append(pos)
-            
-            if all_clear:
-                print(f"    ✓ Found {offset_name} path with {len(waypoints)} waypoints")
-                return waypoints
-        
-        # Strategy 2: Cautious step-by-step exploration
-        print(f"    Trying step-by-step exploration...")
-        current = start.copy()
-        waypoints = []
-        step_size = 0.15  # Smaller steps
-        
-        for step in range(max_waypoints * 2):  # Allow more steps
-            # Try moving toward goal
-            next_pos = current + direction_norm * step_size
-            
-            if doesItCollide(next_pos):
-                # Try all lateral/vertical directions
-                found_move = False
-                for lateral in [perpendicular, -perpendicular, vertical, -vertical,
-                               perpendicular + vertical, -perpendicular + vertical]:
-                    test_pos = current + lateral * (step_size * 0.7)
-                    if not doesItCollide(test_pos):
-                        next_pos = test_pos
-                        found_move = True
-                        break
-                
-                if not found_move:
-                    break
-            
-            waypoints.append(next_pos)
-            current = next_pos
-            
-            # Check if close to goal
-            if np.linalg.norm(current - goal) < step_size * 3:
-                # Try to reach goal directly
-                if not doesItCollide(goal):
-                    is_clear, _ = is_path_clear(current, goal, num_checks=5)
-                    if is_clear:
-                        waypoints.append(goal)
-                        print(f"    ✓ Exploration path with {len(waypoints)} waypoints")
-                        return waypoints
-                break
-        
-        if len(waypoints) >= 3:
-            print(f"    ⚠ Partial path with {len(waypoints)} waypoints")
-            return waypoints
-        
-        return None
-    
-    def record_frame(self, rgb_frame, mask=None):
-        """Record frame for video"""
         if mask is not None:
             overlay = rgb_frame.copy()
             mask_color = np.zeros_like(overlay)
@@ -413,26 +318,33 @@ class WindowNavigator:
             frame = rgb_frame
         
         self.video_frames.append(frame)
+        
+        if frame_id is None:
+            frame_id = len(self.video_frames) - 1
+        
+        frame_path = f'./log/frames/frame_{frame_id:04d}.png'
+        os.makedirs('./log/frames', exist_ok=True)
+        cv2.imwrite(frame_path, cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
     
-    def save_video(self, output_path='./log/navigation_video.mp4', fps=30):
-        """Save recorded frames as video"""
-        if not self.video_frames:
-            print("No frames to save")
+    def save_frames_summary(self):
+        """Create summary"""
+        num_frames = len(self.video_frames)
+        if num_frames == 0:
+            print("No frames recorded")
             return
         
-        h, w = self.video_frames[0].shape[:2]
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        out = cv2.VideoWriter(output_path, fourcc, fps, (w, h))
-        
-        for frame in self.video_frames:
-            out.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
-        
-        out.release()
-        print(f"✓ Saved video to {output_path} ({len(self.video_frames)} frames)")
+        print(f"\n✓ Saved {num_frames} frames to ./log/frames/")
+        print(f"  frame_0000.png through frame_{num_frames-1:04d}.png")
 
 
-def goToWaypoint(currentPose, targetPose, velocity=0.1):
-    """Navigate quadrotor to a target waypoint"""
+def goToWaypoint(currentPose, targetPose, velocity=0.1, pose_history=None, action='NAV', maintain_orientation=False, lock_roll_pitch=False):
+    """
+    Navigate to waypoint with pose tracking
+    
+    Args:
+        maintain_orientation: If True, keep initial roll/pitch/yaw constant
+        lock_roll_pitch: If True, only lock roll/pitch but allow yaw changes
+    """
     dt = 0.01
     tolerance = 0.1
     max_time = 30.0
@@ -442,6 +354,15 @@ def goToWaypoint(currentPose, targetPose, velocity=0.1):
 
     pos = np.array(currentPose['position'], dtype=float)
     rpy = np.array(currentPose['rpy'], dtype=float)
+    
+    # Store initial orientation based on locking mode
+    if maintain_orientation:
+        initial_rpy = rpy.copy()  # Lock all: roll, pitch, yaw
+    elif lock_roll_pitch:
+        initial_roll_pitch = rpy[:2].copy()  # Only lock roll and pitch
+        initial_rpy = None
+    else:
+        initial_rpy = None
 
     vel = np.zeros(3)
     pqr = np.zeros(3)
@@ -515,15 +436,18 @@ def goToWaypoint(currentPose, targetPose, velocity=0.1):
     velocities = np.array(velocities)
     accelerations = np.array(accelerations)
     
-    # CRITICAL: Pre-validate trajectory before attempting navigation
-    # Check every 10th point to avoid excessive checking
-    check_stride = max(1, len(trajectory_points) // 50)  # Check ~50 points
+    # Pre-validate trajectory
+    check_stride = max(1, len(trajectory_points) // 50)
     for i in range(0, len(trajectory_points), check_stride):
         if doesItCollide(trajectory_points[i]):
             print(f'  ✗ Trajectory collision at point {i}/{len(trajectory_points)} [{trajectory_points[i][0]:.2f}, {trajectory_points[i][1]:.2f}, {trajectory_points[i][2]:.2f}]')
             return -1
 
-    controller.set_trajectory(trajectory_points, time_points, velocities, accelerations)
+    # CRITICAL: If maintain_orientation, use initial RPY for setpoint
+    # This prevents unwanted flipping during scanning
+    target_rpy_for_traj = initial_rpy if maintain_orientation else rpy
+    controller.set_trajectory(trajectory_points, time_points, velocities, accelerations, 
+                             target_rpy=target_rpy_for_traj)
 
     state = current_state.copy()
 
@@ -559,7 +483,26 @@ def goToWaypoint(currentPose, targetPose, velocity=0.1):
     final_quat = Quaternion(w=qw, x=qx, y=qy, z=qz)
     yaw_f, pitch_f, roll_f = final_quat.yaw_pitch_roll
 
-    final_rpy = np.array([roll_f, pitch_f, yaw_f])
+    # Apply orientation constraints
+    if maintain_orientation:
+        # Lock all: roll, pitch, yaw
+        final_rpy = initial_rpy
+    elif lock_roll_pitch:
+        # Lock only roll and pitch, allow yaw to change
+        final_rpy = np.array([initial_roll_pitch[0], initial_roll_pitch[1], yaw_f])
+    else:
+        # Allow all to change
+        final_rpy = np.array([roll_f, pitch_f, yaw_f])
+    
+    # Record pose
+    if pose_history is not None:
+        pose_history.append({
+            'step': len(pose_history),
+            'action': action,
+            'position': final_pos.copy(),
+            'rpy_deg': np.degrees(final_rpy),
+            'rpy_rad': final_rpy.copy()
+        })
 
     return {
         'position': final_pos,
@@ -569,6 +512,21 @@ def goToWaypoint(currentPose, targetPose, velocity=0.1):
 
 def main(renderer):
     os.makedirs('./log', exist_ok=True)
+    import glob
+    os.makedirs('./log/frames', exist_ok=True)
+    for f in glob.glob('./log/*.png'):
+        try:
+            os.remove(f)
+        except:
+            pass
+    for f in glob.glob('./log/frames/*.png'):
+        try:
+            os.remove(f)
+        except:
+            pass
+    
+    # POSE HISTORY TRACKING
+    pose_history = []
     
     print("\n" + "="*60)
     print("DRONE RACING")
@@ -577,139 +535,80 @@ def main(renderer):
     navigator = WindowNavigator(renderer, device='cuda')
     
     currentPose = {
-        'position': np.array([0.2, -0.2, 0.0]),  # Working position from P4
+        'position': np.array([0.0, 0.0, 0.0]),  # Origin - see first window
         'rpy': np.radians([0.0, 0.0, 0.0])
     }
+    
+    # Record initial pose
+    pose_history.append({
+        'step': 0,
+        'action': 'INITIAL',
+        'position': currentPose['position'].copy(),
+        'rpy_deg': np.degrees(currentPose['rpy']),
+        'rpy_rad': currentPose['rpy'].copy()
+    })
+    
+    print(f"Initial pose:")
+    print(f"  Position: [{currentPose['position'][0]:.3f}, {currentPose['position'][1]:.3f}, {currentPose['position'][2]:.3f}]")
+    print(f"  RPY (deg): [{np.degrees(currentPose['rpy'][0]):.1f}, {np.degrees(currentPose['rpy'][1]):.1f}, {np.degrees(currentPose['rpy'][2]):.1f}]")
     
     if doesItCollide(currentPose['position']):
         print('✗ Starting position collides!')
         return -1
     
-    # Capture initial frame with camera orientation correction
-    corrected_rpy_initial = currentPose['rpy'].copy()
-    corrected_rpy_initial[0] += np.pi  # Add 180° to roll
-    rgb, _, _ = renderer.render(currentPose['position'], corrected_rpy_initial)
+    # Capture initial frame
+    rgb, _, _ = renderer.render(currentPose['position'], currentPose['rpy'])
     navigator.record_frame(rgb)
     
     print("\n" + "="*60)
     print("PHASE 1: FORWARD NAVIGATION")
     print("="*60)
     
-    print(f"\nStarting from known good position: {currentPose['position']}")
-    
     detected_windows = []
-    max_windows = 10
-    no_detection_count = 0
-    max_no_detection = 3  # Increased tolerance
+    max_windows = 3  # Try fewer windows
     
     for window_num in range(max_windows):
         print(f"\n--- Window {window_num + 1} ---")
         
-        window_3d_pos, scan_frames = navigator.scan_for_window(currentPose)
+        window_3d_pos, scan_frames = navigator.scan_for_window(currentPose, pose_history)
         
         if window_3d_pos is None:
-            no_detection_count += 1
-            print(f"  No window detected ({no_detection_count}/{max_no_detection})")
-            
-            if no_detection_count >= max_no_detection:
-                print("\n  No more windows detected. Proceeding to return phase.")
-                break
-            
-            # Try moving forward cautiously
-            forward_test = currentPose['position'] + np.array([0.5, 0.0, 0.0])
-            if not doesItCollide(forward_test):
-                result = goToWaypoint(currentPose, forward_test, velocity=0.08)
-                if result != -1:
-                    currentPose = result
-                    continue
-            
-            # Try moving laterally
-            lateral_test = currentPose['position'] + np.array([0.0, 0.3, 0.0])
-            if not doesItCollide(lateral_test):
-                result = goToWaypoint(currentPose, lateral_test, velocity=0.08)
-                if result != -1:
-                    currentPose = result
-                    continue
-            
+            print(f"  No window detected")
             break
         
-        no_detection_count = 0
         detected_windows.append(window_3d_pos)
         navigator.window_count += 1
         
-        result = navigator.navigate_to_window(currentPose, window_3d_pos)
+        result = navigator.navigate_to_window(currentPose, window_3d_pos, pose_history)
         
         if result == -1:
             print(f"  ✗ Failed to navigate through window {window_num + 1}")
-            print(f"  Environment appears too cluttered for navigation")
-            print(f"  Switching to DETECTION-ONLY mode...")
-            
-            # Enter detection-only mode
-            print("\n  === DETECTION-ONLY MODE ===")
-            print("  Continuing to scan and detect windows without navigation")
-            
-            for detect_only_num in range(window_num + 2, max_windows + 1):
-                print(f"\n  --- Detection {detect_only_num} ---")
-                
-                # Just scan without moving between scans
-                window_3d_pos_detect, _ = navigator.scan_for_window(currentPose)
-                
-                if window_3d_pos_detect is not None:
-                    detected_windows.append(window_3d_pos_detect)
-                    navigator.window_count += 1
-                    print(f"  ✓ Window {navigator.window_count} detected (detection-only)")
-                else:
-                    no_detection_count += 1
-                    if no_detection_count >= max_no_detection:
-                        break
-            
-            print(f"\n  Detection-only mode complete. Found {len(detected_windows)} total windows.")
             break
         
         currentPose = result
         print(f"  ✓ Successfully navigated through window {window_num + 1}")
         
-        # Capture frame with camera correction
-        corrected_rpy_nav = currentPose['rpy'].copy()
-        corrected_rpy_nav[0] += np.pi
-        rgb, _, _ = renderer.render(currentPose['position'], corrected_rpy_nav)
+        # Capture frame
+        rgb, _, _ = renderer.render(currentPose['position'], currentPose['rpy'])
         navigator.record_frame(rgb)
     
+    # Save pose history
     print("\n" + "="*60)
-    print("PHASE 2: RETURN NAVIGATION")
+    print("SAVING POSE HISTORY")
     print("="*60)
     
-    if len(detected_windows) > 0:
-        print(f"  Returning through {len(detected_windows)} windows in reverse")
-        
-        for i, window_pos in enumerate(reversed(detected_windows)):
-            print(f"\n--- Returning through window {i + 1}/{len(detected_windows)} ---")
-            
-            result = navigator.navigate_to_window(currentPose, window_pos)
-            
-            if result == -1:
-                print(f"  ✗ Failed during return, continuing...")
-                continue
-            
-            currentPose = result
-            
-            # Capture frame with camera correction
-            corrected_rpy_return = currentPose['rpy'].copy()
-            corrected_rpy_return[0] += np.pi
-            rgb, _, _ = renderer.render(currentPose['position'], corrected_rpy_return)
-            navigator.record_frame(rgb)
-        
-        print("\n--- Returning to start position ---")
-        start_position = np.array([0.0, 0.0, 0.0])
-        
-        if not doesItCollide(start_position):
-            result = goToWaypoint(currentPose, start_position, velocity=0.1)
-            
-            if result != -1:
-                currentPose = result
-                print("  ✓ Returned to start position!")
+    with open('./log/pose_history.json', 'w') as f:
+        json.dump(pose_history, f, indent=2, default=str)
     
-    navigator.save_video()
+    print(f"✓ Saved {len(pose_history)} poses to ./log/pose_history.json")
+    
+    # Print summary
+    print("\nPose Summary:")
+    for i, p in enumerate(pose_history):
+        print(f"  {i}: {p['action']:12s} pos=[{p['position'][0]:6.2f}, {p['position'][1]:6.2f}, {p['position'][2]:6.2f}] "
+              f"rpy=[{p['rpy_deg'][0]:6.1f}, {p['rpy_deg'][1]:6.1f}, {p['rpy_deg'][2]:6.1f}]°")
+    
+    navigator.save_frames_summary()
     
     print("\n" + "="*60)
     print("NAVIGATION COMPLETE")
