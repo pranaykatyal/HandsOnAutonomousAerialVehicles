@@ -94,12 +94,21 @@ def test_scanning_pattern():
         
         print(f"  Generated {len(waypoints)} waypoints:")
         for i, wp in enumerate(waypoints):
-            print(f"    WP{i}: [{wp[0]:.3f}, {wp[1]:.3f}, {wp[2]:.3f}]")
+            # ✅ FIXED: Arc scanning returns dicts with 'position' and 'rpy'
+            if isinstance(wp, dict):
+                pos = wp['position']
+                yaw_deg = np.degrees(wp['rpy'][2])
+                print(f"    WP{i}: pos=[{pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f}], yaw={yaw_deg:+.1f}°")
+            else:
+                # Backward compatibility for old array format
+                print(f"    WP{i}: [{wp[0]:.3f}, {wp[1]:.3f}, {wp[2]:.3f}]")
         
         print("✓ Scanning pattern generation works")
         return True
     except Exception as e:
         print(f"✗ Scanning error: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 

@@ -1,6 +1,7 @@
 """
 Window Detection using Optical Flow (from Project 4)
 Integrates RAFT optical flow for TS²P-style window detection
+FIXED FOR SPLAT COORDINATES: Combined X+Y scanning for forward navigation
 """
 
 import sys
@@ -116,43 +117,64 @@ class SimpleFlowDetector:
         
         print(f"  Downsampled to: {self.detection_resolution}x{self.detection_resolution}")
         
-        # CRITICAL: Use TS²P accumulated flow (like P4)
-        # Computes flow between ALL consecutive pairs, takes MINIMUM
-        # This gives clean separation: windows=low flow, walls=high flow
+        # FLOW COMPUTATION: Two options
+        # 1. TS²P (P4 approach): MIN across all consecutive pairs
+        # 2. Standard: Just first→last frame
         
-        print(f"  Computing TS²P optical flow (minimum across all pairs)...")
+        USE_TS2P = False  # ← CHANGE THIS TO SWITCH METHODS
         
-        from scanning_fix import compute_accumulated_flow_ts2p
-        Xi_np = compute_accumulated_flow_ts2p(downsampled_frames, self.flow_extractor, self.device)
+        if USE_TS2P:
+            print(f"  Computing TS²P optical flow (minimum across all pairs)...")
+            from scanning_fix import compute_accumulated_flow_ts2p
+            Xi_np = compute_accumulated_flow_ts2p(downsampled_frames, self.flow_extractor, self.device)
+        else:
+            print(f"  Computing standard optical flow (first→last frame)...")
+            # Convert to torch tensors
+            frame_first = torch.from_numpy(downsampled_frames[0]).float().permute(2, 0, 1).unsqueeze(0) / 255.0
+            frame_last = torch.from_numpy(downsampled_frames[-1]).float().permute(2, 0, 1).unsqueeze(0) / 255.0
+            frame_first = frame_first.to(self.device)
+            frame_last = frame_last.to(self.device)
+            
+            # Compute flow
+            with torch.no_grad():
+                flow = self.flow_extractor.compute_flow(frame_first, frame_last)
+                u = flow[0, 0]
+                v = flow[0, 1]
+                flow_mag = torch.sqrt(u**2 + v**2)
+                Xi_np = flow_mag.cpu().numpy()
+            
+            print(f"    Flow first→last: range [{Xi_np.min():.1f}, {Xi_np.max():.1f}], mean {Xi_np.mean():.1f}")
         
         print(f"    Flow range: [{Xi_np.min():.2f}, {Xi_np.max():.2f}]")
         print(f"    Flow mean: {Xi_np.mean():.2f}, median: {np.median(Xi_np):.2f}")
         
-        # With TS²P MIN flow, use LOWER percentile for selectivity
-        # 20% was too high (12% of image = floor included)
-        # Try 10% for cleaner window-only selection
-        threshold_percentile = 10
-        threshold = np.percentile(Xi_np, threshold_percentile)
+        # 🎯 DUAL THRESHOLD: Select MIDDLE-range flow (window frames)
+        # 
+        # With Y+Z diagonal motion, flow is more symmetric
+        # 🎯 CRITICAL INSIGHT: Window HOLES have LOW flow!
+        # 
+        # Flow map shows:
+        # - DARK BLUE squares (flow ~8-12): Window HOLES ← TARGET THESE!
+        # - LIGHT BLUE/CYAN (flow ~5-7): Floor/background
+        # - ORANGE/RED (flow ~17-25): Solid frames/edges
+        #
+        # Strategy: Select EXACT range 8-12 for window holes
         
-        # Safety bounds (adjusted for TS²P MIN flow characteristics)
-        if threshold > 8:
-            print(f"    WARNING: Threshold too high ({threshold:.2f}), capping at 8")
-            threshold = 8
-        elif threshold < 5:
-            print(f"    WARNING: Threshold too low ({threshold:.2f}), raising to 5")
-            threshold = 5
+        # Direct threshold values (not percentiles)
+        background_threshold = 6.0   # Lower bound
+        hole_threshold = 12.0        # Upper bound
         
-        print(f"    Using threshold ({threshold_percentile}%ile): {threshold:.2f}")
+        print(f"    Selecting window holes: {background_threshold:.2f} < flow < {hole_threshold:.2f}")
+        print(f"      Background threshold (fixed): {background_threshold:.2f}")
+        print(f"      Hole threshold (fixed): {hole_threshold:.2f}")
         
-        # Binary mask: LOW flow = windows
-        binary_mask = (Xi_np < threshold).astype(np.uint8) * 255
+        # Binary mask: Flow range 8-12 = window holes
+        binary_mask = ((Xi_np > background_threshold) & (Xi_np < hole_threshold)).astype(np.uint8) * 255
         
         # DEBUG before morphology
         pixels_before_morph = np.sum(binary_mask > 0)
         percentage = pixels_before_morph / binary_mask.size * 100
-        print(f"    Pixels below threshold (before morphology): {pixels_before_morph} ({percentage:.1f}%)")
-        print(f"    Min flow value: {Xi_np.min():.2f}")
-        print(f"    Max flow value: {Xi_np.max():.2f}")
+        print(f"    Pixels in middle flow range (before morphology): {pixels_before_morph} ({percentage:.1f}%)")
         
         # Clean up with morphology
         kernel_open = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
@@ -189,7 +211,8 @@ class SimpleFlowDetector:
         
         debug_info = {
             'Xi': Xi_np,
-            'threshold': threshold,  # Use the actual threshold computed
+            'low_threshold': background_threshold,  # For visualization (lower bound)
+            'high_threshold': hole_threshold,       # For visualization (upper bound)
             'binary_mask': binary_mask,
             'mask_refined': mask_refined,
             'frames': downsampled_frames
@@ -232,7 +255,7 @@ class SimpleFlowDetector:
             x, y, w, h, area = stats[label_id]
             
             # Size filters
-            min_area = int(0.001 * H * W)  # At least 0.1% of image (was 0.3%)
+            min_area = int(0.001 * H * W)  # At least 0.1% of image
             max_area = int(0.7 * H * W)     # At most 70% of image
             
             if area < min_area or area > max_area:
@@ -260,32 +283,28 @@ class SimpleFlowDetector:
             
             # Aspect ratio filter - windows are roughly rectangular
             aspect = w / (h + 1e-6)
-            if aspect < 0.4 or aspect > 4.0:  # More permissive
+            if aspect < 0.4 or aspect > 4.0:
                 print(f"      Component {label_id}: REJECTED (bad aspect: {aspect:.2f})")
                 continue
             
-            # Scoring: size + centrality + STRONGLY prefer MIDDLE regions (where doors/windows are)
+            # Scoring: size + centrality + vertical preference
             cx, cy = centroids[label_id]
             dist_from_center_x = abs(cx - W/2)
             max_dist_x = W/2
             horizontal_centrality = 1.0 - (dist_from_center_x / max_dist_x)
             
-            # Vertical position score - PREFER middle 20-60% of image (where windows/doors typically are)
-            # Create a score that peaks in middle
-            vertical_norm = cy / H  # 0 = top, 1 = bottom
+            # Vertical position score - PREFER middle 20-60%
+            vertical_norm = cy / H
             if 0.2 <= vertical_norm <= 0.6:
-                vertical_score = 1.0  # Perfect middle region
+                vertical_score = 1.0
             elif vertical_norm < 0.2:
-                vertical_score = vertical_norm / 0.2  # Penalize top
-            else:  # > 0.6
-                vertical_score = (1.0 - vertical_norm) / 0.4  # Penalize bottom
+                vertical_score = vertical_norm / 0.2
+            else:
+                vertical_score = (1.0 - vertical_norm) / 0.4
             
-            # Combined score: STRONGLY prefer horizontal center + size + vertical preference
-            # Horizontal centrality weighted 4x more to prefer CENTER windows over edge windows
             score = area * (0.2 + 0.5 * horizontal_centrality + 0.3 * vertical_score)
-            #                     ^^^ INCREASED from 0.2 to 0.5 to prefer CENTER
             
-            print(f"      Component {label_id}: VALID (area={area}, cy={cy:.0f}/{H}, v_score={vertical_score:.2f}, score={score:.0f})")
+            print(f"      Component {label_id}: VALID (area={area}, score={score:.0f})")
             
             valid_components.append({
                 'label_id': label_id,
@@ -301,7 +320,7 @@ class SimpleFlowDetector:
         
         valid_components.sort(key=lambda x: x['score'], reverse=True)
         best_label = valid_components[0]['label_id']
-        print(f"    Selected component {best_label} (area={valid_components[0]['area']}, score={valid_components[0]['score']:.0f})")
+        print(f"    Selected component {best_label} (score={valid_components[0]['score']:.0f})")
         
         # Create mask
         result = (labels == best_label).astype(np.uint8) * 255
@@ -317,7 +336,8 @@ class SimpleFlowDetector:
         import matplotlib.pyplot as plt
         
         Xi = debug_info['Xi']
-        threshold = debug_info['threshold']
+        low_threshold = debug_info.get('low_threshold', None)
+        high_threshold = debug_info.get('high_threshold', None)
         binary_mask = debug_info['binary_mask']
         mask_refined = debug_info['mask_refined']
         frames = debug_info['frames']
@@ -335,17 +355,27 @@ class SimpleFlowDetector:
         
         # Flow magnitude
         im = axes[0, 2].imshow(Xi, cmap='jet')
-        axes[0, 2].set_title('Flow Magnitude\n(BLUE = Window)', fontsize=14, fontweight='bold')
+        axes[0, 2].set_title('Flow Magnitude\n(GREEN = Window Frames)', fontsize=14, fontweight='bold')
         axes[0, 2].axis('off')
         plt.colorbar(im, ax=axes[0, 2], fraction=0.046)
         
         # Flow histogram
         axes[1, 0].hist(Xi.flatten(), bins=50, alpha=0.7, edgecolor='black')
-        axes[1, 0].axvline(threshold, color='r', linestyle='--', linewidth=2,
-                          label=f'Threshold: {threshold:.1f}')
+        
+        # Show dual thresholds
+        low_th = debug_info.get('low_threshold', None)
+        high_th = debug_info.get('high_threshold', None)
+        
+        if low_th is not None:
+            axes[1, 0].axvline(low_th, color='b', linestyle='--', linewidth=2,
+                              label=f'Low: {low_th:.1f}')
+        if high_th is not None:
+            axes[1, 0].axvline(high_th, color='r', linestyle='--', linewidth=2,
+                              label=f'High: {high_th:.1f}')
+        
         axes[1, 0].set_xlabel('Flow Magnitude')
         axes[1, 0].set_ylabel('Pixel Count')
-        axes[1, 0].set_title('Flow Distribution')
+        axes[1, 0].set_title('Flow Distribution (Green = Selected Range)')
         axes[1, 0].legend()
         axes[1, 0].grid(True, alpha=0.3)
         
@@ -374,41 +404,111 @@ class SimpleFlowDetector:
 class ActiveScanner:
     """
     Generates scanning trajectories for window detection
+    ✅ FIXED: Y-only horizontal scan with increased distance for better parallax
     """
     
-    def __init__(self, scan_distance=0.1, num_waypoints=5):
+    def __init__(self, scan_distance=0.3, num_waypoints=5):
         """
         Args:
-            scan_distance: Total scanning distance (meters)
-            num_waypoints: Number of waypoints in scan
+            scan_distance: Total scanning distance (splat units)
+                          For cross pattern: d = scan_distance/4
+                          scan_distance=0.3 → d=0.075 per step
+                          Larger steps = stronger parallax signal
+            num_waypoints: Number of waypoints in scan (always 5 for cross)
         """
         self.scan_distance = scan_distance
         self.num_waypoints = num_waypoints
     
+    def waypoint_to_string(self, waypoint):
+        """
+        Convert waypoint to string for printing (backward compatibility with tests)
+        
+        Args:
+            waypoint: Either dict with 'position' and 'rpy' or numpy array
+            
+        Returns:
+            String representation
+        """
+        if isinstance(waypoint, dict):
+            pos = waypoint['position']
+            yaw_deg = np.degrees(waypoint['rpy'][2])
+            return f"pos=[{pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f}], yaw={yaw_deg:+.1f}°"
+        elif isinstance(waypoint, np.ndarray):
+            # Fallback for old array format
+            return f"[{waypoint[0]:.3f}, {waypoint[1]:.3f}, {waypoint[2]:.3f}]"
+        else:
+            return str(waypoint)
+    
     def generate_scan_trajectory(self, start_pose):
         """
-        Generate YZ diagonal scanning trajectory (in NED frame)
+        Generate CROSS/OSCILLATING scanning trajectory (P4 proven pattern)
+        
+        ✅ CROSS PATTERN: Oscillate around center position
+        - Frame 0: Reference (center)
+        - Frame 1: +Y (right)
+        - Frame 2: +Z (up)
+        - Frame 3: -Y (left)
+        - Frame 4: -Z (down)
+        
+        Why this works for TS²P MIN operation:
+        - All frames have SIMILAR small displacement from center
+        - Creates consistent parallax in all directions
+        - MIN across pairs works correctly:
+          * Windows (close): LOW flow in ALL directions → MIN = LOW ✓
+          * Walls (far): HIGH flow in ALL directions → MIN = HIGH ✓
+        - NO cumulative motion blur (each frame close to center)
         
         Args:
             start_pose: dict with 'position' [x,y,z] and 'rpy' [r,p,y]
             
         Returns:
-            waypoints: List of target positions [x, y, z]
+            waypoints: List of dicts with 'position' and 'rpy'
         """
-        x0, y0, z0 = start_pose['position']
+        # Handle case where start_pose might just be a position array
+        if isinstance(start_pose, np.ndarray):
+            x0, y0, z0 = start_pose
+            roll0, pitch0, yaw0 = 0.0, 0.0, 0.0
+        elif isinstance(start_pose, dict):
+            x0, y0, z0 = start_pose['position']
+            roll0, pitch0, yaw0 = start_pose.get('rpy', [0.0, 0.0, 0.0])
+        else:
+            raise ValueError(f"start_pose must be dict or array, got {type(start_pose)}")
         
         waypoints = []
-        for i in range(self.num_waypoints):
-            t = i / (self.num_waypoints - 1)
-            offset = t * self.scan_distance
-            
-            # HORIZONTAL scan in Y-axis ONLY (keep camera level!)
-            # Moving diagonally in YZ causes drone to tilt downward
-            x = x0  # Keep X (North) constant
-            y = y0 + offset  # Move sideways (East)
-            z = z0  # Keep Z (Down) constant - DON'T FALL!
-            
-            waypoints.append(np.array([x, y, z]))
+        
+        # Use scan_distance as the oscillation amplitude
+        # For scan_distance=0.2, d=0.05 (moves ±0.05 from center)
+        d = self.scan_distance / 4
+        
+        # Frame 0: Reference position (center)
+        waypoints.append({
+            'position': np.array([x0, y0, z0]),
+            'rpy': np.array([roll0, pitch0, yaw0])
+        })
+        
+        # Frame 1: +Y (right)
+        waypoints.append({
+            'position': np.array([x0, y0 + d, z0]),
+            'rpy': np.array([roll0, pitch0, yaw0])
+        })
+        
+        # Frame 2: +Z (down in NED, creates vertical parallax)
+        waypoints.append({
+            'position': np.array([x0, y0, z0 + d]),
+            'rpy': np.array([roll0, pitch0, yaw0])
+        })
+        
+        # Frame 3: -Y (left)
+        waypoints.append({
+            'position': np.array([x0, y0 - d, z0]),
+            'rpy': np.array([roll0, pitch0, yaw0])
+        })
+        
+        # Frame 4: -Z (up in NED)
+        waypoints.append({
+            'position': np.array([x0, y0, z0 - d]),
+            'rpy': np.array([roll0, pitch0, yaw0])
+        })
         
         return waypoints
 

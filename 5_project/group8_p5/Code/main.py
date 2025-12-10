@@ -4,6 +4,8 @@ Drone Racing Navigation System - FIXED VERSION v3
 - Better component selection (prefers CENTER over edges)
 - Proper renderer usage
 - Collision parameter fixes
+- FIXED: scan_distance=0.6 (was 0.04)
+- FIXED: Removed duplicate code in scan_for_window
 """
 
 from splat_render import SplatRenderer
@@ -57,11 +59,13 @@ class WindowNavigator:
         self.flow_extractor = OpticalFlowExtractor(raft_model_path, device=device)
         self.detector = SimpleFlowDetector(self.flow_extractor, device=device)
         
-        # CRITICAL: Scan distance must be >> goToWaypoint tolerance (0.1m)
-        # Otherwise drone doesn't actually move and we get zero parallax!
-        # Each waypoint step = scan_distance / (num_waypoints - 1)
-        # With 5 waypoints: step = 0.6 / 4 = 0.15m per step >> 0.1m tolerance ✓
-        self.scanner = ActiveScanner(scan_distance=0.6, num_waypoints=5)
+        # ✅ FIXED FOR SPLAT COORDINATES: 
+        # Splat space is much smaller than meters! Map bounds: Y ±1.8, Z ±1.0
+        # scan_distance = 0.1 splat units (moves 0.025 per step)
+        # tolerance = 0.005 (lowered from 0.1 to enable actual movement)
+        # With 5 waypoints: step = 0.1 / 4 = 0.025 >> 0.005 tolerance ✓
+        # Y-only motion for stability (no X/Z drift)
+        self.scanner = ActiveScanner(scan_distance=0.1, num_waypoints=5)
         
         
         self.detected_windows = []
@@ -71,58 +75,61 @@ class WindowNavigator:
         print("✓ Window Navigator initialized")
     
     def scan_for_window(self, current_pose, pose_history):
-        """Perform scanning motion to detect window"""
-        print("\n=== SCANNING FOR WINDOW ===")
+        """Perform cross/oscillating scanning motion to detect window (P4 pattern)"""
+        print("\n=== SCANNING FOR WINDOW (CROSS PATTERN) ===")
         
         scan_waypoints = self.scanner.generate_scan_trajectory(current_pose)
-        print(f"  Generated {len(scan_waypoints)} scan waypoints")
+        print(f"  Generated {len(scan_waypoints)} cross-pattern scan waypoints")
         
-        # DEBUG: Print waypoint distances
-        print(f"  Scan waypoint distances from current:")
+        # DEBUG: Print waypoint info
+        print(f"  Cross scan trajectory (oscillate around center):")
         for i, wp in enumerate(scan_waypoints):
-            dist = np.linalg.norm(wp - current_pose['position'])
-            print(f"    WP{i}: distance = {dist:.4f}m")
+            wp_pos = wp['position']
+            wp_yaw_deg = np.degrees(wp['rpy'][2])
+            dist = np.linalg.norm(wp_pos - current_pose['position'])
+            print(f"    WP{i}: pos=[{wp_pos[0]:.3f}, {wp_pos[1]:.3f}, {wp_pos[2]:.3f}], "
+                  f"yaw={wp_yaw_deg:+.1f}°, dist={dist:.4f}m")
         
         scan_frames = []
         scan_poses = []
-        temp_pose = current_pose.copy()
+        
+        # ✅ CROSS/OSCILLATING SCANNING: P4's proven pattern
+        # 
+        # Frame 0: Center (reference)
+        # Frame 1: +Y (right)
+        # Frame 2: +Z (down)
+        # Frame 3: -Y (left)
+        # Frame 4: -Z (up)
+        #
+        # All frames oscillate around center with EQUAL small displacements
+        # → Consistent parallax in all directions
+        # → TS²P MIN operation works correctly
+        # → Windows show LOW flow, walls show HIGH flow
+        
+        print(f"\n  Rendering frames at cross positions (direct rendering)...")
         
         for i, waypoint in enumerate(scan_waypoints):
-            print(f"\n  Navigating to scan waypoint {i+1}/{len(scan_waypoints)}")
-            print(f"    Current: {temp_pose['position']}")
-            print(f"    Target: {waypoint}")
+            # Waypoint contains both position AND orientation
+            scan_pose = {
+                'position': waypoint['position'].copy(),
+                'rpy': waypoint['rpy'].copy()
+            }
             
-            result = goToWaypoint(temp_pose, waypoint, velocity=0.05, pose_history=pose_history, 
-                                 action=f'SCAN_WP{i+1}', lock_roll_pitch=True)
+            print(f"  Frame {i+1}/{len(scan_waypoints)}: "
+                  f"pos=[{scan_pose['position'][0]:.3f}, {scan_pose['position'][1]:.3f}, {scan_pose['position'][2]:.3f}], "
+                  f"yaw={np.degrees(scan_pose['rpy'][2]):+.1f}°")
             
-            if result == -1:
-                print(f"  Collision during scanning at waypoint {i}")
-                return None, scan_frames
-            
-            temp_pose = result
-            scan_poses.append(temp_pose)
-            
-            print(f"    Reached: {temp_pose['position']}")
-            print(f"    Actual movement: {np.linalg.norm(temp_pose['position'] - current_pose['position']):.4f}m")
-            #                                              ^^^^^^^^^^^^^^^^ Lock roll/pitch, allow yaw
-            
-            if result == -1:
-                print(f"  Collision during scanning at waypoint {i}")
-                return None, scan_frames
-            
-            temp_pose = result
-            scan_poses.append(temp_pose)
-            
-            # Camera orientation: NO correction needed if camera is right-side up
-            rgb, _, _ = self.renderer.render(temp_pose['position'], temp_pose['rpy'])
+            # Render directly at this position and orientation
+            rgb, _, _ = self.renderer.render(scan_pose['position'], scan_pose['rpy'])
             
             scan_frames.append(rgb)
-            self.record_frame(rgb, frame_id=len(self.video_frames))
+            scan_poses.append(scan_pose)
+            self.record_frame(rgb, frame_id=len(self.video_frames), pose=scan_pose)
             
-            print(f"  Captured frame {i+1}/{len(scan_waypoints)}")
+            print(f"    ✓ Captured frame {i+1}/{len(scan_waypoints)}")
         
         # Detect window
-        print("\n  Detecting window from scanned frames...")
+        print("\n  Detecting window from cross-pattern frames...")
         mask, center_2d, confidence, debug_info = self.detector.detect_window(scan_frames)
         
         # Save visualization
@@ -220,8 +227,13 @@ class WindowNavigator:
         
         return window_3d, scan_frames
     
-    def navigate_to_window(self, current_pose, window_3d_pos, pose_history, approach_distance=0.7):
-        """Navigate to window with yaw alignment"""
+    def navigate_to_window(self, current_pose, window_3d_pos, pose_history, approach_distance=0.7, scan_yaw_hint=None):
+        """
+        Navigate to window with yaw alignment
+        
+        Args:
+            scan_yaw_hint: Optional yaw from arc scanning (already roughly aligned)
+        """
         print(f"\n=== NAVIGATING TO WINDOW ===")
         print(f"  Current: {current_pose['position']}")
         print(f"  Target: {window_3d_pos}")
@@ -233,9 +245,13 @@ class WindowNavigator:
             print("  Already at window")
             return current_pose
         
-        # CRITICAL: Calculate desired yaw to face the window
+        # Calculate desired yaw to face the window
         desired_yaw = np.arctan2(direction[1], direction[0])  # atan2(East, North) in NED
         current_yaw = current_pose['rpy'][2]
+        
+        # If we have a scan yaw hint (from arc scanning), we might already be close!
+        if scan_yaw_hint is not None:
+            print(f"  Arc scan yaw hint: {np.degrees(scan_yaw_hint):.1f}°")
         
         yaw_error = wrap_angle(desired_yaw - current_yaw)
         
@@ -259,6 +275,8 @@ class WindowNavigator:
                     'rpy_deg': np.degrees(current_pose['rpy']),
                     'rpy_rad': current_pose['rpy'].copy()
                 })
+        else:
+            print(f"  ✓ Already well-aligned (error < 10°)")
         
         direction_norm = direction / distance
         approach_point = window_3d_pos - direction_norm * approach_distance
@@ -299,8 +317,16 @@ class WindowNavigator:
         print(f"  ✓ Reached approach point")
         return temp_pose
     
-    def record_frame(self, rgb_frame, mask=None, frame_id=None):
-        """Save frame to disk"""
+    def record_frame(self, rgb_frame, mask=None, frame_id=None, pose=None):
+        """
+        Save frame to disk with optional pose overlay
+        
+        Args:
+            rgb_frame: RGB image
+            mask: Optional detection mask
+            frame_id: Frame number
+            pose: Optional dict with 'position' and 'rpy' for text overlay
+        """
         if len(self.video_frames) == 0:
             import glob
             for f in glob.glob('./log/frames/*.png'):
@@ -315,7 +341,44 @@ class WindowNavigator:
             mask_color[mask > 0.5] = [0, 255, 0]
             frame = cv2.addWeighted(overlay, 0.7, mask_color, 0.3, 0)
         else:
-            frame = rgb_frame
+            frame = rgb_frame.copy()
+        
+        # Add pose text overlay
+        if pose is not None:
+            pos = pose['position']
+            rpy = pose['rpy']
+            rpy_deg = np.degrees(rpy)
+            
+            # Text settings
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            font_scale = 0.8
+            thickness = 2
+            color = (0, 255, 255)  # Yellow
+            bg_color = (0, 0, 0)    # Black background
+            
+            # Format text
+            text_lines = [
+                f"XYZ: [{pos[0]:+.3f}, {pos[1]:+.3f}, {pos[2]:+.3f}]",
+                f"RPY: [{rpy_deg[0]:+.1f}, {rpy_deg[1]:+.1f}, {rpy_deg[2]:+.1f}] deg"
+            ]
+            
+            # Draw text with background
+            y_offset = 30
+            for i, text in enumerate(text_lines):
+                y_pos = y_offset + i * 35
+                
+                # Get text size for background
+                (text_w, text_h), baseline = cv2.getTextSize(text, font, font_scale, thickness)
+                
+                # Draw background rectangle
+                cv2.rectangle(frame, 
+                            (5, y_pos - text_h - 5),
+                            (15 + text_w, y_pos + baseline + 5),
+                            bg_color, -1)
+                
+                # Draw text
+                cv2.putText(frame, text, (10, y_pos), font, font_scale, 
+                          color, thickness, cv2.LINE_AA)
         
         self.video_frames.append(frame)
         
@@ -346,7 +409,7 @@ def goToWaypoint(currentPose, targetPose, velocity=0.1, pose_history=None, actio
         lock_roll_pitch: If True, only lock roll/pitch but allow yaw changes
     """
     dt = 0.01
-    tolerance = 0.1
+    tolerance = 0.005  # ✅ FIXED: Lowered from 0.1 to work with splat coordinates (scale ~0.01-0.04)
     max_time = 30.0
 
     controller = QuadrotorController(tello)
@@ -558,7 +621,7 @@ def main(renderer):
     
     # Capture initial frame
     rgb, _, _ = renderer.render(currentPose['position'], currentPose['rpy'])
-    navigator.record_frame(rgb)
+    navigator.record_frame(rgb, pose=currentPose)
     
     print("\n" + "="*60)
     print("PHASE 1: FORWARD NAVIGATION")
@@ -590,7 +653,7 @@ def main(renderer):
         
         # Capture frame
         rgb, _, _ = renderer.render(currentPose['position'], currentPose['rpy'])
-        navigator.record_frame(rgb)
+        navigator.record_frame(rgb, pose=currentPose)
     
     # Save pose history
     print("\n" + "="*60)
