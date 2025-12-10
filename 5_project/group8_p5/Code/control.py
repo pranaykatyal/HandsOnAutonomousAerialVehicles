@@ -141,7 +141,9 @@ class quad_control:
         quat_list = X[6:10]
         pqr = X[10:13]
 
-        quat = Quaternion(quat_list)
+        # ✅ CRITICAL FIX: Dynamics outputs [qx, qy, qz, qw] but Quaternion() expects [w,x,y,z]
+        # Must use explicit x=, y=, z=, w= to avoid order confusion
+        quat = Quaternion(x=quat_list[0], y=quat_list[1], z=quat_list[2], w=quat_list[3])
         ypr = quat.yaw_pitch_roll
         yaw = ypr[0]
         pitch = ypr[1]
