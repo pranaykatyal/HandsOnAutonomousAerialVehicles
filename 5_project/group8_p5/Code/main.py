@@ -598,7 +598,7 @@ def main(renderer):
     navigator = WindowNavigator(renderer, device='cuda')
     
     currentPose = {
-        'position': np.array([0.0, 0.0, 0.0]),  # Origin - see first window
+        'position': np.array([0.0, 0.0, 0.0]),  # Start - see first window
         'rpy': np.radians([0.0, 0.0, 0.0])
     }
     

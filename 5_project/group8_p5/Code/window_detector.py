@@ -163,7 +163,7 @@ class SimpleFlowDetector:
         # Direct threshold values (not percentiles)
         background_threshold = 6.0   # Lower bound
         hole_threshold = 12.0        # Upper bound
-        
+        # 6-12 works really well!!
         print(f"    Selecting window holes: {background_threshold:.2f} < flow < {hole_threshold:.2f}")
         print(f"      Background threshold (fixed): {background_threshold:.2f}")
         print(f"      Hole threshold (fixed): {hole_threshold:.2f}")
@@ -256,7 +256,7 @@ class SimpleFlowDetector:
             
             # Size filters
             min_area = int(0.001 * H * W)  # At least 0.1% of image
-            max_area = int(0.7 * H * W)     # At most 70% of image
+            max_area = int(0.5 * H * W)     # At most 40% of image
             
             if area < min_area or area > max_area:
                 print(f"      Component {label_id}: REJECTED (size: {area})")
@@ -271,8 +271,8 @@ class SimpleFlowDetector:
             # CRITICAL: Position filter - reject BOTTOM regions (likely floor)
             center_y = y + h/2
             
-            # Reject bottom 60% of image (floor region)
-            if center_y > H * 0.6:
+            # Reject bottom 30% of image (floor region)
+            if center_y > H * 0.85:
                 print(f"      Component {label_id}: REJECTED (bottom region - likely floor, center_y={center_y:.0f})")
                 continue
             
@@ -318,7 +318,9 @@ class SimpleFlowDetector:
             print("    No valid components found!")
             return np.zeros((H, W), dtype=np.float32)
         
-        valid_components.sort(key=lambda x: x['score'], reverse=True)
+        # valid_components.sort(key=lambda x: x['score'], reverse=True)
+        # valid_components.sort(key=lambda x: x['area'])
+        valid_components.sort(key=lambda x: x['score'])
         best_label = valid_components[0]['label_id']
         print(f"    Selected component {best_label} (score={valid_components[0]['score']:.0f})")
         
