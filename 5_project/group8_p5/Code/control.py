@@ -107,14 +107,14 @@ class quad_control:
         
         ##################### SET YOUR GAINS FROM P2 #################################################
         # NED position controller. EDIT GAINS HERE
-        self.x_pid = pid(0.8, 0.0, 0.4, filter_tau, dt, minVal = minVel, maxVal=maxVel)
-        self.y_pid = pid(0.8, 0.0, 0.4, filter_tau, dt, minVal = minVel, maxVal=maxVel)
-        self.z_pid = pid(1.0, 0.0, 0.45, filter_tau, dt, minVal = minVel, maxVal=maxVel)
+        self.x_pid = pid(1.2, 0.0, 0.4, filter_tau, dt, minVal = minVel, maxVal=maxVel)
+        self.y_pid = pid(1.2, 0.0, 0.4, filter_tau, dt, minVal = minVel, maxVal=maxVel)
+        self.z_pid = pid(1.5, 0.0, 0.45, filter_tau, dt, minVal = minVel, maxVal=maxVel)
 
         # NED velocity controller. EDIT GAINS HERE
-        self.vx_pid = pid(1.5, 0.1, 0.4, filter_tau, dt, minVal = minAcc, maxVal=maxAcc)
-        self.vy_pid = pid(1.5, 0.1, 0.4, filter_tau, dt, minVal = minAcc, maxVal=maxAcc)
-        self.vz_pid = pid(2.0, 0.2, 0.5, filter_tau, dt, minVal = minAcc, maxVal=maxAcc)
+        self.vx_pid = pid(1.5, 0.1, 0.3, filter_tau, dt, minVal = minAcc, maxVal=maxAcc)
+        self.vy_pid = pid(1.5, 0.1, 0.3, filter_tau, dt, minVal = minAcc, maxVal=maxAcc)
+        self.vz_pid = pid(2.0, 0.2, 0.4, filter_tau, dt, minVal = minAcc, maxVal=maxAcc)
 
         # Quaternion based P Controller. Output is desired angular rate. tau is time constant of closed loop
         self.tau_angle = 0.3

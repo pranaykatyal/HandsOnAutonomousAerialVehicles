@@ -1,6 +1,6 @@
 """
 Window Detection using Optical Flow (from Project 4)
-Integrates RAFT optical flow for TS²P-style window detection
+Integrates RAFT optical flow for TS[OK]P-style window detection
 FIXED FOR SPLAT COORDINATES: Combined X+Y scanning for forward navigation
 """
 
@@ -36,7 +36,7 @@ class OpticalFlowExtractor:
         self.model.to(device)
         self.model.eval()
         
-        print(f"✓ RAFT model loaded from {model_path}")
+        print(f"[OK] RAFT model loaded from {model_path}")
     
     def compute_flow(self, img1, img2, iters=20):
         """
@@ -118,17 +118,17 @@ class SimpleFlowDetector:
         print(f"  Downsampled to: {self.detection_resolution}x{self.detection_resolution}")
         
         # FLOW COMPUTATION: Two options
-        # 1. TS²P (P4 approach): MIN across all consecutive pairs
-        # 2. Standard: Just first→last frame
+        # 1. TS[OK]P (P4 approach): MIN across all consecutive pairs
+        # 2. Standard: Just first[OK]last frame
         
-        USE_TS2P = False  # ← CHANGE THIS TO SWITCH METHODS
+        USE_TS2P = False  # [OK] CHANGE THIS TO SWITCH METHODS
         
         if USE_TS2P:
-            print(f"  Computing TS²P optical flow (minimum across all pairs)...")
+            print(f"  Computing TS[OK]P optical flow (minimum across all pairs)...")
             from scanning_fix import compute_accumulated_flow_ts2p
             Xi_np = compute_accumulated_flow_ts2p(downsampled_frames, self.flow_extractor, self.device)
         else:
-            print(f"  Computing standard optical flow (first→last frame)...")
+            print(f"  Computing standard optical flow (first[OK]last frame)...")
             # Convert to torch tensors
             frame_first = torch.from_numpy(downsampled_frames[0]).float().permute(2, 0, 1).unsqueeze(0) / 255.0
             frame_last = torch.from_numpy(downsampled_frames[-1]).float().permute(2, 0, 1).unsqueeze(0) / 255.0
@@ -143,32 +143,33 @@ class SimpleFlowDetector:
                 flow_mag = torch.sqrt(u**2 + v**2)
                 Xi_np = flow_mag.cpu().numpy()
             
-            print(f"    Flow first→last: range [{Xi_np.min():.1f}, {Xi_np.max():.1f}], mean {Xi_np.mean():.1f}")
+            print(f"    Flow first[OK]last: range [{Xi_np.min():.1f}, {Xi_np.max():.1f}], mean {Xi_np.mean():.1f}")
         
         print(f"    Flow range: [{Xi_np.min():.2f}, {Xi_np.max():.2f}]")
         print(f"    Flow mean: {Xi_np.mean():.2f}, median: {np.median(Xi_np):.2f}")
         
-        # 🎯 DUAL THRESHOLD: Select MIDDLE-range flow (window frames)
-        # 
-        # With Y+Z diagonal motion, flow is more symmetric
-        # 🎯 CRITICAL INSIGHT: Window HOLES have LOW flow!
-        # 
-        # Flow map shows:
-        # - DARK BLUE squares (flow ~8-12): Window HOLES ← TARGET THESE!
-        # - LIGHT BLUE/CYAN (flow ~5-7): Floor/background
-        # - ORANGE/RED (flow ~17-25): Solid frames/edges
-        #
-        # Strategy: Select EXACT range 8-12 for window holes
+        # ADAPTIVE THRESHOLDING based on flow statistics
+        # Window holes have LOWER flow than solid walls/edges
+        # Strategy: Select flow values in the MIDDLE-LOW range
         
-        # Direct threshold values (not percentiles)
-        background_threshold = 6.0   # Lower bound
-        hole_threshold = 12.0        # Upper bound
-        # 6-12 works really well!!
-        print(f"    Selecting window holes: {background_threshold:.2f} < flow < {hole_threshold:.2f}")
-        print(f"      Background threshold (fixed): {background_threshold:.2f}")
-        print(f"      Hole threshold (fixed): {hole_threshold:.2f}")
-        
-        # Binary mask: Flow range 8-12 = window holes
+        # Adaptive thresholds based on flow range
+        flow_min = Xi_np.min()
+        flow_max = Xi_np.max()
+        flow_range = flow_max - flow_min
+
+        # Calculate percentage-based thresholds
+        lower_percentage = 0.11  # 11%
+        upper_percentage = 0.33  # 33%
+
+        background_threshold = flow_min + flow_range * lower_percentage
+        hole_threshold = flow_min + flow_range * upper_percentage
+
+        print(f"    PERCENTAGE-BASED thresholding:")
+        print(f"      Flow range: {flow_range:.2f} (from {flow_min:.2f} to {flow_max:.2f})")
+        print(f"      Background threshold: {background_threshold:.2f} (18% of range)")
+        print(f"      Hole threshold: {hole_threshold:.2f} (36% of range)")
+
+        # Binary mask: Select flow in the percentage range
         binary_mask = ((Xi_np > background_threshold) & (Xi_np < hole_threshold)).astype(np.uint8) * 255
         
         # DEBUG before morphology
@@ -399,14 +400,14 @@ class SimpleFlowDetector:
         plt.suptitle('Optical Flow Window Detection', fontsize=16, fontweight='bold')
         plt.tight_layout()
         plt.savefig(save_path, dpi=150, bbox_inches='tight')
-        print(f"  ✓ Saved visualization to {save_path}")
+        print(f"  [OK] Saved visualization to {save_path}")
         plt.close()
 
 
 class ActiveScanner:
     """
     Generates scanning trajectories for window detection
-    ✅ FIXED: Y-only horizontal scan with increased distance for better parallax
+    [OK] FIXED: Y-only horizontal scan with increased distance for better parallax
     """
     
     def __init__(self, scan_distance=0.3, num_waypoints=5):
@@ -414,7 +415,7 @@ class ActiveScanner:
         Args:
             scan_distance: Total scanning distance (splat units)
                           For cross pattern: d = scan_distance/4
-                          scan_distance=0.3 → d=0.075 per step
+                          scan_distance=0.3 [OK] d=0.075 per step
                           Larger steps = stronger parallax signal
             num_waypoints: Number of waypoints in scan (always 5 for cross)
         """
@@ -434,7 +435,7 @@ class ActiveScanner:
         if isinstance(waypoint, dict):
             pos = waypoint['position']
             yaw_deg = np.degrees(waypoint['rpy'][2])
-            return f"pos=[{pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f}], yaw={yaw_deg:+.1f}°"
+            return f"pos=[{pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f}], yaw={yaw_deg:+.1f}[OK]"
         elif isinstance(waypoint, np.ndarray):
             # Fallback for old array format
             return f"[{waypoint[0]:.3f}, {waypoint[1]:.3f}, {waypoint[2]:.3f}]"
@@ -445,19 +446,19 @@ class ActiveScanner:
         """
         Generate CROSS/OSCILLATING scanning trajectory (P4 proven pattern)
         
-        ✅ CROSS PATTERN: Oscillate around center position
+        [OK] CROSS PATTERN: Oscillate around center position
         - Frame 0: Reference (center)
         - Frame 1: +Y (right)
         - Frame 2: +Z (up)
         - Frame 3: -Y (left)
         - Frame 4: -Z (down)
         
-        Why this works for TS²P MIN operation:
+        Why this works for TS[OK]P MIN operation:
         - All frames have SIMILAR small displacement from center
         - Creates consistent parallax in all directions
         - MIN across pairs works correctly:
-          * Windows (close): LOW flow in ALL directions → MIN = LOW ✓
-          * Walls (far): HIGH flow in ALL directions → MIN = HIGH ✓
+          * Windows (close): LOW flow in ALL directions [OK] MIN = LOW [OK]
+          * Walls (far): HIGH flow in ALL directions [OK] MIN = HIGH [OK]
         - NO cumulative motion blur (each frame close to center)
         
         Args:
@@ -479,7 +480,7 @@ class ActiveScanner:
         waypoints = []
         
         # Use scan_distance as the oscillation amplitude
-        # For scan_distance=0.2, d=0.05 (moves ±0.05 from center)
+        # For scan_distance=0.2, d=0.05 (moves [OK]0.05 from center)
         d = self.scan_distance / 4
         
         # Frame 0: Reference position (center)

@@ -27,6 +27,16 @@ class WindowPnPEstimator:
         self.window_width = window_width
         self.window_height = window_height
         
+        # Camera-to-Body transformation
+        # PnP outputs in camera optical frame: X=right, Y=down, Z=forward
+        # Drone body frame: X=forward, Y=right, Z=down
+        # Simple forward-facing camera with no rotation:
+        self.R_cam_to_body = np.array([
+            [0, 0, 1],  # Body X (forward) = Camera Z (forward)
+            [1, 0, 0],  # Body Y (right) = Camera X (right)
+            [0, 1, 0],  # Body Z (down) = Camera Y (down)
+        ])
+        
         # Define 3D window corners in window frame (centered at origin)
         w = self.window_width / 2
         h = self.window_height / 2
@@ -38,7 +48,7 @@ class WindowPnPEstimator:
             [-w,  h, 0],  # Top-left
         ], dtype=np.float32)
         
-        print(f"✓ PnP Estimator initialized")
+        print(f"âœ“ PnP Estimator initialized")
         print(f"  Window size: {window_width:.2f}m x {window_height:.2f}m")
         print(f"  Camera matrix:\n{camera_matrix}")
     
@@ -88,7 +98,7 @@ class WindowPnPEstimator:
         print(f"    Found {len(contours)} contours")
         
         if len(contours) == 0:
-            print("  ✗ No contours in mask")
+            print("  [OK] No contours in mask")
             return None
         
         # Get LARGEST contour by area
@@ -101,7 +111,7 @@ class WindowPnPEstimator:
         print(f"    Using largest contour: area = {area:.0f} pixels")
         
         if area < 100:
-            print("  ✗ Contour too small")
+            print("  [OK] Contour too small")
             return None
         
         # METHOD 1: Polygon approximation to get 4 corners (preserves trapezoid)
@@ -190,7 +200,13 @@ class WindowPnPEstimator:
         corners_2d = self.extract_window_corners(mask)
         
         if corners_2d is None:
+            print("[DEBUG] No corners detected in mask.")
             return False, None, None, None
+        
+        print(f"[DEBUG] Detected corners (2D): {corners_2d}")
+        print(f"[DEBUG] Object points (3D): {self.object_points_3d}")
+        print(f"[DEBUG] Camera matrix:\n{self.camera_matrix_original}")
+        print(f"[DEBUG] Distortion coefficients: {self.dist_coeffs}")
         
         # Solve PnP
         success, rvec, tvec = cv2.solvePnP(
@@ -202,14 +218,16 @@ class WindowPnPEstimator:
         )
         
         if not success:
-            print("  ✗ PnP solve failed")
-            return False, None, None, corners_2d
+            print("[DEBUG] PnP failed to estimate pose.")
+            return False, None, None, None
+        
+        print(f"[DEBUG] PnP results: tvec={tvec.flatten()}, rvec={rvec.flatten()}")
         
         # Extract as 1D arrays
         tvec = tvec.flatten()
         rvec = rvec.flatten()
         
-        return True, tvec, rvec, corners_2d
+        return success, tvec, rvec, corners_2d
     
     def transform_to_ned(self, tvec_cam, rvec_cam, drone_pose_ned):
         """
@@ -231,30 +249,110 @@ class WindowPnPEstimator:
         # Drone orientation as rotation matrix (NED)
         R_drone_ned = self._euler_to_rotation_matrix(drone_rpy_ned[0], drone_rpy_ned[1], drone_rpy_ned[2])
         
-        # === STEP 2: Camera-to-NED coordinate system conversion ===
-        # Coordinate change matrix: Camera → NED (when drone is level)
-        R_cam_to_ned_level = np.array([
-            [0, 0, 1],  # NED X = Camera Z (forward)
-            [1, 0, 0],  # NED Y = Camera X (right)
-            [0, 1, 0],  # NED Z = Camera Y (down)
-        ])
+        # === STEP 2: Transform from camera frame to body frame ===
+        # PnP gives translation in camera optical frame
+        # Convert to body frame using fixed mounting transformation
+        tvec_body = self.R_cam_to_body @ tvec_cam
         
-        # === STEP 3: Window position in NED ===
-        # Transform camera-frame translation to NED
-        tvec_cam_as_ned = R_cam_to_ned_level @ tvec_cam
-        window_pos_ned = drone_pos_ned + R_drone_ned @ tvec_cam_as_ned
+        # Debugging scale of tvec
+        print(f"[DEBUG] tvec_cam (camera frame): {tvec_cam}")
+        print(f"[DEBUG] tvec_body (body frame): {tvec_body}")
         
-        # === STEP 4: Window orientation in NED ===
-        # Convert rotation vector to matrix
-        R_window_cam, _ = cv2.Rodrigues(rvec_cam)
+        # Scale adjustment for Gaussian splat map
+        scale_factor = 0.1  # Example scale factor, adjust as needed
+        tvec_body_scaled = tvec_body * scale_factor
+        print(f"[DEBUG] tvec_body_scaled (body frame, scaled): {tvec_body_scaled}")
         
-        # Transform to NED
-        R_window_ned = R_drone_ned @ R_cam_to_ned_level @ R_window_cam
+        # === STEP 3: Transform from body frame to NED ===
+        # Body frame: X=forward, Y=right, Z=down
+        # NED frame: X=north, Y=east, Z=down
+        tvec_ned = R_drone_ned @ tvec_body_scaled + drone_pos_ned
         
-        # Convert to Euler angles (NED convention)
-        window_rpy_ned = self._rotation_matrix_to_euler(R_window_ned)
+        # Debugging NED transformation
+        print(f"[DEBUG] tvec_ned (NED frame): {tvec_ned}")
         
-        return window_pos_ned, window_rpy_ned
+        # Convert rotation vector to NED frame
+        R_cam = cv2.Rodrigues(rvec_cam)[0]  # Camera rotation matrix
+        R_body = self.R_cam_to_body @ R_cam  # Body rotation matrix
+        R_ned = R_drone_ned @ R_body  # NED rotation matrix
+        
+        # Extract Euler angles from NED rotation matrix
+        window_rpy_ned = self._rotation_matrix_to_euler(R_ned)
+        
+        # Additional debugging for transformation chain
+        print("[DEBUG] --- TRANSFORMATION CHAIN ---")
+        print(f"[DEBUG] Drone position (NED): {drone_pos_ned}")
+        print(f"[DEBUG] Drone orientation (NED): {drone_rpy_ned}")
+        print(f"[DEBUG] Camera to body rotation matrix:\n{self.R_cam_to_body}")
+        print(f"[DEBUG] Body to NED rotation matrix:\n{R_drone_ned}")
+        print(f"[DEBUG] Final NED position: {tvec_ned}")
+        
+        return tvec_ned, window_rpy_ned
+    
+    def project_window_to_pixel(self, window_pos_ned, drone_pose_ned):
+        """
+        Project 3D window position to 2D pixel coordinates
+        Uses current drone pose to predict where window center should appear
+        
+        Args:
+            window_pos_ned: (3,) window position in NED frame
+            drone_pose_ned: dict with 'position' (NED) and 'rpy' (NED Euler angles)
+            
+        Returns:
+            pixel_coords: (2,) [x, y] pixel coordinates of window center
+            None if projection fails (behind camera, etc.)
+        """
+        # Transform window position from NED to camera frame
+        drone_pos_ned = drone_pose_ned['position']
+        drone_rpy_ned = drone_pose_ned['rpy']
+        
+        # Vector from drone to window in NED
+        vec_to_window_ned = window_pos_ned - drone_pos_ned
+        
+        print(f"\n    [PnP PROJECTION DEBUG]")
+        print(f"      Window NED: {window_pos_ned}")
+        print(f"      Drone NED: {drone_pos_ned}")
+        print(f"      Vec to window (NED): {vec_to_window_ned}")
+        print(f"      Drone yaw: {np.degrees(drone_rpy_ned[2]):.1f}°")
+        
+        # Drone orientation (NED to body)
+        R_drone_ned = self._euler_to_rotation_matrix(drone_rpy_ned[0], drone_rpy_ned[1], drone_rpy_ned[2])
+        
+        # Transform to body frame
+        vec_to_window_body = R_drone_ned.T @ vec_to_window_ned
+        
+        print(f"      Vec to window (body): {vec_to_window_body}")
+        print(f"        Body X (fwd): {vec_to_window_body[0]:+.2f}")
+        print(f"        Body Y (right): {vec_to_window_body[1]:+.2f}")
+        print(f"        Body Z (down): {vec_to_window_body[2]:+.2f}")
+        
+        # Transform from body to camera frame
+        R_body_to_cam = self.R_cam_to_body.T  # Inverse of cam-to-body
+        vec_to_window_cam = R_body_to_cam @ vec_to_window_body
+        
+        print(f"      Vec to window (camera): {vec_to_window_cam}")
+        print(f"        Camera X (right): {vec_to_window_cam[0]:+.2f}")
+        print(f"        Camera Y (down): {vec_to_window_cam[1]:+.2f}")
+        print(f"        Camera Z (fwd): {vec_to_window_cam[2]:+.2f}")
+        
+        # Check if window is in front of camera (positive Z)
+        if vec_to_window_cam[2] <= 0:
+            print("      [ERROR] Window behind camera")
+            return None
+        
+        # Project to image plane using camera matrix
+        # [u, v, 1]^T = K * [X, Y, Z]^T / Z
+        X_cam, Y_cam, Z_cam = vec_to_window_cam
+        
+        u = (self.camera_matrix_original[0, 0] * X_cam / Z_cam) + self.camera_matrix_original[0, 2]
+        v = (self.camera_matrix_original[1, 1] * Y_cam / Z_cam) + self.camera_matrix_original[1, 2]
+        
+        pixel_coords = np.array([u, v])
+        
+        print(f"      Projected pixel: [{u:.1f}, {v:.1f}]")
+        print(f"      [END PnP DEBUG]\n")
+        
+        return pixel_coords
     
     def _euler_to_rotation_matrix(self, roll, pitch, yaw):
         """Convert Euler angles (roll, pitch, yaw) to rotation matrix"""
@@ -315,7 +413,7 @@ class WindowPnPEstimator:
             
             # If dimensions don't match, downsample image to mask resolution
             if (img_h, img_w) != (mask_h, mask_w):
-                print(f"    → Downsampling image to {mask_w}x{mask_h}")
+                print(f"    â†’ Downsampling image to {mask_w}x{mask_h}")
                 vis_img = cv2.resize(image, (mask_w, mask_h), interpolation=cv2.INTER_LINEAR)
                 
                 # Scale camera matrix to match
@@ -333,7 +431,7 @@ class WindowPnPEstimator:
             
             # Verify dimensions NOW match
             if mask.shape[:2] != vis_img.shape[:2]:
-                print(f"  ✗ ERROR: Mask shape {mask.shape[:2]} != Image shape {vis_img.shape[:2]}")
+                print(f"  [OK] ERROR: Mask shape {mask.shape[:2]} != Image shape {vis_img.shape[:2]}")
                 return vis_img
             
             # Draw actual contour in cyan for comparison
@@ -390,7 +488,7 @@ class WindowPnPEstimator:
         
         if save_path:
             cv2.imwrite(save_path, cv2.cvtColor(vis_img, cv2.COLOR_RGB2BGR))
-            print(f"  ✓ Saved PnP viz: {save_path}")
+            print(f"  âœ“ Saved PnP viz: {save_path}")
         
         return vis_img
 
