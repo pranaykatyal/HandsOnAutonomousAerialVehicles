@@ -3,6 +3,7 @@ Drone Racing Navigation System - WITH PnP INTEGRATION
 [DONE] PnP-based window pose estimation
 [DONE] Yaw changes use goToWaypoint (not instant)
 [DONE] Coordinate transformation fixed
+[DONE] Frame rendering during visual servoing
 """
 
 from splat_render import SplatRenderer
@@ -39,6 +40,11 @@ class WindowNavigator:
         self.renderer = renderer
         self.device = device
         
+        # PnP scale factor - tune this to match real world scale
+        # If projected box is too large (outside frame), INCREASE this value (pushes window further)
+        # If projected box is too small, DECREASE this value (brings window closer)
+        self.PNP_SCALE_FACTOR = 2.0  # Start with 2.0 (makes window 2x further than PnP reports)
+        
         # Initialize optical flow detector
         raft_model_path = './RAFT/models/raft-things.pth'
         self.flow_extractor = OpticalFlowExtractor(raft_model_path, device=device)
@@ -65,8 +71,8 @@ class WindowNavigator:
         self.scan_count = 0
         self.video_frames = []
         
-        print("âœ“ Window Navigator initialized with PnP")
-        print(f"  Image: {img_w}x{img_h}, FOV: {np.degrees(fov):.1f}Â°")
+        print("Window Navigator initialized with PnP")
+        print(f"  Image: {img_w}x{img_h}, FOV: {np.degrees(fov):.1f} deg")
         print(f"  Map bounds: X=+/-{self.MAP_X_LIMIT}m, Y=+/-{self.MAP_Y_LIMIT}m, Z=+/-{self.MAP_Z_LIMIT}m")
     
     def is_position_in_bounds(self, pos):
@@ -83,6 +89,65 @@ class WindowNavigator:
             np.clip(pos[2], -self.MAP_Z_LIMIT, self.MAP_Z_LIMIT)
         ])
     
+    
+    def _check_corner_consistency(self, detected_corners_2d, window_3d_pos, window_rpy_ned, camera_pose, threshold_pixels=200):
+        """
+        Check if detected corners match the projected corners from 3D estimate.
+        This prevents window-jumping when detector locks onto a different window.
+        
+        Args:
+            detected_corners_2d: (4,2) array of detected corners
+            window_3d_pos: (3,) current window position estimate
+            window_rpy_ned: (3,) current window orientation
+            camera_pose: Current camera pose dict
+            threshold_pixels: Maximum average distance for match
+            
+        Returns:
+            bool: True if corners match (same window), False if different window
+        """
+        if detected_corners_2d is None:
+            return False
+        
+        # Project current 3D estimate to get expected corners
+        w = self.pnp_estimator.window_width / 2
+        h = self.pnp_estimator.window_height / 2
+        R_window = self.pnp_estimator._euler_to_rotation_matrix(
+            window_rpy_ned[0], window_rpy_ned[1], window_rpy_ned[2]
+        )
+        corners_local = np.array([
+            [-w, -h, 0], [w, -h, 0], [w, h, 0], [-w, h, 0]
+        ])
+        window_corners_3d = np.array([
+            window_3d_pos + R_window @ corner for corner in corners_local
+        ])
+        
+        # Project to image
+        projected_corners = []
+        for corner_3d in window_corners_3d:
+            corner_2d = self.pnp_estimator.project_window_to_pixel(corner_3d, camera_pose)
+            if corner_2d is not None:
+                projected_corners.append(corner_2d)
+        
+        if len(projected_corners) != 4:
+            print(f"    Corner check: Can't project all 4 corners")
+            return False
+        
+        # Calculate average pixel distance
+        corner_distances = [
+            np.linalg.norm(detected_corners_2d[i] - projected_corners[i])
+            for i in range(4)
+        ]
+        avg_dist = np.mean(corner_distances)
+        max_dist = np.max(corner_distances)
+        
+        is_match = avg_dist < threshold_pixels
+        
+        if is_match:
+            print(f"    ✓ Corner match: avg={avg_dist:.1f}px, max={max_dist:.1f}px (SAME window)")
+        else:
+            print(f"    ✗ Corner mismatch: avg={avg_dist:.1f}px, max={max_dist:.1f}px (DIFFERENT window!)")
+        
+        return is_match
     
     def scan_for_window(self, current_pose, pose_history, scan_type='initial'):
         """Scan for window and estimate pose with PnP"""
@@ -106,7 +171,7 @@ class WindowNavigator:
             scan_frames.append(rgb)
             scan_poses.append(scan_pose)
             
-            print(f"    âœ“ Frame {i+1}/{len(scan_waypoints)}")
+            print(f"    Frame {i+1}/{len(scan_waypoints)}")
         
         # Detect window
         print("\n  Detecting window...")
@@ -125,12 +190,12 @@ class WindowNavigator:
             print(f"    Center: {center_2d}")
             return None, scan_frames, None
         
-        print(f"  âœ“ Window at pixel {center_2d} (conf: {confidence:.3f})")
+        print(f"  Window at pixel {center_2d} (conf: {confidence:.3f})")
         
         # PnP POSE ESTIMATION
         print("\n  Estimating pose with PnP...")
         
-        # CRITICAL: Use first frame as reference since flow computation uses firstâ†’last
+        # CRITICAL: Use first frame as reference since flow computation uses first-last
         # The mask is generated from optical flow between frame 0 and frame N-1
         # So the mask coordinates are in the coordinate system of frame 0
         ref_idx = 0  # First frame
@@ -168,12 +233,14 @@ class WindowNavigator:
         
         print(f"  Camera frame: t={tvec_cam}, dist={np.linalg.norm(tvec_cam):.2f}m")
         
-        # Transform to NED
+        # Transform to NED with SCALE FACTOR
         window_pos_ned, window_rpy_ned = self.pnp_estimator.transform_to_ned(
-            tvec_cam, rvec_cam, ref_pose
+            tvec_cam * self.PNP_SCALE_FACTOR,  # Scale the translation vector
+            rvec_cam, 
+            ref_pose
         )
         
-        print(f"  NED: pos={window_pos_ned}")
+        print(f"  NED (scaled by {self.PNP_SCALE_FACTOR}): pos={window_pos_ned}")
         print(f"       rpy(deg)={np.degrees(window_rpy_ned)}")
         
         # Collision check
@@ -184,7 +251,7 @@ class WindowNavigator:
                 adjusted = ref_pose['position'] + (window_pos_ned - ref_pose['position']) * scale
                 
                 if not doesItCollide(adjusted):
-                    print(f"  âœ“ Adjusted ({adj_name}): {adjusted}")
+                    print(f"  Adjusted ({adj_name}): {adjusted}")
                     window_pos_ned = adjusted
                     break
             else:
@@ -198,67 +265,247 @@ class WindowNavigator:
             print(f"    Limits: X=+/-{self.MAP_X_LIMIT}, Y=+/-{self.MAP_Y_LIMIT}, Z=+/-{self.MAP_Z_LIMIT}")
             return None, scan_frames, None
         
-        # Ensure frames are saved in log/frames with proper numbering
-        os.makedirs('./log/frames', exist_ok=True)
-        for idx, frame in enumerate(scan_frames):
-            frame_path = f'./log/frames/frame_{idx:03d}.png'
-            cv2.imwrite(frame_path, frame[:, :, ::-1])  # Convert RGB to BGR for saving
-            print(f"  [OK] Saved frame {idx+1}/{len(scan_frames)} to {frame_path}")
+        # Ensure frames are saved with pose overlay through record_frame
+        for idx, (frame, pose) in enumerate(zip(scan_frames, scan_poses)):
+            self.record_frame(frame, pose=pose, annotation=f"SCAN {scan_type}")
+            print(f"  [OK] Saved scan frame {idx+1}/{len(scan_frames)}")
         
-        return window_pos_ned, scan_frames, center_2d
+        return window_pos_ned, scan_frames, center_2d, corners_2d
     
-    def _debug_visualize_alignment_flow(self, current_pose, label="debug"):
+    def _draw_window_center_crosshair(self, rgb_image, pixel_coords, corners_2d=None):
         """
-        DEBUG: Compute and visualize optical flow from current position
-        Creates side-by-side: Current Frame | Flow Magnitude | Detection Mask
+        Draw a crosshair at the projected window center and optionally the PnP corners
+        
+        Args:
+            rgb_image: RGB image to draw on
+            pixel_coords: (x, y) pixel coordinates of window center
+            corners_2d: Optional (4, 2) array of PnP corner coordinates
+            
+        Returns:
+            Modified RGB image
         """
-        print(f"\n  DEBUG: Computing flow at {label}")
+        img = rgb_image.copy()
+        x, y = int(pixel_coords[0]), int(pixel_coords[1])
         
-        # Generate mini scan (3 frames for quick flow computation)
-        scan_waypoints = self.scanner.generate_scan_trajectory(current_pose)
+        # Draw crosshair (red)
+        crosshair_size = 30
+        thickness = 3
+        color = (255, 0, 0)  # Red
         
-        debug_frames = []
-        for i in range(min(3, len(scan_waypoints))):
-            waypoint = scan_waypoints[i]
-            rgb, _, _ = self.renderer.render(waypoint['position'], waypoint['rpy'])
-            debug_frames.append(rgb)
+        # Horizontal line
+        cv2.line(img, (x - crosshair_size, y), (x + crosshair_size, y), color, thickness)
+        # Vertical line
+        cv2.line(img, (x, y - crosshair_size), (x, y + crosshair_size), color, thickness)
         
-        if len(debug_frames) < 2:
-            print("  DEBUG: Not enough frames")
-            return None, None
+        # Circle at center
+        cv2.circle(img, (x, y), 8, color, thickness)
         
-        # Downsample for flow computation
-        frame1_small = cv2.resize(debug_frames[0], (512, 512))
-        frame2_small = cv2.resize(debug_frames[-1], (512, 512))
+        # Draw PnP corners and box if provided
+        if corners_2d is not None and len(corners_2d) == 4:
+            # Draw corners (yellow circles)
+            for i, corner in enumerate(corners_2d):
+                cx, cy = int(corner[0]), int(corner[1])
+                cv2.circle(img, (cx, cy), 8, (255, 255, 0), -1)  # Yellow filled circle
+                # Label corner
+                cv2.putText(img, str(i), (cx + 10, cy + 10),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 2)
+            
+            # Draw bounding box (yellow lines)
+            corners_int = corners_2d.astype(np.int32)
+            cv2.polylines(img, [corners_int], True, (255, 255, 0), 2)
         
-        # Compute optical flow
-        frame1_torch = torch.from_numpy(frame1_small).float().permute(2, 0, 1).unsqueeze(0) / 255.0
-        frame2_torch = torch.from_numpy(frame2_small).float().permute(2, 0, 1).unsqueeze(0) / 255.0
-        frame1_torch = frame1_torch.to(self.device)
-        frame2_torch = frame2_torch.to(self.device)
+        # Draw image center for reference (green)
+        img_h, img_w = img.shape[:2]
+        img_center_x, img_center_y = img_w // 2, img_h // 2
+        cv2.circle(img, (img_center_x, img_center_y), 5, (0, 255, 0), 2)
         
-        with torch.no_grad():
-            flow = self.flow_extractor.compute_flow(frame1_torch, frame2_torch)
-            u = flow[0, 0]
-            v = flow[0, 1]
-            flow_mag = torch.sqrt(u**2 + v**2)
-            Xi_np = flow_mag.cpu().numpy()
+        # Add text showing pixel error
+        pixel_error = np.linalg.norm(np.array([x, y]) - np.array([img_center_x, img_center_y]))
+        cv2.putText(img, f"Window center: ({x}, {y})", (x + 40, y), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+        cv2.putText(img, f"Pixel error: {pixel_error:.1f}px", (x + 40, y + 25),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
         
-        print(f"  DEBUG: Flow range [{Xi_np.min():.1f}, {Xi_np.max():.1f}], mean {Xi_np.mean():.1f}")
-        
-        # Run detection on these frames to get mask
-        mask, _, _, _ = self.detector.detect_window(debug_frames)
-        
-        # Return flow and mask for visualization
-        return Xi_np, mask
+        return img
     
-    
-    def visual_servo_to_window(self, current_pose, window_3d_pos, window_rpy_ned, pose_history):
+    def visual_servo_to_window(self, current_pose, window_3d_pos, window_rpy_ned, pose_history, initial_corners_2d=None):
         """
         Visual servoing approach using PnP pose tracking
         
         1. Orient yaw to face window
-        2. Servo Y/Z to center window (±5px accuracy)
+        2. Servo Y/Z to center window
+        3. Move forward when centered
+        
+        Args:
+            current_pose: Current drone pose
+            window_3d_pos: Window 3D position (NED)
+            window_rpy_ned: Window orientation (NED)
+            pose_history: Pose history list
+            initial_corners_2d: Initial PnP corners from detection (4, 2) array
+            
+        Returns:
+            final_pose: Pose when reached window or -1 if failed
+        """
+        print("\n=== VISUAL SERVOING TO WINDOW ===")
+        
+        # Store current PnP corners for visualization
+        current_corners_2d = initial_corners_2d
+        
+        # Calculate initial yaw error
+        vec_to_window = window_3d_pos - current_pose['position']
+        desired_yaw = np.arctan2(vec_to_window[1], vec_to_window[0])  # atan2(East, North)
+        current_yaw = current_pose['rpy'][2]
+        yaw_error = wrap_angle(desired_yaw - current_yaw)
+
+        # STEP 1: Align yaw to face window WITH CONTINUOUS PNP TRACKING
+        print("\n  STEP 1: Aligning yaw to face window...")
+        yaw_tolerance = np.radians(1.0)  # 1 degree tolerance
+        yaw_step = np.radians(1.0)  # Increment yaw by 1 degree per iteration
+        
+        yaw_iter = 0
+        max_yaw_iterations = 30  # Safety limit
+        
+        while abs(yaw_error) > yaw_tolerance and yaw_iter < max_yaw_iterations:
+            # Incrementally adjust yaw
+            step_yaw = np.clip(yaw_error, -yaw_step, yaw_step)
+            current_pose['rpy'][2] += step_yaw  # Adjust yaw only
+            
+            # CONTINUOUS PNP TRACKING: Re-estimate window position every few iterations
+            if yaw_iter > 0 and yaw_iter % 3 == 0:  # Update PnP every 3 iterations
+                print(f"    Re-estimating window position (iteration {yaw_iter})...")
+                
+                # Quick scan at current pose
+                mini_scan_waypoints = self.scanner.generate_scan_trajectory(current_pose)
+                mini_frames = []
+                mini_poses = []
+                
+                for waypoint in mini_scan_waypoints:
+                    scan_pose = {
+                        'position': waypoint['position'].copy(),
+                        'rpy': waypoint['rpy'].copy()
+                    }
+                    rgb, _, _ = self.renderer.render(scan_pose['position'], scan_pose['rpy'])
+                    mini_frames.append(rgb)
+                    mini_poses.append(scan_pose)
+                
+                # Re-detect window
+                mask, center_2d, confidence, _ = self.detector.detect_window(mini_frames)
+                
+                if center_2d is not None and confidence > 0.005:
+                    # Re-estimate pose with PnP
+                    ref_pose = mini_poses[0]
+                    ref_rgb = mini_frames[0]
+                    
+                    success, tvec_cam, rvec_cam, corners_2d_new = self.pnp_estimator.estimate_pose(mask)
+                    
+                    if success:
+                        # Update window position
+                        updated_window_pos, updated_window_rpy = self.pnp_estimator.transform_to_ned(
+                            tvec_cam * self.PNP_SCALE_FACTOR, rvec_cam, ref_pose
+                        )
+                        
+                        # SPATIAL CONSISTENCY CHECK: Reject if too far from current estimate
+                        position_drift = np.linalg.norm(updated_window_pos - window_3d_pos)
+                        max_drift = 0.5  # meters - windows don't move this much between frames!
+                        
+                        # CORNER CONSISTENCY CHECK: Make sure we\'re tracking the SAME window
+                        corners_match = self._check_corner_consistency(
+                            corners_2d_new, window_3d_pos, window_rpy_ned, ref_pose, threshold_pixels=200
+                        )
+                        
+                        if position_drift < max_drift and corners_match:
+                            # Update target if position is valid
+                            if self.is_position_in_bounds(updated_window_pos) and not doesItCollide(updated_window_pos):
+                                window_3d_pos = updated_window_pos
+                                window_rpy_ned = updated_window_rpy
+                                current_corners_2d = corners_2d_new  # Update corners for visualization
+                                print(f"    Updated window position: {window_3d_pos} (drift: {position_drift:.3f}m)")
+                                
+                                # Recalculate yaw error with updated position
+                                vec_to_window = window_3d_pos - current_pose['position']
+                                desired_yaw = np.arctan2(vec_to_window[1], vec_to_window[0])
+                        else:
+                            print(f"    REJECTED update - position drift too large: {position_drift:.3f}m > {max_drift}m")
+                            print(f"      Old: {window_3d_pos}")
+                            print(f"      New: {updated_window_pos}")
+                else:
+                    print(f"    Re-detection failed (confidence: {confidence:.3f})")
+            
+            # Calculate yaw error
+            vec_to_window = window_3d_pos - current_pose['position']
+            desired_yaw = np.arctan2(vec_to_window[1], vec_to_window[0])
+            yaw_error = wrap_angle(desired_yaw - current_pose['rpy'][2])
+
+            print(f"  Adjusting yaw: Current={np.degrees(current_pose['rpy'][2]):.1f} deg, Target={np.degrees(desired_yaw):.1f} deg, Error={np.degrees(yaw_error):.1f} deg")
+            
+            # Render and save frame with PnP corners visualization
+            rgb, _, _ = self.renderer.render(current_pose['position'], current_pose['rpy'])
+            rgb_gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
+            
+            # FAST CORNER TRACKING: Use optical flow between PnP updates
+            if current_corners_2d is not None and yaw_iter > 0 and yaw_iter % 3 != 0:
+                # Not a PnP update iteration - track corners with optical flow
+                if hasattr(self, '_prev_frame_gray') and self._prev_frame_gray is not None:
+                    # Use Lucas-Kanade optical flow to track corners
+                    lk_params = dict(winSize=(15, 15), maxLevel=2,
+                                    criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
+                    
+                    new_corners, status, err = cv2.calcOpticalFlowPyrLK(
+                        self._prev_frame_gray, rgb_gray,
+                        current_corners_2d.astype(np.float32),
+                        None, **lk_params
+                    )
+                    
+                    # Update corners if tracking successful
+                    if new_corners is not None and np.sum(status) == 4:
+                        # All 4 corners tracked successfully
+                        current_corners_2d = new_corners
+                        print(f"    Tracked corners with optical flow")
+                    else:
+                        print(f"    Optical flow tracking failed ({np.sum(status)}/4 corners)")
+            
+            # Store current frame for next optical flow
+            self._prev_frame_gray = rgb_gray.copy()
+            
+            # Draw ONLY the actual PnP corners in GREEN (no synthetic yellow projection)
+            if current_corners_2d is not None:
+                for i, corner in enumerate(current_corners_2d):
+                    x, y = int(corner[0]), int(corner[1])
+                    # Check if in bounds
+                    if 0 <= x < rgb.shape[1] and 0 <= y < rgb.shape[0]:
+                        cv2.circle(rgb, (x, y), 8, (0, 255, 0), 2)  # Green circles
+                        cv2.putText(rgb, f"PnP{i}", (x+12, y+5), 
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                
+                # Draw green box connecting PnP corners
+                corners_int = current_corners_2d.astype(np.int32)
+                cv2.polylines(rgb, [corners_int], True, (0, 255, 0), 3)  # Green box
+                
+                # Compute center of PnP corners for crosshair
+                pnp_center_x = int(np.mean(current_corners_2d[:, 0]))
+                pnp_center_y = int(np.mean(current_corners_2d[:, 1]))
+                pnp_center = (pnp_center_x, pnp_center_y)
+                
+                # Draw crosshair at PnP center
+                rgb = self._draw_window_center_crosshair(rgb, pnp_center, None)
+                
+                print(f"    PnP center: ({pnp_center_x}, {pnp_center_y})")
+            else:
+                print(f"    WARNING: No PnP corners available!")
+            
+            self.record_frame(rgb, pose=current_pose, annotation=f"YAW_ALIGN iter={yaw_iter}")
+            yaw_iter += 1
+        
+        if yaw_iter >= max_yaw_iterations:
+            print(f"  [ERROR] Yaw alignment exceeded max iterations")
+            return -1
+
+        print("  [OK] Yaw aligned to window")
+        """
+        Visual servoing approach using PnP pose tracking
+        
+        1. Orient yaw to face window
+        2. Servo Y/Z to center window
         3. Move forward when centered
         
         Args:
@@ -278,28 +525,164 @@ class WindowNavigator:
         current_yaw = current_pose['rpy'][2]
         yaw_error = wrap_angle(desired_yaw - current_yaw)
 
-        # STEP 1: Align yaw to face window
+        # STEP 1: Align yaw to face window WITH CONTINUOUS PNP TRACKING
         print("\n  STEP 1: Aligning yaw to face window...")
-        yaw_tolerance = np.radians(1.0)  # 1° tolerance
-        yaw_step = np.radians(1.0)  # Increment yaw by 1° per iteration
-
-        while abs(yaw_error) > yaw_tolerance:
+        yaw_tolerance = np.radians(1.0)  # 1 degree tolerance
+        yaw_step = np.radians(1.0)  # Increment yaw by 1 degree per iteration
+        
+        yaw_iter = 0
+        max_yaw_iterations = 30  # Safety limit
+        
+        while abs(yaw_error) > yaw_tolerance and yaw_iter < max_yaw_iterations:
             # Incrementally adjust yaw
             step_yaw = np.clip(yaw_error, -yaw_step, yaw_step)
             current_pose['rpy'][2] += step_yaw  # Adjust yaw only
+            
+            # CONTINUOUS PNP TRACKING: Re-estimate window position every few iterations
+            if yaw_iter > 0 and yaw_iter % 3 == 0:  # Update PnP every 3 iterations
+                print(f"    Re-estimating window position (iteration {yaw_iter})...")
+                
+                # Quick scan at current pose
+                mini_scan_waypoints = self.scanner.generate_scan_trajectory(current_pose)
+                mini_frames = []
+                mini_poses = []
+                
+                for waypoint in mini_scan_waypoints:
+                    scan_pose = {
+                        'position': waypoint['position'].copy(),
+                        'rpy': waypoint['rpy'].copy()
+                    }
+                    rgb, _, _ = self.renderer.render(scan_pose['position'], scan_pose['rpy'])
+                    mini_frames.append(rgb)
+                    mini_poses.append(scan_pose)
+                
+                # Re-detect window
+                mask, center_2d, confidence, _ = self.detector.detect_window(mini_frames)
+                
+                if center_2d is not None and confidence > 0.005:
+                    # Re-estimate pose with PnP
+                    ref_pose = mini_poses[0]
+                    ref_rgb = mini_frames[0]
+                    
+                    success, tvec_cam, rvec_cam, _ = self.pnp_estimator.estimate_pose(mask)
+                    
+                    if success:
+                        # Update window position
+                        updated_window_pos, updated_window_rpy = self.pnp_estimator.transform_to_ned(
+                            tvec_cam * self.PNP_SCALE_FACTOR, rvec_cam, ref_pose
+                        )
+                        
+                        # SPATIAL CONSISTENCY CHECK: Reject if too far from current estimate
+                        position_drift = np.linalg.norm(updated_window_pos - window_3d_pos)
+                        max_drift = 0.5  # meters - windows don't move this much between frames!
+                        
+                        # CORNER CONSISTENCY CHECK: Make sure we\'re tracking the SAME window
+                        corners_match = self._check_corner_consistency(
+                            corners_2d_new, window_3d_pos, window_rpy_ned, ref_pose, threshold_pixels=200
+                        )
+                        
+                        if position_drift < max_drift and corners_match:
+                            # Update target if position is valid
+                            if self.is_position_in_bounds(updated_window_pos) and not doesItCollide(updated_window_pos):
+                                window_3d_pos = updated_window_pos
+                                window_rpy_ned = updated_window_rpy
+                                print(f"    Updated window position: {window_3d_pos} (drift: {position_drift:.3f}m)")
+                                
+                                # Recalculate yaw error with updated position
+                                vec_to_window = window_3d_pos - current_pose['position']
+                                desired_yaw = np.arctan2(vec_to_window[1], vec_to_window[0])
+                        else:
+                            print(f"    REJECTED update - position drift too large: {position_drift:.3f}m > {max_drift}m")
+                            print(f"      Old: {window_3d_pos}")
+                            print(f"      New: {updated_window_pos}")
+                else:
+                    print(f"    Re-detection failed (confidence: {confidence:.3f})")
+            
+            # Calculate yaw error
+            vec_to_window = window_3d_pos - current_pose['position']
+            desired_yaw = np.arctan2(vec_to_window[1], vec_to_window[0])
             yaw_error = wrap_angle(desired_yaw - current_pose['rpy'][2])
 
-            print(f"  Adjusting yaw: Current={np.degrees(current_pose['rpy'][2]):.1f}°, Target={np.degrees(desired_yaw):.1f}°, Error={np.degrees(yaw_error):.1f}°")
+            print(f"  Adjusting yaw: Current={np.degrees(current_pose['rpy'][2]):.1f} deg, Target={np.degrees(desired_yaw):.1f} deg, Error={np.degrees(yaw_error):.1f} deg")
+            
+            # Render and save frame with window center projection
+            rgb, _, _ = self.renderer.render(current_pose['position'], current_pose['rpy'])
+            
+            # Project window center to pixel coordinates
+            projected_center = self.pnp_estimator.project_window_to_pixel(window_3d_pos, current_pose)
+            
+            # Draw crosshair at projected window center
+            if projected_center is not None:
+                rgb = self._draw_window_center_crosshair(rgb, projected_center)
+            
+            self.record_frame(rgb, pose=current_pose, annotation=f"YAW_ALIGN iter={yaw_iter}")
+            yaw_iter += 1
+        
+        if yaw_iter >= max_yaw_iterations:
+            print(f"  [ERROR] Yaw alignment exceeded max iterations")
+            return -1
 
         print("  [OK] Yaw aligned to window")
 
-        # STEP 2: Align X and Y to center the window
-        print("\n  STEP 2: Aligning X and Y to center window...")
+        # STEP 2: Align Y and Z to center the window (lateral and vertical) WITH CONTINUOUS PNP TRACKING
+        print("\n  STEP 2: Aligning Y and Z to center window...")
         position_tolerance = 0.05  # 5 cm tolerance
-
-        while True:
-            # Compute position error
-            position_error = window_3d_pos[:2] - current_pose['position'][:2]  # X and Y only
+        
+        pos_iter = 0
+        max_iterations = 20  # Safety limit
+        while pos_iter < max_iterations:
+            # CONTINUOUS PNP TRACKING: Re-estimate window position every few iterations
+            if pos_iter % 3 == 0 and pos_iter > 0:
+                print(f"    Re-estimating window position (iteration {pos_iter})...")
+                
+                # Quick scan at current pose
+                mini_scan_waypoints = self.scanner.generate_scan_trajectory(current_pose)
+                mini_frames = []
+                mini_poses = []
+                
+                for waypoint in mini_scan_waypoints:
+                    scan_pose = {
+                        'position': waypoint['position'].copy(),
+                        'rpy': waypoint['rpy'].copy()
+                    }
+                    rgb, _, _ = self.renderer.render(scan_pose['position'], scan_pose['rpy'])
+                    mini_frames.append(rgb)
+                    mini_poses.append(scan_pose)
+                
+                # Re-detect window
+                mask, center_2d, confidence, _ = self.detector.detect_window(mini_frames)
+                
+                if center_2d is not None and confidence > 0.005:
+                    # Re-estimate pose with PnP
+                    ref_pose = mini_poses[0]
+                    ref_rgb = mini_frames[0]
+                    
+                    success, tvec_cam, rvec_cam, corners_2d_new = self.pnp_estimator.estimate_pose(mask)
+                    
+                    if success:
+                        # Update window position
+                        updated_window_pos, updated_window_rpy = self.pnp_estimator.transform_to_ned(
+                            tvec_cam * self.PNP_SCALE_FACTOR, rvec_cam, ref_pose
+                        )
+                        
+                        # SPATIAL CONSISTENCY CHECK: Reject if too far from current estimate
+                        position_drift = np.linalg.norm(updated_window_pos - window_3d_pos)
+                        max_drift = 0.3  # meters - tighter tolerance for lateral alignment
+                        
+                        if position_drift < max_drift:
+                            # Update target if position is valid
+                            if self.is_position_in_bounds(updated_window_pos) and not doesItCollide(updated_window_pos):
+                                window_3d_pos = updated_window_pos
+                                window_rpy_ned = updated_window_rpy
+                                current_corners_2d = corners_2d_new  # Update corners for visualization
+                                print(f"    Updated window position: {window_3d_pos} (drift: {position_drift:.3f}m)")
+                        else:
+                            print(f"    REJECTED update - position drift too large: {position_drift:.3f}m > {max_drift}m")
+                else:
+                    print(f"    Re-detection failed (confidence: {confidence:.3f})")
+            
+            # Compute position error (Y and Z only - lateral and vertical)
+            position_error = window_3d_pos[1:] - current_pose['position'][1:]  # Y and Z only
             error_magnitude = np.linalg.norm(position_error)
 
             if error_magnitude < position_tolerance:
@@ -308,52 +691,88 @@ class WindowNavigator:
 
             # Move towards target position
             step_position = 0.1 * position_error / error_magnitude  # Scale step size
-            current_pose['position'][:2] += step_position  # Adjust X and Y only
+            
+            # Compute new position
+            new_position = current_pose['position'].copy()
+            new_position[1:] += step_position  # Adjust Y and Z only (NOT X)
+            
+            # Bounds check
+            if not self.is_position_in_bounds(new_position):
+                print(f"  [ERROR] Lateral/vertical movement would go out of bounds")
+                print(f"    Current: {current_pose['position']}")
+                print(f"    Target: {new_position}")
+                return -1
+            
+            # Collision check
+            if doesItCollide(new_position):
+                print(f"  [ERROR] Lateral/vertical movement would collide")
+                return -1
+            
+            # Apply movement
+            current_pose['position'] = new_position
 
-            print(f"  Adjusting position: Current={current_pose['position'][:2]}, Target={window_3d_pos[:2]}, Error={position_error}")
+            print(f"  Adjusting position: Current Y,Z={current_pose['position'][1:]}, Target Y,Z={window_3d_pos[1:]}, Error={position_error}")
+            
+            # Render and save frame with window center projection
+            rgb, _, _ = self.renderer.render(current_pose['position'], current_pose['rpy'])
+            
+            # Project window center to pixel coordinates
+            projected_center = self.pnp_estimator.project_window_to_pixel(window_3d_pos, current_pose)
+            
+            # Draw crosshair at projected window center WITH CORNERS
+            if projected_center is not None:
+                rgb = self._draw_window_center_crosshair(rgb, projected_center, current_corners_2d)
+            
+            self.record_frame(rgb, pose=current_pose, annotation=f"POS_ALIGN iter={pos_iter}")
+            pos_iter += 1
+        
+        if pos_iter >= max_iterations:
+            print(f"  [ERROR] Position alignment exceeded max iterations")
+            return -1
         
         # STEP 3: Move forward if not too close
         distance_threshold = 0.5  # Stop servoing when this close (meters)
-        max_distance = 20.0  # Abort if window gets too far (something's wrong)
         distance_to_window = np.linalg.norm(window_3d_pos - current_pose['position'])
         
         if distance_to_window > distance_threshold:
             print(f"\n  STEP 3: Moving forward...")
             forward_distance = min(0.3, distance_to_window - 0.3)
             
-            # Compute forward position in NED
+            # CRITICAL: Move forward in the drone's LOCAL forward direction
+            # After yaw alignment, the drone is rotated to face the window
+            # Forward in drone frame = +X in body frame
+            # We need to transform this to NED frame using current yaw
             current_yaw = current_pose['rpy'][2]
+            
+            # Forward vector in NED frame (accounting for yaw rotation)
             forward_vec_ned = np.array([
-                np.cos(current_yaw),  # North
-                np.sin(current_yaw),  # East
-                0.0                   # Down (maintain altitude)
+                np.cos(current_yaw),  # North component
+                np.sin(current_yaw),  # East component  
+                0.0                   # Down component (maintain altitude)
             ]) * forward_distance
             
             target_pos_ned = current_pose['position'] + forward_vec_ned
+            
+            print(f"    Current yaw: {np.degrees(current_yaw):.1f} deg")
+            print(f"    Forward vector (NED): {forward_vec_ned}")
+            print(f"    Target position: {target_pos_ned}")
             
             if doesItCollide(target_pos_ned):
                 print(f"  [ERROR] Forward position collides")
                 return -1
             
-            # Use safe_update_position to validate the target position
-            updated_pose = self.safe_update_position(current_pose, target_pos_ned)
-            if updated_pose is None:
+            # Bounds check
+            if not self.is_position_in_bounds(target_pos_ned):
+                print(f"  [ERROR] Forward position outside bounds")
                 return -1
-
-            # Proceed with the movement if no collision
-            result = goToWaypoint(
-                current_pose, target_pos_ned,
-                velocity=0.08,
-                pose_history=pose_history,
-                action=f'FORWARD_W{self.window_count}',
-                lock_roll_pitch=True,
-                navigator=self
-            )
-
-            if result == -1:
-                return -1
-
-            current_pose = result
+            
+            # Move forward using direct position update (already aligned)
+            current_pose['position'] = target_pos_ned
+            
+            # Render frame after forward movement
+            rgb, _, _ = self.renderer.render(current_pose['position'], current_pose['rpy'])
+            self.record_frame(rgb, pose=current_pose, annotation=f"FORWARD_MOVE")
+            
             print(f"  [OK] Moved forward {forward_distance:.2f}m")
         else:
             print(f"  [OK] Close enough to window ({distance_to_window:.2f}m)")
@@ -400,11 +819,11 @@ class WindowNavigator:
                 return -1
             
             current_pose = result
-            print(f"  âœ“ Approached")
+            print(f"  Approached")
         
         # Verification
         print(f"\n  Verification scan...")
-        verified_window, _, verified_center = self.scan_for_window(
+        verified_window, _, verified_center, _ = self.scan_for_window(
             current_pose, pose_history, scan_type='verification'
         )
         
@@ -412,7 +831,7 @@ class WindowNavigator:
             print(f"  [ERROR] Verification failed")
             return -1
         
-        print(f"  âœ“ Verified")
+        print(f"  Verified")
         
         # Pass through
         through_distance = 0.5  # SCALED DOWN
@@ -442,7 +861,7 @@ class WindowNavigator:
             return -1
         
         current_pose = result
-        print(f"  âœ“ Passed through")
+        print(f"  Passed through")
         
         # Reset yaw
         result = goToWaypoint_yaw(
@@ -485,149 +904,53 @@ class WindowNavigator:
         if frame_id is None:
             frame_id = len(self.video_frames)
         
-        # CREATE 3-PANEL VISUALIZATION if flow data provided
-        if flow_mag is not None or flow_mask is not None:
-            import matplotlib.pyplot as plt
-            
-            fig, axes = plt.subplots(1, 3, figsize=(24, 8))
-            
-            # Panel 1: Current frame with pose overlay
-            display_frame = rgb_frame.copy()
-            if pose is not None:
-                pos = pose['position']
-                rpy_deg = np.degrees(pose['rpy'])
-                
-                # Add text overlay
-                font = cv2.FONT_HERSHEY_SIMPLEX
-                font_scale = 1.0
-                thickness = 3
-                color = (0, 255, 255)
-                bg_color = (0, 0, 0)
-                
-                text_lines = [
-                    f"XYZ: [{pos[0]:+.2f}, {pos[1]:+.2f}, {pos[2]:+.2f}]",
-                    f"RPY: [{rpy_deg[0]:+.1f}, {rpy_deg[1]:+.1f}, {rpy_deg[2]:+.1f}]",
-                    f"Win: {self.window_count}"
-                ]
-                if annotation:
-                    text_lines.append(f"{annotation}")
-                
-                y_offset = 40
-                for i, text in enumerate(text_lines):
-                    y_pos = y_offset + i * 50
-                    (text_w, text_h), baseline = cv2.getTextSize(text, font, font_scale, thickness)
-                    cv2.rectangle(display_frame, (10, y_pos - text_h - 5),
-                                (15 + text_w, y_pos + baseline + 5), bg_color, -1)
-                    cv2.putText(display_frame, text, (12, y_pos), font, font_scale,
-                              color, thickness, cv2.LINE_AA)
-            
-            axes[0].imshow(display_frame)
-            axes[0].set_title('Current View', fontsize=16, fontweight='bold')
-            axes[0].axis('off')
-            
-            # Panel 2: Flow magnitude
-            if flow_mag is not None:
-                # Resize flow to match frame size for display
-                if flow_mag.shape[:2] != rgb_frame.shape[:2]:
-                    flow_display = cv2.resize(flow_mag, (rgb_frame.shape[1], rgb_frame.shape[0]))
-                else:
-                    flow_display = flow_mag
-                    
-                im = axes[1].imshow(flow_display, cmap='jet', vmin=0, vmax=35)
-                axes[1].set_title(f'Optical Flow\nRange: [{flow_mag.min():.1f}, {flow_mag.max():.1f}], Mean: {flow_mag.mean():.1f}', 
-                                 fontsize=16, fontweight='bold')
-                axes[1].axis('off')
-                cbar = plt.colorbar(im, ax=axes[1], fraction=0.046, pad=0.04)
-                cbar.set_label('Flow Magnitude (pixels)', fontsize=12)
-                
-                # Add threshold markers
-                axes[1].axhline(y=flow_display.shape[0]//2, color='lime', linestyle='--', 
-                              linewidth=2, alpha=0.7, label='Target: 6-12')
-            else:
-                axes[1].text(0.5, 0.5, 'No Flow Data', ha='center', va='center', 
-                           fontsize=20, transform=axes[1].transAxes)
-                axes[1].set_title('Optical Flow', fontsize=16, fontweight='bold')
-                axes[1].axis('off')
-            
-            # Panel 3: Detection mask
-            if flow_mask is not None and flow_mask.max() > 0:
-                # Resize mask to match frame
-                if flow_mask.shape[:2] != rgb_frame.shape[:2]:
-                    mask_display = cv2.resize(flow_mask, (rgb_frame.shape[1], rgb_frame.shape[0]))
-                else:
-                    mask_display = flow_mask
-                    
-                axes[2].imshow(mask_display, cmap='gray', vmin=0, vmax=1)
-                mask_pixels = np.sum(mask_display > 0.5)
-                mask_pct = (mask_pixels / mask_display.size) * 100
-                axes[2].set_title(f'Detection Mask\nPixels: {mask_pixels} ({mask_pct:.1f}%)', 
-                                fontsize=16, fontweight='bold')
-            else:
-                axes[2].text(0.5, 0.5, 'No Detection', ha='center', va='center', 
-                           fontsize=20, color='red', transform=axes[2].transAxes)
-                axes[2].set_title('Detection Mask', fontsize=16, fontweight='bold')
-            axes[2].axis('off')
-            
-            plt.tight_layout()
-            frame_path = f'./log/frames/frame_{frame_id:04d}.png'
-            os.makedirs('./log/frames', exist_ok=True)
-            plt.savefig(frame_path, dpi=120, bbox_inches='tight')
-            plt.close()
-            
-            # Also save to video_frames for potential video creation
-            # Read back the saved image
-            saved_img = cv2.imread(frame_path)
-            saved_img_rgb = cv2.cvtColor(saved_img, cv2.COLOR_BGR2RGB)
-            self.video_frames.append(saved_img_rgb)
-            
+        # STANDARD SINGLE-PANEL
+        if mask is not None:
+            overlay = rgb_frame.copy()
+            mask_color = np.zeros_like(overlay)
+            mask_color[mask > 0.5] = [0, 255, 0]
+            frame = cv2.addWeighted(overlay, 0.7, mask_color, 0.3, 0)
         else:
-            # STANDARD SINGLE-PANEL (when no flow data)
-            if mask is not None:
-                overlay = rgb_frame.copy()
-                mask_color = np.zeros_like(overlay)
-                mask_color[mask > 0.5] = [0, 255, 0]
-                frame = cv2.addWeighted(overlay, 0.7, mask_color, 0.3, 0)
-            else:
-                frame = rgb_frame.copy()
+            frame = rgb_frame.copy()
+        
+        if pose is not None:
+            pos = pose['position']
+            rpy = pose['rpy']
+            rpy_deg = np.degrees(rpy)
             
-            if pose is not None:
-                pos = pose['position']
-                rpy = pose['rpy']
-                rpy_deg = np.degrees(rpy)
-                
-                font = cv2.FONT_HERSHEY_SIMPLEX
-                font_scale = 0.7
-                thickness = 2
-                color = (0, 255, 255)
-                bg_color = (0, 0, 0)
-                
-                text_lines = [
-                    f"XYZ: [{pos[0]:+.3f}, {pos[1]:+.3f}, {pos[2]:+.3f}]",
-                    f"RPY: [{rpy_deg[0]:+.1f}, {rpy_deg[1]:+.1f}, {rpy_deg[2]:+.1f}]",
-                    f"Win: {self.window_count}"
-                ]
-                
-                if annotation:
-                    text_lines.append(f"{annotation}")
-                
-                y_offset = 25
-                for i, text in enumerate(text_lines):
-                    y_pos = y_offset + i * 30
-                    (text_w, text_h), baseline = cv2.getTextSize(text, font, font_scale, thickness)
-                    cv2.rectangle(frame, (5, y_pos - text_h - 3),
-                                (10 + text_w, y_pos + baseline + 3), bg_color, -1)
-                    cv2.putText(frame, text, (8, y_pos), font, font_scale,
-                              color, thickness, cv2.LINE_AA)
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            font_scale = 0.7
+            thickness = 2
+            color = (0, 255, 255)
+            bg_color = (0, 0, 0)
             
-            self.video_frames.append(frame)
-            frame_path = f'./log/frames/frame_{frame_id:04d}.png'
-            os.makedirs('./log/frames', exist_ok=True)
-            cv2.imwrite(frame_path, cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+            text_lines = [
+                f"XYZ: [{pos[0]:+.3f}, {pos[1]:+.3f}, {pos[2]:+.3f}]",
+                f"RPY: [{rpy_deg[0]:+.1f}, {rpy_deg[1]:+.1f}, {rpy_deg[2]:+.1f}]",
+                f"Win: {self.window_count}"
+            ]
+            
+            if annotation:
+                text_lines.append(f"{annotation}")
+            
+            y_offset = 25
+            for i, text in enumerate(text_lines):
+                y_pos = y_offset + i * 30
+                (text_w, text_h), baseline = cv2.getTextSize(text, font, font_scale, thickness)
+                cv2.rectangle(frame, (5, y_pos - text_h - 3),
+                            (10 + text_w, y_pos + baseline + 3), bg_color, -1)
+                cv2.putText(frame, text, (8, y_pos), font, font_scale,
+                          color, thickness, cv2.LINE_AA)
+        
+        self.video_frames.append(frame)
+        frame_path = f'./log/frames/frame_{frame_id:04d}.png'
+        os.makedirs('./log/frames', exist_ok=True)
+        cv2.imwrite(frame_path, cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
     
     def save_frames_summary(self):
         num_frames = len(self.video_frames)
         if num_frames > 0:
-            print(f"\nâœ“ Saved {num_frames} frames to ./log/frames/")
+            print(f"\nSaved {num_frames} frames to ./log/frames/")
     
     def safe_update_position(self, current_pose, target_pos_ned):
         """
@@ -713,7 +1036,7 @@ def goToWaypoint_yaw(currentPose, target_yaw, pose_history=None, action='YAW', n
 
         pos_error = np.linalg.norm(current_pos - pos)
         if pos_error > 0.1:
-            print(f'  [WARN]  Position drift: {pos_error:.3f}m')
+            print(f'  [WARN]  Position drift: {pos_error:.3f}m')
 
         qx, qy, qz, qw = state[6], state[7], state[8], state[9]
         temp_quat = Quaternion(w=qw, x=qx, y=qy, z=qz)
@@ -729,24 +1052,9 @@ def goToWaypoint_yaw(currentPose, target_yaw, pose_history=None, action='YAW', n
                 'rpy': temp_rpy
             }
             
-            # Use the proper renderer for rendering frames
             rgb_temp, _, _ = navigator.renderer.render(current_pos, temp_rpy)
-
-            # Overlay current pose on the top-right corner of the image BEFORE saving
-            overlay_text = f"Pose: {current_pos[0]:.2f}, {current_pos[1]:.2f}, {current_pos[2]:.2f}"
-            cv2.putText(
-                rgb_temp, overlay_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA
-            )
-
-            # Save frames during yaw alignment
-            os.makedirs('./log/frames', exist_ok=True)
-            frame_path = f'./log/frames/frame_yaw_alignment_{i:03d}.png'
-            cv2.imwrite(frame_path, rgb_temp[:, :, ::-1])  # Convert RGB to BGR for saving
-
-            # Improved debug statement to confirm frame saving
-            print(f"[DEBUG] Frame {i+1}/{len(time_points)} saved during yaw alignment: {frame_path}")
-
-            # Update last capture time to ensure consistent saving
+            navigator.record_frame(rgb_temp, pose=temp_pose,
+                                 annotation=f"{action} (yaw={np.degrees(temp_yaw):.1f} deg)")
             last_capture_time = t
 
         if yaw_error < tolerance_yaw and t > 0.5:
@@ -928,16 +1236,7 @@ def goToWaypoint(currentPose, targetPose, velocity=0.1, pose_history=None, actio
             }
             
             rgb_temp, _, _ = navigator.renderer.render(current_pos, temp_rpy)
-            
-            # If this is alignment motion, compute and save flow debug info
-            flow_mag, flow_mask = None, None
-            if 'ALIGN' in action or 'YAW' in action:
-                flow_mag, flow_mask = navigator._debug_visualize_alignment_flow(
-                    temp_pose, label=f"{action}_t{t:.1f}"
-                )
-            
-            navigator.record_frame(rgb_temp, pose=temp_pose, annotation=f"{action}", 
-                                  flow_mag=flow_mag, flow_mask=flow_mask)
+            navigator.record_frame(rgb_temp, pose=temp_pose, annotation=f"{action}")
             last_capture_time = t
 
         err = np.linalg.norm(current_pos - target_position)
@@ -1035,7 +1334,7 @@ def main(renderer):
         print(f"WINDOW {window_num + 1}")
         print(f"{'='*60}")
         
-        window_3d_pos, scan_frames, window_center_2d = navigator.scan_for_window(
+        window_3d_pos, scan_frames, window_center_2d, corners_2d = navigator.scan_for_window(
             currentPose, pose_history, scan_type='initial'
         )
         
@@ -1043,16 +1342,16 @@ def main(renderer):
             print(f"  [ERROR] Detection/PnP failed")
             break
         
-        print(f"  âœ“ Window at: {window_3d_pos}")
+        print(f"  Window at: {window_3d_pos}")
         
         print(f"  [OK] Window detected at: {window_3d_pos}")
         
         # Get window orientation from last PnP estimate
         window_rpy_ned = np.array([0.0, 0.0, 0.0])  # Placeholder - assume perpendicular
         
-        # STEP 2: Visual servoing (orient, center, approach)
+        # STEP 2: Visual servoing (orient, center, approach) - pass corners for visualization
         result = navigator.visual_servo_to_window(
-            currentPose, window_3d_pos, window_rpy_ned, pose_history
+            currentPose, window_3d_pos, window_rpy_ned, pose_history, initial_corners_2d=corners_2d
         )
         
         if result == -1:
