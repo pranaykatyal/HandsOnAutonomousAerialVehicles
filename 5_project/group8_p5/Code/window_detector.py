@@ -158,7 +158,7 @@ class SimpleFlowDetector:
         flow_range = flow_max - flow_min
 
         # Calculate percentage-based thresholds
-        lower_percentage = 0.11  # 11%
+        lower_percentage = 0.01  # 1% (reduced from 11% to catch lower flow windows)
         upper_percentage = 0.33  # 33%
 
         background_threshold = flow_min + flow_range * lower_percentage
@@ -256,15 +256,15 @@ class SimpleFlowDetector:
             x, y, w, h, area = stats[label_id]
             
             # Size filters
-            min_area = int(0.001 * H * W)  # At least 0.1% of image
-            max_area = int(0.5 * H * W)     # At most 40% of image
+            min_area = int(0.0005 * H * W)  # At least 0.05% of image (reduced from 0.1%)
+            max_area = int(0.5 * H * W)     # At most 50% of image
             
             if area < min_area or area > max_area:
                 print(f"      Component {label_id}: REJECTED (size: {area})")
                 continue
             
             # Edge margin (avoid edge artifacts)
-            margin = 15
+            margin = 5  # Reduced from 15 - windows can be near edges after alignment
             if x < margin or y < margin or x+w > W-margin or y+h > H-margin:
                 print(f"      Component {label_id}: REJECTED (at edge)")
                 continue

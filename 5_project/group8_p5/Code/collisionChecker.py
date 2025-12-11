@@ -77,9 +77,9 @@ _default_checker = None
 def doesItCollide(
     pos,
     ply_path: str = "../data/occupancy_grid/splat.ply",
-    collision_threshold: float = 0.01,
-    drone_radius: float = 0.001,
-    num_points: int = 10,
+    collision_threshold: float = 0.05,
+    drone_radius: float = 0.05,  # 5cm radius = 10cm diameter
+    num_points: int = 20,
 ) -> bool:
     """
     Convenience function: given a pose (x, y, z), return True/False for collision.

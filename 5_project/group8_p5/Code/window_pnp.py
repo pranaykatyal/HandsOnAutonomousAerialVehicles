@@ -48,7 +48,7 @@ class WindowPnPEstimator:
             [-w,  h, 0],  # Top-left
         ], dtype=np.float32)
         
-        print(f"âœ“ PnP Estimator initialized")
+        print(f" PnP Estimator initialized")
         print(f"  Window size: {window_width:.2f}m x {window_height:.2f}m")
         print(f"  Camera matrix:\n{camera_matrix}")
     
@@ -200,13 +200,13 @@ class WindowPnPEstimator:
         corners_2d = self.extract_window_corners(mask)
         
         if corners_2d is None:
-            print("[DEBUG] No corners detected in mask.")
+            # print("[DEBUG] No corners detected in mask.")
             return False, None, None, None
         
-        print(f"[DEBUG] Detected corners (2D): {corners_2d}")
-        print(f"[DEBUG] Object points (3D): {self.object_points_3d}")
-        print(f"[DEBUG] Camera matrix:\n{self.camera_matrix_original}")
-        print(f"[DEBUG] Distortion coefficients: {self.dist_coeffs}")
+        # print(f"[DEBUG] Detected corners (2D): {corners_2d}")
+        # print(f"[DEBUG] Object points (3D): {self.object_points_3d}")
+        # print(f"[DEBUG] Camera matrix:\n{self.camera_matrix_original}")
+        # print(f"[DEBUG] Distortion coefficients: {self.dist_coeffs}")
         
         # Solve PnP
         success, rvec, tvec = cv2.solvePnP(
@@ -255,13 +255,13 @@ class WindowPnPEstimator:
         tvec_body = self.R_cam_to_body @ tvec_cam
         
         # Debugging scale of tvec
-        print(f"[DEBUG] tvec_cam (camera frame): {tvec_cam}")
-        print(f"[DEBUG] tvec_body (body frame): {tvec_body}")
+        # print(f"[DEBUG] tvec_cam (camera frame): {tvec_cam}")
+        # print(f"[DEBUG] tvec_body (body frame): {tvec_body}")
         
         # Scale adjustment for Gaussian splat map
         scale_factor = 0.1  # Example scale factor, adjust as needed
         tvec_body_scaled = tvec_body * scale_factor
-        print(f"[DEBUG] tvec_body_scaled (body frame, scaled): {tvec_body_scaled}")
+        # print(f"[DEBUG] tvec_body_scaled (body frame, scaled): {tvec_body_scaled}")
         
         # === STEP 3: Transform from body frame to NED ===
         # Body frame: X=forward, Y=right, Z=down
@@ -269,7 +269,7 @@ class WindowPnPEstimator:
         tvec_ned = R_drone_ned @ tvec_body_scaled + drone_pos_ned
         
         # Debugging NED transformation
-        print(f"[DEBUG] tvec_ned (NED frame): {tvec_ned}")
+        # print(f"[DEBUG] tvec_ned (NED frame): {tvec_ned}")
         
         # Convert rotation vector to NED frame
         R_cam = cv2.Rodrigues(rvec_cam)[0]  # Camera rotation matrix
@@ -280,12 +280,12 @@ class WindowPnPEstimator:
         window_rpy_ned = self._rotation_matrix_to_euler(R_ned)
         
         # Additional debugging for transformation chain
-        print("[DEBUG] --- TRANSFORMATION CHAIN ---")
-        print(f"[DEBUG] Drone position (NED): {drone_pos_ned}")
-        print(f"[DEBUG] Drone orientation (NED): {drone_rpy_ned}")
-        print(f"[DEBUG] Camera to body rotation matrix:\n{self.R_cam_to_body}")
-        print(f"[DEBUG] Body to NED rotation matrix:\n{R_drone_ned}")
-        print(f"[DEBUG] Final NED position: {tvec_ned}")
+        # print("[DEBUG] --- TRANSFORMATION CHAIN ---")
+        # print(f"[DEBUG] Drone position (NED): {drone_pos_ned}")
+        # print(f"[DEBUG] Drone orientation (NED): {drone_rpy_ned}")
+        # print(f"[DEBUG] Camera to body rotation matrix:\n{self.R_cam_to_body}")
+        # print(f"[DEBUG] Body to NED rotation matrix:\n{R_drone_ned}")
+        # print(f"[DEBUG] Final NED position: {tvec_ned}")
         
         return tvec_ned, window_rpy_ned
     
@@ -437,7 +437,7 @@ class WindowPnPEstimator:
             
             # If dimensions don't match, downsample image to mask resolution
             if (img_h, img_w) != (mask_h, mask_w):
-                print(f"    â†’ Downsampling image to {mask_w}x{mask_h}")
+                print(f"   Downsampling image to {mask_w}x{mask_h}")
                 vis_img = cv2.resize(image, (mask_w, mask_h), interpolation=cv2.INTER_LINEAR)
                 
                 # Scale camera matrix to match
@@ -512,7 +512,7 @@ class WindowPnPEstimator:
         
         if save_path:
             cv2.imwrite(save_path, cv2.cvtColor(vis_img, cv2.COLOR_RGB2BGR))
-            print(f"  âœ“ Saved PnP viz: {save_path}")
+            print(f"  Saved PnP viz: {save_path}")
         
         return vis_img
 
