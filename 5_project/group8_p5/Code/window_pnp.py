@@ -353,6 +353,30 @@ class WindowPnPEstimator:
         print(f"      [END PnP DEBUG]\n")
         
         return pixel_coords
+
+    def get_camera_vector(self, window_pos_ned, drone_pose_ned):
+        """
+        Compute vector from camera to window in camera coordinates.
+
+        Returns:
+            vec_to_window_cam: (3,) camera-frame vector [X_right, Y_down, Z_forward]
+            or None if window is behind camera
+        """
+        drone_pos_ned = drone_pose_ned['position']
+        drone_rpy_ned = drone_pose_ned['rpy']
+
+        vec_to_window_ned = window_pos_ned - drone_pos_ned
+
+        R_drone_ned = self._euler_to_rotation_matrix(drone_rpy_ned[0], drone_rpy_ned[1], drone_rpy_ned[2])
+        vec_to_window_body = R_drone_ned.T @ vec_to_window_ned
+
+        R_body_to_cam = self.R_cam_to_body.T
+        vec_to_window_cam = R_body_to_cam @ vec_to_window_body
+
+        if vec_to_window_cam[2] <= 0:
+            return None
+
+        return vec_to_window_cam
     
     def _euler_to_rotation_matrix(self, roll, pitch, yaw):
         """Convert Euler angles (roll, pitch, yaw) to rotation matrix"""

@@ -212,6 +212,7 @@ def goToWaypoint(currentPose, targetPose, velocity=0.1, pose_history=None, actio
         return -1
 
     if doesItCollide(target_position):
+        print(f"  [ERROR] goToWaypoint: target position collides: {target_position}")
         return -1
 
     distance = np.linalg.norm(target_position - pos)
@@ -269,6 +270,7 @@ def goToWaypoint(currentPose, targetPose, velocity=0.1, pose_history=None, actio
     check_stride = max(1, len(trajectory_points) // 50)
     for i in range(0, len(trajectory_points), check_stride):
         if doesItCollide(trajectory_points[i]):
+            print(f"  [ERROR] goToWaypoint: collision detected on planned trajectory at index {i}, pos={trajectory_points[i]}")
             return -1
 
     if maintain_orientation:
@@ -291,6 +293,7 @@ def goToWaypoint(currentPose, targetPose, velocity=0.1, pose_history=None, actio
         current_pos = state[0:3]
 
         if doesItCollide(current_pos):
+            print(f"  [ERROR] goToWaypoint: collision detected during execution at time {t:.3f}, pos={current_pos}")
             return -1
 
         if navigator is not None and (t - last_capture_time) >= capture_interval:

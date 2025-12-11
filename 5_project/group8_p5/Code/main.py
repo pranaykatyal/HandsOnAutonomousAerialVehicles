@@ -549,20 +549,93 @@ class WindowNavigator:
                 servo_converged = True
                 break
             
-            # Estimate distance to window for control scaling
+            # Estimate distance to window (used for reprojection)
             distance_to_window = np.linalg.norm(window_3d_pos - current_pose['position'])
             print(f"    Distance to window: {distance_to_window:.3f}m")
-            
-            # Proportional control: pixel error -> position correction
-            # At 1m distance, 100px error ~= 0.05m movement (tuned empirically)
-            # Scale by distance: closer = smaller movements
-            pixel_to_meter = (distance_to_window / 1.0) * (0.05 / 100.0)
-            
-            ctrl_y = error_x_px * pixel_to_meter  # Lateral (NED Y = right)
-            ctrl_z = error_y_px * pixel_to_meter  # Vertical (NED Z = down)
-            
-            print(f"    Pixel-to-meter scale: {pixel_to_meter:.6f}")
-            print(f"    Control signals: Y={ctrl_y:+.4f}m, Z={ctrl_z:+.4f}m")
+
+            # --- Reprojection-based pixel->meter mapping (physically consistent) ---
+            # Try to compute depth Z from measured pixel height if available
+            H_real = 0.067  # Known real window height in splat units
+            h_px_measured = None
+
+            # --- Per-iteration re-detection to refresh pixel height ---
+            try:
+                scan_waypoints = self.scanner.generate_scan_trajectory(current_pose)
+                scan_frames_iter = []
+                for idx, wp in enumerate(scan_waypoints):
+                    rgb_wp, _, _ = self.renderer.render(wp['position'], wp['rpy'])
+                    scan_frames_iter.append(rgb_wp)
+
+                mask_iter, center_iter, conf_iter, debug_iter = self.detector.detect_window(scan_frames_iter)
+                if mask_iter is not None and np.sum(mask_iter > 0.5) > 50:
+                    # extract corners from mask (original resolution)
+                    try:
+                        corners_iter = self.pnp_estimator.extract_window_corners(mask_iter)
+                        if corners_iter is not None:
+                            top_y = 0.5 * (corners_iter[2, 1] + corners_iter[3, 1])
+                            bot_y = 0.5 * (corners_iter[0, 1] + corners_iter[1, 1])
+                            h_px_measured = abs(bot_y - top_y)
+                            print(f"    Per-iter measured h_px: {h_px_measured:.1f}px (from detector)")
+                    except Exception:
+                        h_px_measured = None
+                else:
+                    # fallback to initial corners passed from detection
+                    if initial_corners_2d is not None:
+                        try:
+                            top_y = 0.5 * (initial_corners_2d[2, 1] + initial_corners_2d[3, 1])
+                            bot_y = 0.5 * (initial_corners_2d[0, 1] + initial_corners_2d[1, 1])
+                            h_px_measured = abs(bot_y - top_y)
+                        except Exception:
+                            h_px_measured = None
+            except Exception as e:
+                print(f"    [WARN] Re-detection failed: {e}")
+                if initial_corners_2d is not None:
+                    try:
+                        top_y = 0.5 * (initial_corners_2d[2, 1] + initial_corners_2d[3, 1])
+                        bot_y = 0.5 * (initial_corners_2d[0, 1] + initial_corners_2d[1, 1])
+                        h_px_measured = abs(bot_y - top_y)
+                    except Exception:
+                        h_px_measured = None
+
+            cam_vec = self.pnp_estimator.get_camera_vector(window_3d_pos, current_pose)
+
+            fx = self.pnp_estimator.camera_matrix_original[0, 0]
+            fy = self.pnp_estimator.camera_matrix_original[1, 1]
+
+            if h_px_measured is not None and h_px_measured > 5:
+                # Compute Z from similar triangles: Z = f * H_real / h_px
+                Z_cam = (fx * H_real) / float(h_px_measured)
+                print(f"    Measured pixel height: {h_px_measured:.1f}px -> estimated Z_cam={Z_cam:.3f} (splat units)")
+            elif cam_vec is not None:
+                Z_cam = cam_vec[2]
+                print(f"    Using projected camera Z: {Z_cam:.3f}")
+            else:
+                print(f"    [WARN] No depth estimate available; falling back to heuristic")
+                pixel_to_meter = (distance_to_window / 1.0) * (0.05 / 100.0)
+                ctrl_y = error_x_px * pixel_to_meter
+                ctrl_z = error_y_px * pixel_to_meter
+                Z_cam = None
+
+            if Z_cam is not None:
+                # delta in camera frame (splat units)
+                delta_x_cam = (error_x_px * Z_cam) / fx
+                delta_y_cam = (error_y_px * Z_cam) / fy
+
+                # camera frame: X right, Y down, Z forward
+                delta_cam = np.array([delta_x_cam, delta_y_cam, 0.0])
+
+                # transform camera delta to body frame, then to NED
+                delta_body = self.pnp_estimator.R_cam_to_body @ delta_cam
+                R_drone_ned = self.pnp_estimator._euler_to_rotation_matrix(
+                    current_pose['rpy'][0], current_pose['rpy'][1], current_pose['rpy'][2]
+                )
+                delta_ned = R_drone_ned @ delta_body
+
+                # Map corrections in NED: lateral = Y, vertical = Z
+                ctrl_y = delta_ned[1]
+                ctrl_z = delta_ned[2]
+
+                print(f"    Reprojection-derived control: Y={ctrl_y:+.4f}m, Z={ctrl_z:+.4f}m (Z_cam used={Z_cam:.3f})")
             
             # Limit maximum step size
             max_step = 0.08  # Increased from 0.05m for faster convergence
@@ -584,45 +657,83 @@ class WindowNavigator:
                 print(f"    [WARN] Target clipped to bounds")
                 target_pos = target_pos_clipped
             
-            # Collision check
-            if doesItCollide(target_pos):
-                print(f"    [FAIL] Collision detected!")
-                break
-            
-            # Execute movement
-            print(f"    [INFO] Moving to {target_pos}")
-            result = goToWaypoint(
-                current_pose, target_pos,
-                velocity=0.04,  # Slower for precision
-                pose_history=pose_history,
-                action=f'SERVO_W{self.window_count}_I{servo_iter}',
-                maintain_orientation=True,
-                navigator=self
-            )
-            
-            if result == -1:
-                print(f"    [FAIL] Movement failed!")
-                break
-            
-            current_pose = result
-            print(f"    [OK] Moved to {current_pose['position']}")
+            # For small servo corrections, apply instantaneous open-loop pose update
+            # This avoids dynamics transients and false-positive collisions for micro adjustments
+            scaled_magnitude = np.sqrt(ctrl_y**2 + ctrl_z**2)
+            if scaled_magnitude <= max_step:
+                target_pos = current_pose['position'].copy()
+                target_pos[1] += ctrl_y
+                target_pos[2] += ctrl_z
+
+                # Bounds check
+                target_pos = self.clip_position_to_bounds(target_pos)
+
+                # Log and apply instant update
+                print(f"    [INFO] Applying instantaneous servo update to {target_pos}")
+                current_pose['position'] = target_pos
+                # Record frame at new pose without running dynamics
+                rgb_tmp, _, _ = self.renderer.render(current_pose['position'], current_pose['rpy'])
+                self.record_frame(rgb_tmp, pose=current_pose, annotation=f"SERVO_INSTANT_I{servo_iter}")
+                print(f"    [OK] Instant move applied to {current_pose['position']}")
+            else:
+                # Collision check for larger moves and use dynamics-based motion
+                if doesItCollide(target_pos):
+                    print(f"    [FAIL] Collision detected!")
+                    break
+
+                print(f"    [INFO] Moving to {target_pos} (dynamics)")
+                result = goToWaypoint(
+                    current_pose, target_pos,
+                    velocity=0.04,  # Slower for precision
+                    pose_history=pose_history,
+                    action=f'SERVO_W{self.window_count}_I{servo_iter}',
+                    maintain_orientation=True,
+                    navigator=self
+                )
+
+                if result == -1:
+                    print(f"    [FAIL] Movement failed!")
+                    break
+
+                current_pose = result
+                print(f"    [OK] Moved to {current_pose['position']}")
             
             # Visualize with projected window center
             rgb_new, _, _ = self.renderer.render(current_pose['position'], current_pose['rpy'])
             rgb_debug = rgb_new.copy()
             
-            # Draw projected window center (green)
+            # Draw PnP-projected window center and detected centroid (if available)
             new_proj = self.pnp_estimator.project_window_to_pixel(window_3d_pos, current_pose)
-            if new_proj is not None:
-                cv2.circle(rgb_debug, (int(new_proj[0]), int(new_proj[1])), 20, (0, 255, 0), -1)
-            
+
             # Draw image center (red)
-            cv2.drawMarker(rgb_debug, (int(img_center_x), int(img_center_y)), 
+            cv2.drawMarker(rgb_debug, (int(img_center_x), int(img_center_y)),
                           (0, 0, 255), cv2.MARKER_CROSS, 50, 3)
-            
-            # Draw error vector
+
+            # Draw PnP projection (magenta)
             if new_proj is not None:
-                cv2.arrowedLine(rgb_debug, (int(img_center_x), int(img_center_y)), 
+                px_pnp = (int(round(new_proj[0])), int(round(new_proj[1])))
+                cv2.circle(rgb_debug, px_pnp, 14, (255, 0, 255), 3)
+                cv2.putText(rgb_debug, 'PnP', (px_pnp[0]+10, px_pnp[1]+10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,0,255), 2)
+
+            # If the per-iteration detector returned a centroid, draw it (green)
+            try:
+                if 'center_iter' in locals() and center_iter is not None:
+                    # center_iter may be (x,y) at original resolution
+                    px_det = (int(round(center_iter[0])), int(round(center_iter[1])))
+                    cv2.circle(rgb_debug, px_det, 20, (0, 255, 0), -1)
+                    cv2.putText(rgb_debug, 'DET', (px_det[0]+10, px_det[1]+10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,0,0), 2)
+                    # If PnP and DET disagree significantly, draw a line between them
+                    if new_proj is not None:
+                        dist_px = np.linalg.norm(np.array(px_pnp) - np.array(px_det))
+                        if dist_px > 50:
+                            cv2.line(rgb_debug, px_pnp, px_det, (0,255,255), 3)
+                            cv2.putText(rgb_debug, f'Diff:{int(dist_px)}px', (px_det[0]+10, px_det[1]+30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,255,255), 2)
+            except Exception:
+                pass
+
+            # Draw error vector from image center to PnP (if available)
+            if new_proj is not None:
+                cv2.arrowedLine(rgb_debug, (int(img_center_x), int(img_center_y)),
                               (int(new_proj[0]), int(new_proj[1])), (255, 255, 0), 3, tipLength=0.1)
             
             self.record_frame(rgb_debug, pose=current_pose,

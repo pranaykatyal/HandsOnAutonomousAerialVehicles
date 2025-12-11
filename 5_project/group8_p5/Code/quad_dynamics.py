@@ -39,7 +39,10 @@ def model_derivative(t, X, U, param):
 def quad_dynamics_der(X, T_prop, torq_prop, param):
 
     quat_list = X[6:10]
-    quat = Quaternion(quat_list)
+    # State quaternion ordering is [qx, qy, qz, qw]
+    # pyquaternion.Quaternion() expects either [w, x, y, z] or explicit kwargs.
+    # Use explicit construction to avoid ordering mistakes.
+    quat = Quaternion(x=float(quat_list[0]), y=float(quat_list[1]), z=float(quat_list[2]), w=float(quat_list[3]))
     DCM_EB = quat.rotation_matrix
     DCM_BE = DCM_EB.T
 
@@ -82,7 +85,8 @@ def derivative_rigidBody(X, Fb, Mb, param):
     dprint('pqr', pqr)
 
     # Direction Cosine Matrix. DCM_BE would convert a vector from earth to body and DCM_EB vice versa 
-    quat = Quaternion(quat_list)
+    # quat_list has ordering [qx, qy, qz, qw]
+    quat = Quaternion(x=float(quat_list[0]), y=float(quat_list[1]), z=float(quat_list[2]), w=float(quat_list[3]))
     DCM_EB = quat.rotation_matrix
     DCM_BE = DCM_EB.T
 
