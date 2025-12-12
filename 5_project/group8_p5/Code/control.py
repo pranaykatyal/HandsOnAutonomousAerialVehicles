@@ -144,7 +144,7 @@ class quad_control:
         quat_list = X[6:10]
         pqr = X[10:13]
 
-        # âœ… CRITICAL FIX: Dynamics outputs [qx, qy, qz, qw] but Quaternion() expects [w,x,y,z]
+        #  CRITICAL FIX: Dynamics outputs [qx, qy, qz, qw] but Quaternion() expects [w,x,y,z]
         # Must use explicit x=, y=, z=, w= to avoid order confusion
         quat = Quaternion(x=quat_list[0], y=quat_list[1], z=quat_list[2], w=quat_list[3])
         ypr = quat.yaw_pitch_roll
@@ -172,7 +172,7 @@ class quad_control:
         # mass specific force to be applied by the actuation system
         f_inertial = np.array((acc_x_sp, acc_y_sp, acc_z_sp)) - np.array((0., 0., 9.81))
 
-
+        # TEMP DEBUG
         rotationAxis = np.cross(np.array((0., 0., -1.)), f_inertial/norm(f_inertial))
         rotationAxis += np.array((1e-3, 1e-3, 1e-3)) # Avoid numerical issue
 
@@ -182,10 +182,6 @@ class quad_control:
         cosAngle = np.dot( np.array((0., 0., -1.)), f_inertial/norm(f_inertial) )
 
         angle = math.atan2(sinAngle, cosAngle)
-
-            self._quat_debug_printed2 = True
-            print(f"  Rotation axis: {rotationAxis}")
-            print(f"  Rotation angle (deg): {np.degrees(angle):.4f}")
 
         quat_wo_yaw = Quaternion(axis=rotationAxis, radians=angle)
 
@@ -211,7 +207,7 @@ class quad_control:
         pqr_sp = np.multiply(pqr_sp, self.angle_sf)
         pqr_sp = pqr_sp.clip(self.minRate, self.maxRate)
         
-
+        # TEMP DEBUG: Print first control
         # ANGULAR VELOCITY
         tau_x = self.p_pid.step(pqr_sp[0], pqr[0])
         tau_y = self.q_pid.step(pqr_sp[1], pqr[1])
@@ -233,7 +229,7 @@ class quad_control:
         U = np.array([u1, u2, u3, u4])
         U = U.clip(0.0, 1.0)
         
-
+        # TEMP DEBUG
         # Logger
         self.controlArray = np.vstack((self.controlArray, np.array((throttle, tau_x, tau_y, tau_z))))
         self.timeArray = np.append(self.timeArray, self.current_time)

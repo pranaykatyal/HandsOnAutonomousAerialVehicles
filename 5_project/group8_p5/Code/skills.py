@@ -255,11 +255,31 @@ class NavigationSkills:
         """
         print(f"\n  [SKILL: VERIFY] Cycle {cycle_num} - Re-scanning...")
         
+        # Project the expected window position to get target pixel
+        # This helps the detector prefer the CORRECT window if multiple are visible
+        target_pixel = None
+        proj_pixel = self.nav.pnp_estimator.project_window_to_pixel(window_3d_pos, current_pose)
+        if proj_pixel is not None:
+            target_pixel = (int(proj_pixel[0]), int(proj_pixel[1]))
+            print(f"    Target pixel (projected from expected position): {target_pixel}")
+        
         # Re-scan to get fresh detection
+        # Pass target_pixel to prefer window closest to this location
         # Pass yaw_hint for directional selection: +ve = RIGHT, -ve = LEFT
         verified_window, corners_2d, scan_data = self.scan(
             current_pose, scan_type=f'verify_c{cycle_num}', yaw_hint=self.yaw_error_initial
         )
+        
+        # If we have a target pixel, check if detection needs correction
+        if verified_window is not None and target_pixel is not None:
+            # Re-scan with target pixel guidance
+            print(f"    Re-detecting with target pixel guidance...")
+            verified_window, _, center_2d, corners_2d = self.nav.scan_for_window(
+                current_pose, self.nav.pose_history, 
+                scan_type=f'verify_c{cycle_num}_guided',
+                target_pixel=target_pixel,
+                yaw_hint=self.yaw_error_initial
+            )
         
         if verified_window is None:
             print(f"    [FAIL] Cannot see window")
@@ -334,7 +354,8 @@ class NavigationSkills:
     def approach(self, current_pose, window_3d_pos):
         """
         SKILL 5: APPROACH
-        Move through the aligned window using trajectory following with controller dynamics
+        Geometrically step forward through the aligned window
+        Pure position updates, no controller dynamics
         
         Args:
             current_pose: Current drone pose dict (must be well-aligned!)
@@ -344,7 +365,7 @@ class NavigationSkills:
             current_pose: Updated pose dict, or -1 if failed
         """
         print(f"\n{'='*60}")
-        print(f"[SKILL: APPROACH]")
+        print(f"[SKILL: APPROACH] - Geometric Forward Stepping")
         print(f"{'='*60}")
         
         # Log alignment for debugging
@@ -359,40 +380,151 @@ class NavigationSkills:
             
             print(f"  Pre-approach pixel error: {error_mag:.1f}px")
         
-        # Calculate distance to window
+        # Calculate distance and direction to window
         distance = np.linalg.norm(window_3d_pos - current_pose['position'])
         print(f"  Distance to window: {distance:.3f} splat units")
         
-        # Simply use the window position as the target (controller will handle the trajectory)
-        target_pos = window_3d_pos.copy()
-        target_pos = self.nav.clip_position_to_bounds(target_pos)
+        # Get FORWARD direction in body frame, then transform to NED
+        current_yaw = current_pose['rpy'][2]
         
-        print(f"  Current position (NED): {current_pose['position']}")
-        print(f"  Target position (NED): {target_pos}")
+        # Forward direction in NED (body X-axis points forward)
+        # In NED: X=North, Y=East, so forward direction depends on yaw
+        forward_ned = np.array([
+            np.cos(current_yaw),  # North component
+            np.sin(current_yaw),  # East component
+            0.0                   # No vertical component
+        ])
         
-        # Use goToWaypoint with controller dynamics for smooth approach
-        # The controller works in global NED frame, so just give it the target
-        from navigation import goToWaypoint
+        print(f"  Current yaw: {np.degrees(current_yaw):.1f} deg")
+        print(f"  Forward direction (NED): [{forward_ned[0]:+.3f}, {forward_ned[1]:+.3f}, {forward_ned[2]:+.3f}]")
         
-        print(f"  Using default controller (no orientation constraints)")
-        print(f"  Controller will compute optimal orientation for NED movement")
+        # Move forward through window in small INCREMENTAL steps
+        step_size = 0.03  # 0.03 splat units per step
+        total_distance = distance + 0.15  # Go just 0.15 splat units past window (not 0.3!)
+        num_steps = int(np.ceil(total_distance / step_size))
+        num_steps = max(10, min(num_steps, 20))  # 10-20 steps
         
-        result = goToWaypoint(
-            current_pose, 
-            target_pos,
-            velocity=0.5,  # INCREASED 10x: Need significant acceleration for controller to tilt drone
-            pose_history=self.nav.pose_history,
-            action=f'APPROACH_W{self.nav.window_count}',
-            navigator=self.nav
-        )
+        # Use smaller drone radius for collision checking during approach
+        # The drone is well-aligned, so we can be less conservative
+        approach_radius = 0.02  # 2cm radius in splat units
         
-        if result == -1:
-            print(f"  [ERROR] Approach navigation failed")
-            return -1
+        print(f"  Moving {total_distance:.3f} splat units forward in {num_steps} steps")
+        print(f"  Step size: {step_size:.3f} splat units")
+        print(f"  Using reduced collision radius: {approach_radius:.3f} splat units")
         
-        current_pose = result
+        # Track detection quality to detect window crossing
+        initial_scan_frames = []
+        initial_mask = None
+        initial_area = 0
+        peak_area = 0  # Track the maximum area we've seen
         
-        print(f"  [OK] Approach complete")
+        # Get initial detection baseline (before starting approach)
+        print(f"\n  Getting initial window detection baseline...")
+        scan_waypoints_init = self.nav.scanner.generate_scan_trajectory(current_pose)
+        for wp in scan_waypoints_init:
+            rgb_init, _, _ = self.nav.renderer.render(wp['position'], wp['rpy'])
+            initial_scan_frames.append(rgb_init)
+        
+        initial_mask, _, _, _ = self.nav.detector.detect_window(initial_scan_frames)
+        if initial_mask is not None:
+            initial_area = np.sum(initial_mask > 0.5)
+            peak_area = initial_area  # Initialize peak
+            print(f"  Initial window area: {initial_area:.0f} pixels")
+        else:
+            initial_area = 0
+            print(f"  [WARN] Could not detect window initially")
+        
+        # Remember starting position
+        start_pos = current_pose['position'].copy()
+        
+        for step in range(num_steps):
+            # Calculate INCREMENTAL step (not cumulative!)
+            step_increment = forward_ned * step_size
+            new_pos = current_pose['position'] + step_increment
+            
+            # Clip to bounds
+            new_pos = self.nav.clip_position_to_bounds(new_pos)
+            
+            # Update position (keep same orientation)
+            current_pose['position'] = new_pos.copy()
+            
+            # Collision check with SMALLER radius
+            if doesItCollide(new_pos, drone_radius=approach_radius):
+                print(f"  [WARN] Step {step+1}/{num_steps} detected collision at {new_pos}")
+                distance_to_window_now = np.linalg.norm(window_3d_pos - new_pos)
+                print(f"  Distance to window: {distance_to_window_now:.3f}")
+                # If we're reasonably close to the window, consider it success
+                if distance_to_window_now < 0.8:  # More lenient threshold
+                    print(f"  [OK] Close enough to window, considering approach successful")
+                    break
+                else:
+                    print(f"  [ERROR] Too far from window, aborting")
+                    return -1
+            
+            # Render and record frame
+            rgb, _, _ = self.nav.renderer.render(current_pose['position'], current_pose['rpy'])
+            self.nav.record_frame(rgb, pose=current_pose,
+                                annotation=f"APPROACH_STEP_{step+1}/{num_steps}")
+            
+            print(f"  Step {step+1}/{num_steps}: pos={new_pos}")
+            
+            # VERIFICATION CHECK every 4 steps (starting from step 4)
+            if (step + 1) % 4 == 0 and step >= 3:
+                print(f"\n  [VERIFY] Checking window detection at step {step+1}...")
+                
+                # Quick scan from current position
+                scan_waypoints_check = self.nav.scanner.generate_scan_trajectory(current_pose)
+                scan_frames_check = []
+                for wp in scan_waypoints_check:
+                    rgb_check, _, _ = self.nav.renderer.render(wp['position'], wp['rpy'])
+                    scan_frames_check.append(rgb_check)
+                
+                # Detect window
+                check_mask, _, _, _ = self.nav.detector.detect_window(scan_frames_check)
+                
+                if check_mask is not None:
+                    check_area = np.sum(check_mask > 0.5)
+                    print(f"    Current window area: {check_area:.0f} pixels")
+                    
+                    # Update peak area
+                    if check_area > peak_area:
+                        peak_area = check_area
+                        print(f"    New peak area: {peak_area:.0f} pixels")
+                    
+                    if peak_area > 0:
+                        # Calculate ratio from PEAK (not initial)
+                        # This detects when area starts DROPPING after reaching maximum
+                        area_ratio_from_peak = check_area / peak_area
+                        
+                        print(f"    Area ratio from peak: {area_ratio_from_peak:.2f}")
+                        print(f"    Peak area was: {peak_area:.0f} pixels")
+                        
+                        # CROSSING DETECTION: Area dropping from peak
+                        # As we approach: area increases (window gets bigger)
+                        # At closest point: area reaches PEAK
+                        # As we pass through: area DROPS from peak
+                        
+                        if area_ratio_from_peak < 0.5 and step >= 8:
+                            # Area dropped by >50% from peak after at least 8 steps  We've passed through!
+                            print(f"    [OK] Window area dropped {(1-area_ratio_from_peak)*100:.0f}% from peak - passed through!")
+                            print(f"    Stopping at step {step+1}/{num_steps}")
+                            break
+                        elif area_ratio_from_peak < 0.6 and step >= 12:
+                            # Area dropped by >40% from peak after many steps  likely passed
+                            print(f"    [OK] Window area dropped {(1-area_ratio_from_peak)*100:.0f}% from peak after {step+1} steps - likely passed!")
+                            print(f"    Stopping at step {step+1}/{num_steps}")
+                            break
+                        else:
+                            # Still approaching or at peak
+                            print(f"    [CONTINUE] Window area at {area_ratio_from_peak*100:.0f}% of peak, continuing")
+                else:
+                    print(f"    [WARN] Cannot detect window - may have passed through")
+                    # If we can't detect window anymore after several steps, we probably passed it
+                    if step >= 8:
+                        print(f"    [OK] Lost window tracking after {step+1} steps - assuming passed through")
+                        break
+        
+        print(f"  [OK] Approach complete - moved forward {total_distance:.3f}m")
         print(f"  Final position (NED): {current_pose['position']}")
         
         return current_pose
@@ -403,7 +535,10 @@ class NavigationSkills:
     def recenter(self, current_pose):
         """
         SKILL 6: RECENTER
-        Reset yaw to 0 only (skip Y/Z to avoid collisions)
+        Iteratively reset Y, Z, Yaw, Pitch, Roll to zero while maintaining LOCAL X
+        LOCAL X = actual forward distance traveled through window (correct!)
+        Resetting Y/Yaw just re-aligns us to centerline
+        Saves frames during the process
         
         Args:
             current_pose: Current drone pose dict
@@ -411,30 +546,154 @@ class NavigationSkills:
         Returns:
             current_pose: Updated pose dict
         """
+        from navigation import wrap_angle
+        
         print(f"\n{'='*60}")
         print(f"[SKILL: RECENTER]")
         print(f"{'='*60}")
         
-        current_yaw_deg = np.degrees(current_pose['rpy'][2])
+        # Keep the LOCAL X we actually traveled - this is correct!
+        # During approach, we moved forward through the window
+        # Now we just need to re-align to centerline (Y=0, yaw=0)
+        target_x = current_pose['position'][0]  # LOCAL forward distance traveled
         
-        if abs(current_yaw_deg) > 2.0:
-            print(f"  Resetting yaw from {current_yaw_deg:.1f} to 0")
-            from navigation import goToWaypoint_yaw
-            result = goToWaypoint_yaw(
-                current_pose, 0.0,
-                pose_history=self.nav.pose_history,
-                action=f'RECENTER_YAW_W{self.nav.window_count}',
-                navigator=self.nav
-            )
+        current_global_x = current_pose['position'][0]
+        current_global_y = current_pose['position'][1]
+        current_global_z = current_pose['position'][2]
+        
+        print(f"  Goal: Keep X={target_x:.3f} (forward distance traveled), reset Y/Z/RPY to zero")
+        print(f"  Starting pose:")
+        print(f"    Position: [{current_global_x:.3f}, {current_global_y:.3f}, {current_global_z:.3f}]")
+        print(f"    RPY (deg): [{np.degrees(current_pose['rpy'][0]):.1f}, {np.degrees(current_pose['rpy'][1]):.1f}, {np.degrees(current_pose['rpy'][2]):.1f}]")
+        
+        # SAFETY: Move 0.1 splat units forward first to clear window 1
+        print(f"\n  [SAFETY] Moving 0.1 splat units forward to clear window 1...")
+        safety_distance = 0.1
+        safety_steps = 10  # 0.01 per step
+        step_size = safety_distance / safety_steps
+        
+        for safety_step in range(safety_steps):
+            # Move forward in current yaw direction
+            current_yaw = current_pose['rpy'][2]
+            forward_increment = np.array([
+                np.cos(current_yaw) * step_size,  # X (North)
+                np.sin(current_yaw) * step_size,  # Y (East)
+                0.0                                # Z (no vertical)
+            ])
             
-            if result != -1:
-                current_pose = result
-        else:
-            print(f"  Yaw already near 0 ({current_yaw_deg:.1f}), skipping")
+            current_pose['position'] += forward_increment
+            current_pose['position'] = self.nav.clip_position_to_bounds(current_pose['position'])
+            
+            # Check collision during safety movement
+            if doesItCollide(current_pose['position']):
+                print(f"    [WARN] Safety step {safety_step+1}: Collision detected at {current_pose['position']}")
+            
+            # Render frame
+            rgb, _, _ = self.nav.renderer.render(current_pose['position'], current_pose['rpy'])
+            self.nav.record_frame(rgb, pose=current_pose,
+                                annotation=f"RECENTER_SAFETY_{safety_step+1}/{safety_steps}")
         
-        # Skip Y/Z reset - causes collisions
-        print(f"  Position: [{current_pose['position'][0]:.2f}, "
-              f"{current_pose['position'][1]:.2f}, {current_pose['position'][2]:.2f}]")
-        print(f"  [OK] Recentered (yaw only)")
+        print(f"  Safety movement complete. New position: {current_pose['position']}")
+        print(f"  Total forward distance: {current_pose['position'][0]:.3f} splat units")
+        
+        # Update target_x to new position after safety movement
+        target_x = current_pose['position'][0]
+        print(f"\n  Now starting lateral/yaw recenter with X={target_x:.3f}")
+        
+        # Target state: keep X (after safety move), zero everything else
+        target_y = 0.0
+        target_z = 0.0
+        target_roll = 0.0
+        target_pitch = 0.0
+        target_yaw = 0.0
+        
+        # Iterative convergence parameters
+        max_iterations = 50
+        position_tolerance = 0.01  # 1cm (relaxed from 5mm)
+        angle_tolerance = np.radians(2.0)  # 2 degrees (relaxed from 1)
+        
+        # Step sizes for gradual convergence (smaller initial steps!)
+        position_step = 0.01  # 1cm per step (reduced from 2cm)
+        angle_step = np.radians(1.0)  # 1 degree per step (reduced from 2)
+        
+        # Check if already well-centered
+        initial_y_error = abs(current_pose['position'][1] - target_y)
+        initial_z_error = abs(current_pose['position'][2] - target_z)
+        initial_yaw_error = abs(wrap_angle(target_yaw - current_pose['rpy'][2]))
+        
+        if (initial_y_error < position_tolerance and 
+            initial_z_error < position_tolerance and
+            initial_yaw_error < angle_tolerance):
+            print(f"  [OK] Already centered, skipping recenter")
+            return current_pose
+        
+        for iteration in range(max_iterations):
+            # Calculate errors
+            error_y = target_y - current_pose['position'][1]
+            error_z = target_z - current_pose['position'][2]
+            error_roll = wrap_angle(target_roll - current_pose['rpy'][0])
+            error_pitch = wrap_angle(target_pitch - current_pose['rpy'][1])
+            error_yaw = wrap_angle(target_yaw - current_pose['rpy'][2])
+            
+            # Check convergence
+            pos_converged = abs(error_y) < position_tolerance and abs(error_z) < position_tolerance
+            ang_converged = (abs(error_roll) < angle_tolerance and 
+                           abs(error_pitch) < angle_tolerance and 
+                           abs(error_yaw) < angle_tolerance)
+            
+            if pos_converged and ang_converged:
+                print(f"  [OK] Recentered after {iteration} iterations")
+                break
+            
+            # Apply corrections with step limits
+            # Position corrections
+            if abs(error_y) > position_tolerance:
+                step_y = np.clip(error_y, -position_step, position_step)
+                current_pose['position'][1] += step_y
+            
+            if abs(error_z) > position_tolerance:
+                step_z = np.clip(error_z, -position_step, position_step)
+                current_pose['position'][2] += step_z
+            
+            # Angle corrections
+            if abs(error_roll) > angle_tolerance:
+                step_roll = np.clip(error_roll, -angle_step, angle_step)
+                current_pose['rpy'][0] += step_roll
+            
+            if abs(error_pitch) > angle_tolerance:
+                step_pitch = np.clip(error_pitch, -angle_step, angle_step)
+                current_pose['rpy'][1] += step_pitch
+            
+            if abs(error_yaw) > angle_tolerance:
+                step_yaw = np.clip(error_yaw, -angle_step, angle_step)
+                current_pose['rpy'][2] += step_yaw
+            
+            # Clip position to bounds (keep X fixed)
+            current_pose['position'] = self.nav.clip_position_to_bounds(current_pose['position'])
+            current_pose['position'][0] = target_x  # Force X to remain constant
+            
+            # Collision check - ENABLED to observe if we hit window 1 during recenter
+            is_colliding = doesItCollide(current_pose['position'])
+            
+            if is_colliding:
+                print(f"  [COLLISION] Iteration {iteration}: Detected at position {current_pose['position']}")
+                print(f"    Y={current_pose['position'][1]:+.3f}, Z={current_pose['position'][2]:+.3f}")
+                print(f"    This means we're hitting window 1 while moving back to centerline!")
+                # Don't break - continue to see the full collision pattern
+            
+            # Render and save frame every iteration
+            rgb, _, _ = self.nav.renderer.render(current_pose['position'], current_pose['rpy'])
+            self.nav.record_frame(rgb, pose=current_pose,
+                                annotation=f"RECENTER_iter{iteration}")
+            
+            # Log progress every iteration to track collision pattern
+            collision_status = "COLLISION" if is_colliding else "clear"
+            print(f"  Iter {iteration}: Y={current_pose['position'][1]:+.3f}, Z={current_pose['position'][2]:+.3f}, "
+                  f"Yaw={np.degrees(current_pose['rpy'][2]):+.1f} [{collision_status}]")
+        
+        print(f"  Final pose:")
+        print(f"    Position: [{current_pose['position'][0]:.3f}, {current_pose['position'][1]:.3f}, {current_pose['position'][2]:.3f}]")
+        print(f"    RPY (deg): [{np.degrees(current_pose['rpy'][0]):.1f}, {np.degrees(current_pose['rpy'][1]):.1f}, {np.degrees(current_pose['rpy'][2]):.1f}]")
+        print(f"  [OK] Recenter complete")
         
         return current_pose
