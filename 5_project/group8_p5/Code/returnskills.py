@@ -283,6 +283,70 @@ class ReturnNavigationSkills:
         return current_pose
     
     # =========================================================================
+    # RETURN SKILL 4B: APPROACH_RETURN_WINDOW4
+    # =========================================================================
+    def approach_return_window4(self, current_pose):
+        """
+        RETURN SKILL 4B: APPROACH_RETURN_WINDOW4
+        Flow-based approach for window 4 on return journey (irregular shape)
+        Uses tracked position for distance-based passing detection
+        
+        Args:
+            current_pose: Current drone pose dict
+            
+        Returns:
+            current_pose: Updated pose dict, or -1 if failed
+        """
+        print(f"\n{'='*60}")
+        print(f"[RETURN SKILL: APPROACH_RETURN_WINDOW4 - Flow-based]")
+        print(f"{'='*60}")
+        
+        # Get forward direction (now facing 180°)
+        current_yaw = current_pose['rpy'][2]
+        forward_ned = np.array([
+            np.cos(current_yaw),
+            np.sin(current_yaw),
+            0.0
+        ])
+        
+        print(f"  Current yaw: {np.degrees(current_yaw):.1f} deg")
+        print(f"  Forward direction (NED): {forward_ned}")
+        
+        # Approach parameters for window 4
+        step_size = 0.02
+        max_steps = 20  # Same as forward journey
+        
+        # Apply offset for window 4 before approach (same as forward)
+        print(f"  Applying window 4 offset: Y=+0.02, Z=+0.02")
+        current_pose['position'][1] += 0.02  # East
+        current_pose['position'][2] += 0.02  # Down
+        current_pose['position'] = self.nav.clip_position_to_bounds(current_pose['position'])
+        print(f"  New position after offset: {current_pose['position']}")
+        
+        print(f"  Moving forward (return through window 4)")
+        print(f"  Max steps: {max_steps}, Step size: {step_size:.3f}")
+        
+        for step in range(max_steps):
+            # Move forward
+            step_increment = forward_ned * step_size
+            new_pos = current_pose['position'] + step_increment
+            new_pos = self.nav.clip_position_to_bounds(new_pos)
+            current_pose['position'] = new_pos.copy()
+            
+            # Render
+            rgb, _, _ = self.nav.renderer.render(current_pose['position'], current_pose['rpy'])
+            self.nav.record_frame(rgb, pose=current_pose,
+                                annotation=f"RETURN_W4_STEP_{step+1}/{max_steps}")
+            
+            if (step + 1) % 5 == 0:
+                print(f"  Step {step+1}/{max_steps}")
+        
+        print(f"  [OK] Return window 4 approach complete")
+        print(f"  Final position: {current_pose['position']}")
+        
+        return current_pose
+    
+    # =========================================================================
     # RETURN SKILL 5: RECENTER_RETURN
     # =========================================================================
     def recenter_return(self, current_pose):
