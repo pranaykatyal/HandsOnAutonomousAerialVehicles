@@ -711,6 +711,7 @@ class NavigationSkills:
         """
         SKILL 7: EXPLORE
         Search laterally for next window based on approach direction
+        Moves incrementally and scans at each step
         
         Args:
             current_pose: Current drone pose dict
@@ -729,43 +730,66 @@ class NavigationSkills:
         if came_from_left is None:
             # Try both directions
             print(f"  Exploring both directions...")
-            directions = [('RIGHT', +0.5), ('LEFT', -0.5)]
+            directions = [('RIGHT', +2.5), ('LEFT', -2.5)]
         elif came_from_left:
             # Came from left (-Y), explore right (+Y)
             print(f"  Came from LEFT, exploring RIGHT (+Y)...")
-            directions = [('RIGHT', +0.5)]
+            directions = [('RIGHT', +2.5)]
         else:
             # Came from right (+Y), explore left (-Y)
             print(f"  Came from RIGHT, exploring LEFT (-Y)...")
-            directions = [('LEFT', -0.5)]
+            directions = [('LEFT', -2.5)]
         
-        for direction_name, y_offset in directions:
-            print(f"\n  Exploring {direction_name} (Y offset: {y_offset:+.2f})...")
+        for direction_name, total_y_offset in directions:
+            print(f"\n  Exploring {direction_name} (total Y offset: {total_y_offset:+.2f})...")
             
-            # Move laterally
-            explore_pos = current_pose['position'].copy()
-            explore_pos[1] += y_offset
-            explore_pos = self.nav.clip_position_to_bounds(explore_pos)
+            # Move incrementally in steps of 0.01, scan every 0.1
+            step_size = 0.01
+            scan_interval = 0.1  # Scan every 0.1 units
+            steps_per_scan = int(scan_interval / step_size)  # Scan every 10 steps
+            num_steps = int(abs(total_y_offset) / step_size)
+            y_direction = +1 if total_y_offset > 0 else -1
             
-            print(f"  Moving from {current_pose['position']} to {explore_pos}")
-            current_pose['position'] = explore_pos
+            start_y = current_pose['position'][1]
             
-            # Render and record
-            rgb, _, _ = self.nav.renderer.render(current_pose['position'], current_pose['rpy'])
-            self.nav.record_frame(rgb, pose=current_pose, 
-                                annotation=f"EXPLORE_{direction_name}")
+            for step in range(num_steps):
+                # Incremental Y movement
+                new_y = start_y + (step + 1) * step_size * y_direction
+                current_pose['position'][1] = new_y
+                current_pose['position'] = self.nav.clip_position_to_bounds(current_pose['position'])
+                
+                # Render and record every step
+                rgb, _, _ = self.nav.renderer.render(current_pose['position'], current_pose['rpy'])
+                self.nav.record_frame(rgb, pose=current_pose, 
+                                    annotation=f"EXPLORE_{direction_name}_step{step+1}")
+                
+                # Only scan every scan_interval (every 10 steps = 0.1 units)
+                if (step + 1) % steps_per_scan == 0 or step == num_steps - 1:
+                    scan_num = (step + 1) // steps_per_scan
+                    print(f"\n  Step {step+1}/{num_steps}: Y={current_pose['position'][1]:+.3f} - SCANNING")
+                    
+                    # Scan for window at this position
+                    window_3d_pos, corners_2d, scan_data = self.scan(
+                        current_pose, scan_type=f'explore_{direction_name.lower()}_s{scan_num}'
+                    )
+                    
+                    if window_3d_pos is not None:
+                        # Check if this is a background component (score > 15000)
+                        current_score = getattr(self.nav, 'last_component_score', None)
+                        if current_score is not None and current_score > 15000:
+                            print(f"  [SKIP] Detected background (score={current_score:.0f} > 15000), ignoring...")
+                            continue
+                        
+                        print(f"  [SUCCESS] Window found while exploring {direction_name} at Y={current_pose['position'][1]:+.3f}!")
+                        return current_pose, True
+                    else:
+                        print(f"  No window found, continuing...")
+                else:
+                    # Just moving, no scan
+                    if (step + 1) % 5 == 0:  # Print every 5 steps for progress
+                        print(f"  Step {step+1}/{num_steps}: Y={current_pose['position'][1]:+.3f}")
             
-            # Quick scan to check for window
-            print(f"  Scanning for window at exploration position...")
-            window_3d_pos, corners_2d, scan_data = self.scan(
-                current_pose, scan_type=f'explore_{direction_name.lower()}'
-            )
-            
-            if window_3d_pos is not None:
-                print(f"  [SUCCESS] Window found while exploring {direction_name}!")
-                return current_pose, True
-            else:
-                print(f"  No window found in {direction_name} direction")
+            print(f"  Completed {direction_name} exploration, no window found")
         
         print(f"  [FAIL] No window found during exploration")
         return current_pose, False

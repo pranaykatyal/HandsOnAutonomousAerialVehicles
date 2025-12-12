@@ -1044,7 +1044,7 @@ def main(renderer):
     print("NAVIGATION LOOP")
     print("="*70)
     
-    max_windows = 3
+    max_windows = 4
     
     for window_num in range(max_windows):
         print(f"\n{'='*70}")
