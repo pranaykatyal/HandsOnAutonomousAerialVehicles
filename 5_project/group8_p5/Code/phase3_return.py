@@ -149,6 +149,11 @@ def run_return_journey(navigator, renderer, currentPose):
                 print(f"\n[ABORT] Could not detect return window {return_win_num}")
                 return -1
             
+            # Extract initial component score for tracking
+            current_score = scan_data.get('component_score', None)
+            if current_score is not None:
+                print(f"Initial detection score: {current_score:.0f} (will track this window)")
+            
             # =================================================================
             # ALIGN-VERIFY LOOP (BEFORE YAW CORRECTION!)
             # =================================================================
@@ -168,15 +173,17 @@ def run_return_journey(navigator, renderer, currentPose):
                 
                 print(f"Initial alignment error: {error_mag:.1f}px")
                 
-                if error_mag < 25:
-                    print(f"  Good alignment ({error_mag:.1f}px < 25px)")
+                if error_mag < 10:
+                    print(f"  Excellent alignment ({error_mag:.1f}px < 10px)")
                     print(f"  Proceeding to yaw correction")
                 else:
-                    print(f"  Needs refinement ({error_mag:.1f}px > 25px)")
-                    print(f"  Running RETURN ALIGN-VERIFY cycles")
+                    print(f"  Needs refinement ({error_mag:.1f}px > 10px)")
+                    print(f"  Running RETURN ALIGN-VERIFY cycles until error < 10px")
                     
-                    # ITERATIVE ALIGN-VERIFY LOOP
-                    max_cycles = 3
+                    # ITERATIVE ALIGN-VERIFY LOOP - aggressive convergence
+                    max_cycles = 10  # Increased from 3
+                    target_error = 10.0  # Target: 10px or less
+                    
                     for cycle_num in range(max_cycles):
                         print(f"\n  --- Cycle {cycle_num + 1}/{max_cycles} ---")
                         
@@ -185,10 +192,12 @@ def run_return_journey(navigator, renderer, currentPose):
                             currentPose, window_3d_pos, corners_2d
                         )
                         
-                        # VERIFY - Re-scan to confirm window position
+                        # VERIFY - Re-scan to confirm window position WITH SCORE TRACKING
                         print(f"  [VERIFY] Re-scanning window...")
                         verified_window, verified_corners, scan_data = return_skills.scan_return(
-                            currentPose, scan_type=f'return_w{return_win_num}_verify_c{cycle_num}'
+                            currentPose, 
+                            scan_type=f'return_w{return_win_num}_verify_c{cycle_num}',
+                            target_score=current_score  # CRITICAL: Track same window!
                         )
                         
                         if verified_window is None:
@@ -202,9 +211,11 @@ def run_return_journey(navigator, renderer, currentPose):
                             new_pos = navigator.clip_position_to_bounds(new_pos)
                             currentPose['position'] = new_pos
                             
-                            # Retry verification
+                            # Retry verification WITH SCORE TRACKING
                             verified_window, verified_corners, scan_data = return_skills.scan_return(
-                                currentPose, scan_type=f'return_w{return_win_num}_verify_c{cycle_num}_retry'
+                                currentPose, 
+                                scan_type=f'return_w{return_win_num}_verify_c{cycle_num}_retry',
+                                target_score=current_score  # Keep tracking same window
                             )
                             
                             if verified_window is None:
@@ -213,9 +224,15 @@ def run_return_journey(navigator, renderer, currentPose):
                             else:
                                 window_3d_pos = verified_window
                                 corners_2d = verified_corners
+                                # Update score if detection returned a new one
+                                if 'component_score' in scan_data:
+                                    current_score = scan_data['component_score']
                         else:
                             window_3d_pos = verified_window
                             corners_2d = verified_corners
+                            # Update score for next cycle
+                            if 'component_score' in scan_data:
+                                current_score = scan_data['component_score']
                         
                         # Check alignment after verify
                         proj_pixel_check = navigator.pnp_estimator.project_window_to_pixel(
@@ -229,16 +246,17 @@ def run_return_journey(navigator, renderer, currentPose):
                         else:
                             error_mag = float('inf')
                         
-                        alignment_good = error_mag < 50
-                        
-                        # Check convergence
-                        if alignment_good or error_mag < 20:
-                            print(f"  [CONVERGED] error={error_mag:.1f}px")
+                        # Check convergence - TARGET: 10px
+                        if error_mag < target_error:
+                            print(f"  [CONVERGED] error={error_mag:.1f}px < {target_error}px ✓")
                             break
                         elif cycle_num < max_cycles - 1:
-                            print(f"  [CONTINUE] error={error_mag:.1f}px")
+                            print(f"  [CONTINUE] error={error_mag:.1f}px, target={target_error}px")
                         else:
-                            print(f"  [MAX CYCLES] Proceeding anyway")
+                            print(f"  [MAX CYCLES] Final error={error_mag:.1f}px (target was {target_error}px)")
+                            if error_mag > 50:
+                                print(f"  [ERROR] Alignment did not converge well enough!")
+                                return -1
             else:
                 print(f"  [WARN] Cannot project window")
             
@@ -293,6 +311,102 @@ def run_return_journey(navigator, renderer, currentPose):
             return_skills.return_window_count += 1
     
     # =========================================================================
+    # FINAL ALIGNMENT TO ORIGIN - Incremental (No Controller)
+    # =========================================================================
+    print(f"\n{'='*70}")
+    print(f"FINAL ALIGNMENT TO ORIGIN")
+    print(f"{'='*70}")
+    print(f"  Current position: {currentPose['position']}")
+    print(f"  Current RPY (deg): {np.degrees(currentPose['rpy'])}")
+    
+    # STEP 1: Incremental yaw reset (small steps, no controller)
+    target_yaw = 0.0
+    current_yaw = currentPose['rpy'][2]
+    yaw_error = wrap_angle(target_yaw - current_yaw)
+    
+    print(f"\n  STEP 1: Resetting yaw incrementally...")
+    print(f"    Current yaw: {np.degrees(current_yaw):.1f}°")
+    print(f"    Target yaw: 0.0°")
+    print(f"    Yaw error: {np.degrees(yaw_error):.1f}°")
+    
+    if abs(yaw_error) > np.radians(5.0):
+        yaw_tolerance = np.radians(2.0)
+        yaw_step = np.radians(2.0)  # 2° per step
+        max_yaw_iterations = 100
+        
+        for yaw_iter in range(max_yaw_iterations):
+            yaw_error = wrap_angle(target_yaw - currentPose['rpy'][2])
+            
+            if abs(yaw_error) < yaw_tolerance:
+                print(f"    [OK] Yaw aligned after {yaw_iter} iterations")
+                break
+            
+            step_yaw = np.clip(yaw_error, -yaw_step, yaw_step)
+            currentPose['rpy'][2] += step_yaw
+            
+            if yaw_iter % 10 == 0:
+                rgb, _, _ = navigator.renderer.render(currentPose['position'], currentPose['rpy'])
+                navigator.record_frame(rgb, pose=currentPose, annotation=f"FINAL_YAW_{yaw_iter}")
+                print(f"    Iteration {yaw_iter}: Yaw={np.degrees(currentPose['rpy'][2]):.1f}°")
+        
+        print(f"    Final yaw: {np.degrees(currentPose['rpy'][2]):.1f}°")
+    else:
+        print(f"    [OK] Yaw already aligned")
+    
+    # STEP 2: Incremental Y/Z centering
+    print(f"\n  STEP 2: Centering Y and Z...")
+    print(f"    Current Y: {currentPose['position'][1]:+.3f}, Z: {currentPose['position'][2]:+.3f}")
+    
+    position_tolerance = 0.01
+    position_step = 0.01
+    max_position_iterations = 50
+    
+    for pos_iter in range(max_position_iterations):
+        error_y = 0.0 - currentPose['position'][1]
+        error_z = 0.0 - currentPose['position'][2]
+        
+        if abs(error_y) < position_tolerance and abs(error_z) < position_tolerance:
+            print(f"    [OK] Y/Z centered after {pos_iter} iterations")
+            break
+        
+        if abs(error_y) > position_tolerance:
+            currentPose['position'][1] += np.clip(error_y, -position_step, position_step)
+        if abs(error_z) > position_tolerance:
+            currentPose['position'][2] += np.clip(error_z, -position_step, position_step)
+        
+        currentPose['position'] = navigator.clip_position_to_bounds(currentPose['position'])
+        
+        if pos_iter % 10 == 0:
+            rgb, _, _ = navigator.renderer.render(currentPose['position'], currentPose['rpy'])
+            navigator.record_frame(rgb, pose=currentPose, annotation=f"FINAL_YZ_{pos_iter}")
+    
+    print(f"    Final Y: {currentPose['position'][1]:+.3f}, Z: {currentPose['position'][2]:+.3f}")
+    
+    # STEP 3: Incremental X to origin
+    print(f"\n  STEP 3: Moving X to origin...")
+    print(f"    Current X: {currentPose['position'][0]:+.3f}")
+    
+    for x_iter in range(50):
+        error_x = 0.0 - currentPose['position'][0]
+        
+        if abs(error_x) < 0.01:
+            print(f"    [OK] X at origin after {x_iter} iterations")
+            break
+        
+        currentPose['position'][0] += np.clip(error_x, -0.01, 0.01)
+        currentPose['position'] = navigator.clip_position_to_bounds(currentPose['position'])
+        
+        if x_iter % 10 == 0:
+            rgb, _, _ = navigator.renderer.render(currentPose['position'], currentPose['rpy'])
+            navigator.record_frame(rgb, pose=currentPose, annotation=f"FINAL_X_{x_iter}")
+    
+    print(f"    Final X: {currentPose['position'][0]:+.3f}")
+    print(f"\n  [OK] Final alignment complete")
+    print(f"  Final position: {currentPose['position']}")
+    print(f"  Final RPY (deg): {np.degrees(currentPose['rpy'])}")
+    
+    
+    # =========================================================================
     # RETURN JOURNEY COMPLETE
     # =========================================================================
     print(f"\n{'='*70}")
@@ -300,7 +414,7 @@ def run_return_journey(navigator, renderer, currentPose):
     print(f"{'='*70}")
     print(f"  Windows traversed: {return_skills.return_window_count}")
     print(f"  Final position: {currentPose['position']}")
-    print(f"  Final yaw: {np.degrees(currentPose['rpy'][2]):.1f}Â°")
+    print(f"  Final RPY (deg): {np.degrees(currentPose['rpy'])}")
     print(f"{'='*70}")
     
     return currentPose

@@ -20,7 +20,7 @@ class WindowNavigator:
     """Manages window detection, alignment, and navigation with PnP pose estimation"""
     
     # CRITICAL: Map bounds for Gaussian splat environment
-    MAP_X_MIN = 0.0     # Forward (North) minimum
+    MAP_X_MIN = -1.0    # Forward (North) minimum - allow negative for return
     MAP_X_MAX = 2.0     # Forward (North) maximum
     MAP_Y_LIMIT = 2.0   # East/West (±2.0)
     MAP_Z_LIMIT = 0.5   # Down/Up (±0.5)
@@ -450,8 +450,10 @@ class WindowNavigator:
             print(f"  NED (scaled by {self.PNP_SCALE_FACTOR}): pos={window_pos_ned}")
             print(f"       rpy(deg)={np.degrees(window_rpy_ned)}")
         
-        # Collision check
-        if doesItCollide(window_pos_ned):
+        # Collision check (skip for return journey)
+        is_return_scan = 'return' in scan_type.lower()
+        
+        if not is_return_scan and doesItCollide(window_pos_ned):
             print(f"  [ERROR] Position collides, adjusting...")
             
             for adj_name, scale in [('closer', 0.8), ('further', 1.2), ('further2', 1.5)]:
@@ -464,13 +466,54 @@ class WindowNavigator:
             else:
                 print(f"  [ERROR] No collision-free position")
                 return None, scan_frames, None, None, None
+        elif is_return_scan:
+            print(f"  [RETURN] Skipping collision check")
         
         # Check if window position is within map bounds
         if not self.is_position_in_bounds(window_pos_ned):
-            print(f"  [ERROR] Window position outside map bounds!")
-            print(f"    Position: X={window_pos_ned[0]:.2f}, Y={window_pos_ned[1]:.2f}, Z={window_pos_ned[2]:.2f}")
+            print(f"  [WARN] Window position outside map bounds!")
+            print(f"    Detected: X={window_pos_ned[0]:.2f}, Y={window_pos_ned[1]:.2f}, Z={window_pos_ned[2]:.2f}")
             print(f"    Limits: X=[{self.MAP_X_MIN}, {self.MAP_X_MAX}], Y=±{self.MAP_Y_LIMIT}, Z=±{self.MAP_Z_LIMIT}")
-            return None, scan_frames, None, None, None
+            
+            # Clip to map bounds
+            clipped_pos = self.clip_position_to_bounds(window_pos_ned)
+            print(f"    Clipped to: X={clipped_pos[0]:.2f}, Y={clipped_pos[1]:.2f}, Z={clipped_pos[2]:.2f}")
+            
+            # Check if clipped position collides
+            if not is_return_scan and doesItCollide(clipped_pos):
+                print(f"    [WARN] Clipped position collides, searching for nearest valid point...")
+                
+                # Search in a small radius around clipped position
+                found_valid = False
+                search_offsets = [
+                    [0.0, 0.0, 0.0],      # Try clipped directly first
+                    [0.05, 0.0, 0.0],     # Try small offsets
+                    [-0.05, 0.0, 0.0],
+                    [0.0, 0.05, 0.0],
+                    [0.0, -0.05, 0.0],
+                    [0.0, 0.0, 0.05],
+                    [0.0, 0.0, -0.05],
+                    [0.10, 0.0, 0.0],     # Larger offsets
+                    [-0.10, 0.0, 0.0],
+                ]
+                
+                for offset in search_offsets:
+                    test_pos = clipped_pos + np.array(offset)
+                    test_pos = self.clip_position_to_bounds(test_pos)
+                    
+                    if not doesItCollide(test_pos):
+                        print(f"    [OK] Found valid position: {test_pos}")
+                        window_pos_ned = test_pos
+                        found_valid = True
+                        break
+                
+                if not found_valid:
+                    print(f"    [ERROR] Could not find collision-free position near window")
+                    return None, scan_frames, None, None, None
+            else:
+                # Clipped position is valid (no collision or return journey)
+                window_pos_ned = clipped_pos
+                print(f"    [OK] Using clipped position")
         
         # Save frames
         for idx, (frame, pose) in enumerate(zip(scan_frames, scan_poses)):
@@ -1090,13 +1133,15 @@ class WindowNavigator:
         if frame_id is None:
             frame_id = len(self.video_frames)
         
+        # CRITICAL: Renderer outputs RGB, but OpenCV functions expect BGR
+        # Convert to BGR first so all subsequent operations are in BGR
+        frame = cv2.cvtColor(rgb_frame, cv2.COLOR_RGB2BGR)
+        
         if mask is not None:
-            overlay = rgb_frame.copy()
+            overlay = frame.copy()
             mask_color = np.zeros_like(overlay)
-            mask_color[mask > 0.5] = [0, 255, 0]
+            mask_color[mask > 0.5] = [0, 255, 0]  # BGR green
             frame = cv2.addWeighted(overlay, 0.7, mask_color, 0.3, 0)
-        else:
-            frame = rgb_frame.copy()
         
         if pose is not None:
             pos = pose['position']
@@ -1106,8 +1151,8 @@ class WindowNavigator:
             font = cv2.FONT_HERSHEY_SIMPLEX
             font_scale = 0.7
             thickness = 2
-            color = (0, 255, 255)
-            bg_color = (0, 0, 0)
+            color = (0, 255, 255)  # BGR cyan
+            bg_color = (0, 0, 0)   # BGR black
             
             text_lines = [
                 f"XYZ: [{pos[0]:+.3f}, {pos[1]:+.3f}, {pos[2]:+.3f}]",
@@ -1130,7 +1175,8 @@ class WindowNavigator:
         self.video_frames.append(frame)
         frame_path = f'./log/frames/frame_{frame_id:04d}.png'
         os.makedirs('./log/frames', exist_ok=True)
-        cv2.imwrite(frame_path, cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+        # Frame is already in BGR from conversion above
+        cv2.imwrite(frame_path, frame)
     
     def save_frames_summary(self):
         num_frames = len(self.video_frames)

@@ -1,6 +1,6 @@
 """
 Phase 1&2: Forward Journey
-Navigate through windows 1→2→3→4
+Navigate through windows 1â†’2â†’3â†’4
 """
 
 import numpy as np
@@ -10,7 +10,7 @@ from navigation import wrap_angle
 
 def run_forward_journey(navigator, renderer, currentPose):
     """
-    Execute forward journey through windows 1→2→3→4
+    Execute forward journey through windows 1â†’2â†’3â†’4
     
     Args:
         navigator: WindowNavigator instance
@@ -20,7 +20,7 @@ def run_forward_journey(navigator, renderer, currentPose):
     Returns:
         currentPose: Updated pose after completing forward journey, or -1 on failure
     """
-    print("\n[FORWARD JOURNEY] Starting navigation through windows 1→4")
+    print("\n[FORWARD JOURNEY] Starting navigation through windows 1â†’4")
     
     # Initialize skills
     skills = NavigationSkills(navigator)
@@ -31,7 +31,7 @@ def run_forward_journey(navigator, renderer, currentPose):
         print(f"\n{'='*70}")
         print(f"WINDOW {window_num + 1} / {max_windows}")
         print(f"{'='*70}")
-        print(f"Flow: SCAN → FIX_YAW → ALIGN → VERIFY → APPROACH → RECENTER")
+        print(f"Flow: SCAN â†’ FIX_YAW â†’ ALIGN â†’ VERIFY â†’ APPROACH â†’ RECENTER")
         
         # =================================================================
         # SKILL 1: SCAN
@@ -59,12 +59,12 @@ def run_forward_journey(navigator, renderer, currentPose):
             # Store yaw error for VERIFY guidance
             skills.yaw_error_initial = yaw_error
             
-            print(f"\nYaw check: current={np.degrees(current_yaw):.1f}°, "
-                  f"desired={np.degrees(desired_yaw):.1f}°, error={yaw_error_deg:.1f}°")
-            print(f"  Yaw hint: {np.degrees(yaw_error):.1f}° ({'RIGHT' if yaw_error > 0 else 'LEFT'})")
+            print(f"\nYaw check: current={np.degrees(current_yaw):.1f}Â°, "
+                  f"desired={np.degrees(desired_yaw):.1f}Â°, error={yaw_error_deg:.1f}Â°")
+            print(f"  Yaw hint: {np.degrees(yaw_error):.1f}Â° ({'RIGHT' if yaw_error > 0 else 'LEFT'})")
             
             if yaw_error_deg > 5.0:
-                print(f"  Running FIX_YAW (error > 5°)")
+                print(f"  Running FIX_YAW (error > 5Â°)")
                 result = skills.fix_yaw(currentPose, window_3d_pos)
                 
                 if result == -1:
@@ -73,7 +73,7 @@ def run_forward_journey(navigator, renderer, currentPose):
                 
                 currentPose = result
             else:
-                print(f"  Skipping FIX_YAW (error < 5°)")
+                print(f"  Skipping FIX_YAW (error < 5Â°)")
         
         # =================================================================
         # SKILLS 3-4: ALIGN-VERIFY LOOP (Conditional)
@@ -187,15 +187,55 @@ def run_forward_journey(navigator, renderer, currentPose):
         if navigator.window_count >= 4:
             # Turn back after window 4
             print(f"\n{'='*70}")
-            print(f"[WINDOW 4 COMPLETE - TURNING BACK 180°]")
+            print(f"[WINDOW 4 COMPLETE - TURNING BACK 180Â°]")
             print(f"{'='*70}")
             
             currentPose = skills.turnback(currentPose)
             
-            # Recenter with 180° yaw
+            # Recenter with 180Â° yaw
             from returnskills import ReturnNavigationSkills
             return_skills = ReturnNavigationSkills(navigator)
             currentPose = return_skills.recenter_return(currentPose)
+            
+            # CRITICAL: Force position to match Phase 3 standalone start
+            # This ensures consistent behavior whether running Phase 3 alone or continuously
+            print(f"\n  [SYNC] Aligning to Phase 3 standalone start position...")
+            print(f"    Current position: {currentPose['position']}")
+            
+            target_start_position = np.array([1.75, -0.02, 0.0])
+            print(f"    Target position: {target_start_position}")
+            
+            # Incrementally move to target (like recenter, but to specific position)
+            position_tolerance = 0.01
+            position_step = 0.02
+            max_iterations = 100
+            
+            for sync_iter in range(max_iterations):
+                error_x = target_start_position[0] - currentPose['position'][0]
+                error_y = target_start_position[1] - currentPose['position'][1]
+                error_z = target_start_position[2] - currentPose['position'][2]
+                
+                error_mag = np.sqrt(error_x**2 + error_y**2 + error_z**2)
+                
+                if error_mag < position_tolerance:
+                    print(f"    [OK] Position synced after {sync_iter} iterations")
+                    break
+                
+                # Apply corrections
+                currentPose['position'][0] += np.clip(error_x, -position_step, position_step)
+                currentPose['position'][1] += np.clip(error_y, -position_step, position_step)
+                currentPose['position'][2] += np.clip(error_z, -position_step, position_step)
+                
+                currentPose['position'] = navigator.clip_position_to_bounds(currentPose['position'])
+                
+                # Render every 10 iterations
+                if sync_iter % 10 == 0:
+                    rgb, _, _ = navigator.renderer.render(currentPose['position'], currentPose['rpy'])
+                    navigator.record_frame(rgb, pose=currentPose, 
+                                         annotation=f"SYNC_TO_RETURN_START_{sync_iter}")
+            
+            print(f"    Final position: {currentPose['position']}")
+            print(f"    Final yaw: {np.degrees(currentPose['rpy'][2]):.1f}°")
             
             print(f"\n[OK] Window 4 complete! Ready for return journey.")
             break  # Exit forward journey loop

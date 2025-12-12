@@ -6,8 +6,8 @@ Main orchestration file that conditionally runs forward and/or return journeys
 # =============================================================================
 # CONFIGURATION FLAGS
 # =============================================================================
-GENERATE_VIDEO = False       # Set to False to skip video generation (saves time)
-RUN_PHASE_1_2 = False        # Forward journey (windows 1→2→3→4)
+GENERATE_VIDEO = True       # Set to False to skip video generation (saves time)
+RUN_PHASE_1_2 = True        # Forward journey (windows 1→2→3→4)
 RUN_PHASE_3 = True           # Return journey (windows 4→3→2→1)
 # =============================================================================
 

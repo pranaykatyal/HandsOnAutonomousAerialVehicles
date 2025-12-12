@@ -24,7 +24,7 @@ class ReturnNavigationSkills:
     # =========================================================================
     # RETURN SKILL 1: SCAN_RETURN
     # =========================================================================
-    def scan_return(self, current_pose, scan_type='return_scan'):
+    def scan_return(self, current_pose, scan_type='return_scan', target_score=None):
         """
         RETURN SKILL 1: SCAN_RETURN
         Window detection for return journey
@@ -32,6 +32,7 @@ class ReturnNavigationSkills:
         Args:
             current_pose: Current drone pose dict
             scan_type: Label for this scan
+            target_score: Optional component score to match for tracking
             
         Returns:
             window_3d_pos: (3,) Window position in NED, or None if failed
@@ -55,16 +56,20 @@ class ReturnNavigationSkills:
             scan_frames.append(rgb)
             print(f"    Frame {i+1}/{len(scan_waypoints)}")
         
-        # Detect window
+        # Detect window with score tracking
         print(f"  Detecting window...")
+        if target_score is not None:
+            print(f"  Using target score for tracking: {target_score:.0f}")
+        
         window_3d_pos, _, center_2d, corners_2d, debug_info = self.nav.scan_for_window(
-            current_pose, self.nav.pose_history, scan_type=scan_type
+            current_pose, self.nav.pose_history, scan_type=scan_type, target_score=target_score
         )
         
         scan_data = {
             'frames': scan_frames,
             'center_2d': center_2d,
-            'type': scan_type
+            'type': scan_type,
+            'debug_info': debug_info
         }
         
         if window_3d_pos is None:
@@ -72,6 +77,11 @@ class ReturnNavigationSkills:
             return None, None, scan_data
         
         print(f"  [OK] Window detected at: {window_3d_pos}")
+        
+        # Store score for next verification
+        if debug_info is not None and 'selected_component_score' in debug_info:
+            scan_data['component_score'] = debug_info['selected_component_score']
+            print(f"  Stored component score: {scan_data['component_score']:.0f}")
         
         return window_3d_pos, corners_2d, scan_data
     
@@ -264,11 +274,19 @@ class ReturnNavigationSkills:
         
         # Move forward through window
         step_size = 0.03
-        total_distance = distance + 0.15
+        
+        # CRITICAL: For window 1 (last return window), go a bit further to ensure complete crossing
+        # But not too much - space is limited (X bounds are [0, 2.0])
+        is_window_1 = self.return_window_count >= 3  # Window 4→3→2→1, so count=3 means window 1
+        extra_distance = 0.25 if is_window_1 else 0.15  # +0.10 more than normal
+        
+        total_distance = distance + extra_distance
         num_steps = int(np.ceil(total_distance / step_size))
-        num_steps = max(10, min(num_steps, 20))
+        num_steps = max(10, min(num_steps, 25))  # Increased max from 20 to 25
         
         print(f"  Moving {total_distance:.3f} splat units forward in {num_steps} steps")
+        if is_window_1:
+            print(f"  [WINDOW 1] Extra clearance: +{extra_distance:.2f} (vs +0.15 for others)")
         
         for step in range(num_steps):
             step_increment = forward_ned * step_size
