@@ -449,11 +449,6 @@ class ReturnNavigationSkills:
                             break
                         else:
                             print(f"      [CONTINUE] No valid window detected at this position")
-                            scan_frames = scan_frames_explore
-                            window_found = True
-                            break
-                        else:
-                            print(f"      No window detected")
                 
                 if window_found:
                     break
