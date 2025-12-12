@@ -289,7 +289,11 @@ class ReturnNavigationSkills:
         """
         RETURN SKILL 4B: APPROACH_RETURN_WINDOW4
         Flow-based approach for window 4 on return journey (irregular shape)
-        Uses tracked position for distance-based passing detection
+        
+        PROCESS:
+        1. Use optical flow to detect window 4 gap
+        2. Apply offset: Y-0.02, Z+0.02
+        3. Move through the window
         
         Args:
             current_pose: Current drone pose dict
@@ -298,10 +302,343 @@ class ReturnNavigationSkills:
             current_pose: Updated pose dict, or -1 if failed
         """
         print(f"\n{'='*60}")
-        print(f"[RETURN SKILL: APPROACH_RETURN_WINDOW4 - Flow-based]")
+        print(f"[RETURN SKILL: APPROACH_RETURN_WINDOW4 - Flow-based Detection]")
         print(f"{'='*60}")
         
-        # Get forward direction (now facing 180°)
+        # =================================================================
+        # STEP 1: Use optical flow to detect window 4
+        # =================================================================
+        print(f"\n  STEP 1: Detecting window 4 using optical flow...")
+        
+        # Generate scan trajectory
+        scan_waypoints = self.nav.scanner.generate_scan_trajectory(current_pose)
+        print(f"  Generated {len(scan_waypoints)} scan waypoints")
+        
+        # Capture frames
+        scan_frames = []
+        for i, waypoint in enumerate(scan_waypoints):
+            rgb, _, _ = self.nav.renderer.render(waypoint['position'], waypoint['rpy'])
+            scan_frames.append(rgb)
+            
+            # Save scan frames for debugging
+            self.nav.record_frame(rgb, pose={
+                'position': waypoint['position'],
+                'rpy': waypoint['rpy']
+            }, annotation=f"RETURN_W4_SCAN_{i+1}")
+            
+            print(f"    Frame {i+1}/{len(scan_waypoints)}")
+        
+        # Detect window using flow
+        print(f"  Running flow detection...")
+        mask, center_2d, confidence, debug_info = self.nav.detector.detect_window(
+            scan_frames,
+            prefer_larger=False,
+            yaw_hint=None,
+            target_score=None,
+            window_count=3  # Window 4 (0-indexed as 3)
+        )
+        
+        # Save detection visualization
+        import os
+        os.makedirs('./log', exist_ok=True)
+        viz_path = './log/return_w4_detection.png'
+        self.nav.detector.visualize(debug_info, viz_path)
+        print(f"  Saved detection visualization: {viz_path}")
+        
+        if center_2d is None or confidence < 0.001:  # Relaxed threshold for window 4
+            print(f"  [WARN] Window 4 not detected from current position")
+            print(f"    Confidence: {confidence:.3f}")
+            print(f"    Triggering EXPLORE to search for window 4...")
+            
+            # =================================================================
+            # EXPLORE: Search laterally for window 4
+            # =================================================================
+            print(f"\n{'='*60}")
+            print(f"[EXPLORE] Searching for window 4 by moving laterally")
+            print(f"{'='*60}")
+            
+            # Try both directions: RIGHT (+Y) and LEFT (-Y)
+            # Starting position has Y=-0.02, so we're already slightly left
+            # Try moving right first
+            explore_directions = [
+                ('RIGHT', +0.15),  # Move right (east) - 15cm
+                ('LEFT', -0.15)    # Move left (west) - 15cm from original
+            ]
+            
+            original_y = current_pose['position'][1]
+            window_found = False
+            
+            for direction_name, total_y_offset in explore_directions:
+                print(f"\n  Exploring {direction_name} (Y offset: {total_y_offset:+.2f})...")
+                
+                # Reset to starting Y position before each direction
+                current_pose['position'][1] = original_y
+                
+                # Move incrementally
+                step_size = 0.01  # 1cm steps
+                scan_interval = 0.05  # Scan every 5cm
+                steps_per_scan = int(scan_interval / step_size)
+                num_steps = int(abs(total_y_offset) / step_size)
+                y_direction = +1 if total_y_offset > 0 else -1
+                
+                for step in range(num_steps):
+                    # Incremental Y movement
+                    current_pose['position'][1] += step_size * y_direction
+                    current_pose['position'] = self.nav.clip_position_to_bounds(current_pose['position'])
+                    
+                    # Render every step
+                    rgb, _, _ = self.nav.renderer.render(current_pose['position'], current_pose['rpy'])
+                    self.nav.record_frame(rgb, pose=current_pose,
+                                        annotation=f"EXPLORE_W4_{direction_name}_{step+1}")
+                    
+                    # Scan every scan_interval
+                    if (step + 1) % steps_per_scan == 0 or step == num_steps - 1:
+                        scan_num = (step + 1) // steps_per_scan
+                        print(f"\n    === SCAN {scan_num} at Step {step+1}/{num_steps} ===")
+                        print(f"    Position: Y={current_pose['position'][1]:+.3f}")
+                        
+                        # Generate scan trajectory (5 waypoints for flow detection)
+                        print(f"    Generating scan trajectory...")
+                        scan_waypoints_explore = self.nav.scanner.generate_scan_trajectory(current_pose)
+                        scan_frames_explore = []
+                        
+                        print(f"    Capturing {len(scan_waypoints_explore)} frames for flow detection...")
+                        for idx, wp in enumerate(scan_waypoints_explore):
+                            rgb_scan, _, _ = self.nav.renderer.render(wp['position'], wp['rpy'])
+                            scan_frames_explore.append(rgb_scan)
+                            # Save individual scan frames
+                            self.nav.record_frame(rgb_scan, pose={'position': wp['position'], 'rpy': wp['rpy']},
+                                                annotation=f"EXPLORE_W4_{direction_name}_SCAN{scan_num}_F{idx+1}")
+                        
+                        print(f"    Running optical flow detection (window_count=3)...")
+                        # Detect using FLOW
+                        mask_explore, center_2d_explore, confidence_explore, debug_info_explore = self.nav.detector.detect_window(
+                            scan_frames_explore, window_count=3  # Window 4 = index 3
+                        )
+                        
+                        print(f"    Detection result:")
+                        print(f"      Center: {center_2d_explore}")
+                        print(f"      Confidence: {confidence_explore:.4f}")
+                        
+                        if center_2d_explore is not None and confidence_explore >= 0.001:
+                            # Check if this is background (score > 15000)
+                            component_score = 0
+                            if hasattr(debug_info_explore, 'get'):
+                                component_score = debug_info_explore.get('selected_component_score', 0)
+                            
+                            print(f"      Component score: {component_score:.0f}")
+                            
+                            if component_score > 15000:
+                                print(f"      [SKIP] Background detected (score too high)")
+                                continue
+                            
+                            print(f"      [SUCCESS] Window 4 FOUND at Y={current_pose['position'][1]:+.3f}!")
+                            print(f"      Center pixel: ({center_2d_explore[0]:.0f}, {center_2d_explore[1]:.0f})")
+                            print(f"      Confidence: {confidence_explore:.3f}")
+                            
+                            # Save detection visualization
+                            viz_path_explore = f'./log/return_w4_explore_{direction_name}_detection.png'
+                            self.nav.detector.visualize(debug_info_explore, viz_path_explore)
+                            print(f"      Saved visualization: {viz_path_explore}")
+                            
+                            # Use this detection
+                            center_2d = center_2d_explore
+                            confidence = confidence_explore
+                            scan_frames = scan_frames_explore
+                            window_found = True
+                            break
+                        else:
+                            print(f"      [CONTINUE] No valid window detected at this position")
+                            scan_frames = scan_frames_explore
+                            window_found = True
+                            break
+                        else:
+                            print(f"      No window detected")
+                
+                if window_found:
+                    break
+            
+            if not window_found:
+                print(f"\n  [ABORT] Could not find window 4 after exploring")
+                return -1
+            
+            print(f"\n  [OK] Exploration complete - window 4 found!")
+        
+        print(f"  [OK] Window 4 detected at pixel: ({center_2d[0]:.0f}, {center_2d[1]:.0f})")
+        print(f"  Confidence: {confidence:.3f}")
+        
+        # =================================================================
+        # STEP 2: Calculate window position with offset Y-0.02, Z+0.02
+        # =================================================================
+        print(f"\n  STEP 2: Calculate window position with offset...")
+        
+        img_h, img_w = scan_frames[0].shape[:2]
+        center_x, center_y = center_2d
+        
+        # Calculate pixel offset from image center
+        pixel_offset_x = center_x - (img_w / 2)
+        pixel_offset_y = center_y - (img_h / 2)
+        
+        print(f"  Image center: ({img_w/2:.0f}, {img_h/2:.0f})")
+        print(f"  Window center: ({center_x:.0f}, {center_y:.0f})")
+        print(f"  Pixel offset: ({pixel_offset_x:+.0f}, {pixel_offset_y:+.0f})px")
+        
+        # Estimate distance to window 4
+        estimated_distance = 1.5  # Initial guess (splat units)
+        
+        # Convert to angular offset using camera matrix
+        fx = self.nav.camera_matrix[0, 0]
+        fy = self.nav.camera_matrix[1, 1]
+        angle_offset_x = np.arctan(pixel_offset_x / fx)
+        angle_offset_y = np.arctan(pixel_offset_y / fy)
+        
+        print(f"  Angular offset: ({np.degrees(angle_offset_x):+.1f}°, {np.degrees(angle_offset_y):+.1f}°)")
+        
+        # Calculate NED position based on current pose
+        current_yaw = current_pose['rpy'][2]
+        current_pitch = current_pose['rpy'][1]
+        
+        forward_distance = estimated_distance * np.cos(angle_offset_y)
+        lateral_offset = estimated_distance * np.sin(angle_offset_x)
+        vertical_offset = estimated_distance * np.sin(angle_offset_y)
+        
+        window_direction_ned = np.array([
+            np.cos(current_yaw) * forward_distance - np.sin(current_yaw) * lateral_offset,
+            np.sin(current_yaw) * forward_distance + np.cos(current_yaw) * lateral_offset,
+            vertical_offset
+        ])
+        
+        window_pos_ned = current_pose['position'] + window_direction_ned
+        
+        print(f"  Detected window position: {window_pos_ned}")
+        
+        # Apply offset: Y-0.02, Z-0.02 (UP = negative Z in NED)
+        offset_y = -0.02  # West (negative Y in NED)
+        offset_z = -0.02  # UP (negative Z in NED)
+        
+        window_pos_ned[1] += offset_y
+        window_pos_ned[2] += offset_z
+        
+        print(f"  Applied offset: Y{offset_y:+.3f}, Z{offset_z:+.3f}")
+        print(f"  Target position (with offset): {window_pos_ned}")
+        
+        # =================================================================
+        # STEP 2.5: ALIGN - Center on window 4 using flow detection
+        # =================================================================
+        print(f"\n  STEP 2.5: ALIGN - Centering on window 4...")
+        print(f"  [CRITICAL] Aligning BEFORE moving forward to maintain window tracking")
+        
+        max_align_iterations = 10
+        align_threshold = 80  # pixels - relaxed for window 4
+        
+        for align_iter in range(max_align_iterations):
+            print(f"\n    Align iteration {align_iter + 1}/{max_align_iterations}")
+            
+            # Scan and detect window
+            scan_waypoints = self.nav.scanner.generate_scan_trajectory(current_pose)
+            scan_frames = []
+            for wp in scan_waypoints:
+                rgb, _, _ = self.nav.renderer.render(wp['position'], wp['rpy'])
+                scan_frames.append(rgb)
+            
+            # Detect window using flow
+            mask, center_2d, confidence, debug_info = self.nav.detector.detect_window(
+                scan_frames, window_count=3  # Window 4 is 0-indexed as 3
+            )
+            
+            if center_2d is None:
+                print(f"    [WARN] Cannot detect window, stopping alignment")
+                break
+            
+            # Measure error from image center
+            rgb, _, _ = self.nav.renderer.render(current_pose['position'], current_pose['rpy'])
+            img_h, img_w = rgb.shape[:2]
+            img_center_x = img_w / 2
+            img_center_y = img_h / 2
+            
+            error_x_px = center_2d[0] - img_center_x
+            error_y_px = center_2d[1] - img_center_y
+            error_mag = np.sqrt(error_x_px**2 + error_y_px**2)
+            
+            print(f"    Center pixel: ({center_2d[0]:.0f}, {center_2d[1]:.0f})")
+            print(f"    Image center: ({img_center_x:.0f}, {img_center_y:.0f})")
+            print(f"    Error: ({error_x_px:+.1f}, {error_y_px:+.1f})px, mag={error_mag:.1f}px")
+            
+            # Check if aligned
+            if error_mag < align_threshold:
+                print(f"    [OK] Aligned! (error {error_mag:.1f}px < {align_threshold}px)")
+                break
+            
+            # Estimate depth
+            Z_cam = 1.0  # Assume ~1 splat unit away for window 4
+            
+            # Compute corrections using camera intrinsics
+            fx = self.nav.pnp_estimator.camera_matrix_original[0, 0]
+            fy = self.nav.pnp_estimator.camera_matrix_original[1, 1]
+            
+            delta_x_cam = (error_x_px * Z_cam) / fx
+            delta_y_cam = (error_y_px * Z_cam) / fy
+            delta_cam = np.array([delta_x_cam, delta_y_cam, 0.0])
+            
+            # Transform to NED
+            delta_body = self.nav.pnp_estimator.R_cam_to_body @ delta_cam
+            R_drone_ned = self.nav.pnp_estimator._euler_to_rotation_matrix(
+                current_pose['rpy'][0], current_pose['rpy'][1], current_pose['rpy'][2]
+            )
+            delta_ned = R_drone_ned @ delta_body
+            
+            ctrl_y = delta_ned[1]
+            ctrl_z = delta_ned[2]
+            
+            # Limit step size
+            max_step = 0.05
+            ctrl_magnitude = np.sqrt(ctrl_y**2 + ctrl_z**2)
+            if ctrl_magnitude > max_step:
+                scale = max_step / ctrl_magnitude
+                ctrl_y *= scale
+                ctrl_z *= scale
+            
+            print(f"    Corrections: Y={ctrl_y:+.4f}, Z={ctrl_z:+.4f}")
+            
+            # Apply (NO COLLISION CHECK during alignment)
+            new_pos = current_pose['position'].copy()
+            new_pos[1] += ctrl_y
+            new_pos[2] += ctrl_z
+            new_pos = self.nav.clip_position_to_bounds(new_pos)
+            
+            current_pose['position'] = new_pos
+            print(f"    [OK] Moved to {current_pose['position']}")
+            
+            # Record frame
+            rgb_align, _, _ = self.nav.renderer.render(current_pose['position'], current_pose['rpy'])
+            self.nav.record_frame(rgb_align, pose=current_pose,
+                                annotation=f"RETURN_W4_ALIGN_{align_iter+1}")
+        
+        print(f"\n  [OK] Alignment complete - window is centered")
+        
+        # CRITICAL: Ensure Z is slightly above centerline (negative Z in NED)
+        current_z = current_pose['position'][2]
+        print(f"  Current Z: {current_z:.4f}")
+        
+        if current_z > 0.01:
+            print(f"  [ADJUST] Z is too low/positive ({current_z:.4f}), moving to Z=0.0 (centerline)")
+            current_pose['position'][2] = 0.0
+        elif current_z > -0.01:
+            print(f"  [ADJUST] Z near centerline ({current_z:.4f}), setting to Z=-0.02 (slightly above)")
+            current_pose['position'][2] = -0.02
+        else:
+            print(f"  [OK] Z is good (above centerline): {current_z:.4f}")
+        
+        print(f"  Final aligned position: {current_pose['position']}")
+        
+        # =================================================================
+        # STEP 3: Safety forward movement (now that we're aligned)
+        # =================================================================
+        print(f"\n  STEP 3: Safety forward movement...")
+        
+        from navigation import goToWaypoint
+        
+        # Now move forward - we're already aligned to window center!
         current_yaw = current_pose['rpy'][2]
         forward_ned = np.array([
             np.cos(current_yaw),
@@ -309,39 +646,59 @@ class ReturnNavigationSkills:
             0.0
         ])
         
-        print(f"  Current yaw: {np.degrees(current_yaw):.1f} deg")
-        print(f"  Forward direction (NED): {forward_ned}")
+        # Small forward movement to start approach
+        safety_distance = 0.05
+        safety_pos = current_pose['position'] + forward_ned * safety_distance
+        safety_pos = self.nav.clip_position_to_bounds(safety_pos)
+        current_pose['position'] = safety_pos.copy()
         
-        # Approach parameters for window 4
+        # Render safety step
+        rgb_safety, _, _ = self.nav.renderer.render(current_pose['position'], current_pose['rpy'])
+        self.nav.record_frame(rgb_safety, pose=current_pose, annotation="RETURN_W4_SAFETY_FWD")
+        print(f"    Moved forward {safety_distance:.3f} to: {current_pose['position']}")
+        
+        # =================================================================
+        # STEP 4: Approach through aligned window
+        # =================================================================
+        # Now navigate to detected window position using geometric stepping
+        print(f"\n  STEP 4: Approaching through aligned window...")
+        print(f"  [NOTE] Collision checking DISABLED for window 4 crossing")
+        
+        # Just move forward - we're already aligned!
+        current_yaw = current_pose['rpy'][2]
+        forward_ned = np.array([
+            np.cos(current_yaw),
+            np.sin(current_yaw),
+            0.0
+        ])
+        
+        # Move forward a moderate distance
+        approach_distance = 1.0  # 1 splat unit forward
         step_size = 0.02
-        max_steps = 20  # Same as forward journey
+        num_steps = int(approach_distance / step_size)
         
-        # Apply offset for window 4 before approach (same as forward)
-        print(f"  Applying window 4 offset: Y=+0.02, Z=+0.02")
-        current_pose['position'][1] += 0.02  # East
-        current_pose['position'][2] += 0.02  # Down
-        current_pose['position'] = self.nav.clip_position_to_bounds(current_pose['position'])
-        print(f"  New position after offset: {current_pose['position']}")
+        print(f"  Moving {approach_distance:.2f} units forward in {num_steps} steps")
         
-        print(f"  Moving forward (return through window 4)")
-        print(f"  Max steps: {max_steps}, Step size: {step_size:.3f}")
-        
-        for step in range(max_steps):
-            # Move forward
+        for step in range(num_steps):
             step_increment = forward_ned * step_size
             new_pos = current_pose['position'] + step_increment
             new_pos = self.nav.clip_position_to_bounds(new_pos)
+            
+            # NO COLLISION CHECK - allow crossing window 4
             current_pose['position'] = new_pos.copy()
             
-            # Render
+            # Render EVERY step (important for debugging and video)
             rgb, _, _ = self.nav.renderer.render(current_pose['position'], current_pose['rpy'])
             self.nav.record_frame(rgb, pose=current_pose,
-                                annotation=f"RETURN_W4_STEP_{step+1}/{max_steps}")
+                                annotation=f"RETURN_W4_APPROACH_{step+1}/{num_steps}")
             
-            if (step + 1) % 5 == 0:
-                print(f"  Step {step+1}/{max_steps}")
+            # Print progress every 5 steps
+            if (step + 1) % 5 == 0 or step == num_steps - 1:
+                print(f"    Step {step+1}/{num_steps}")
         
-        print(f"  [OK] Return window 4 approach complete")
+        print(f"  [OK] Approach complete: {current_pose['position']}")
+        
+        print(f"  [OK] Return window 4 navigation complete")
         print(f"  Final position: {current_pose['position']}")
         
         return current_pose

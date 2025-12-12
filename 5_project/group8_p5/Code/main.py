@@ -6,9 +6,9 @@ Main orchestration file that conditionally runs forward and/or return journeys
 # =============================================================================
 # CONFIGURATION FLAGS
 # =============================================================================
-GENERATE_VIDEO = True       # Set to False to skip video generation (saves time)
-RUN_PHASE_1_2 = True         # Forward journey (windows 1→2→3→4)
-RUN_PHASE_3 = False           # Return journey (windows 4→3→2→1)
+GENERATE_VIDEO = False       # Set to False to skip video generation (saves time)
+RUN_PHASE_1_2 = False        # Forward journey (windows 1→2→3→4)
+RUN_PHASE_3 = True           # Return journey (windows 4→3→2→1)
 # =============================================================================
 
 from splat_render import SplatRenderer
@@ -112,9 +112,10 @@ def main(renderer):
         print("="*70)
         
         # Simulate being past window 4 with 180° turn
+        # Use [1.75, -0.02, 0.0] - offset left, Z at centerline
         currentPose = {
-            'position': np.array([2.8, 0.0, 0.0]),  # Forward position
-            'rpy': np.array([0.0, 0.0, np.pi])      # 180° yaw
+            'position': np.array([1.75, -0.02, 0.0]),  # Y=-0.02 (left), Z=0.0 (centerline)
+            'rpy': np.array([0.0, 0.0, np.pi])         # 180° yaw
         }
         navigator.window_count = 4
         print(f"  Simulated position: {currentPose['position']}")
