@@ -1,7 +1,7 @@
 """
 Return Journey Navigation Skills
 
-Skills for navigating back through windows 4→3→2→1 after turning around.
+Skills for navigating back through windows 4â†’3â†’2â†’1 after turning around.
 Reference frame is now reversed (drone facing opposite direction).
 """
 
@@ -19,7 +19,7 @@ class ReturnNavigationSkills:
             navigator: WindowNavigator instance with renderer, detector, pnp_estimator, etc.
         """
         self.nav = navigator
-        self.return_window_count = 0  # Track windows on return journey (4→3→2→1)
+        self.return_window_count = 0  # Track windows on return journey (4â†’3â†’2â†’1)
         
     # =========================================================================
     # RETURN SKILL 1: SCAN_RETURN
@@ -118,8 +118,8 @@ class ReturnNavigationSkills:
             current_pose['rpy'][2] += step_yaw
             
             if yaw_iter % 6 == 0:
-                print(f"  Yaw iter {yaw_iter}: Yaw={np.degrees(current_pose['rpy'][2]):.1f}°, "
-                      f"Error={np.degrees(yaw_error):.1f}°")
+                print(f"  Yaw iter {yaw_iter}: Yaw={np.degrees(current_pose['rpy'][2]):.1f}Â°, "
+                      f"Error={np.degrees(yaw_error):.1f}Â°")
             
             rgb, _, _ = self.nav.renderer.render(current_pose['position'], current_pose['rpy'])
             self.nav.record_frame(rgb, pose=current_pose, annotation=f"RETURN_FIX_YAW_{yaw_iter}")
@@ -421,17 +421,15 @@ class ReturnNavigationSkills:
                         print(f"      Confidence: {confidence_explore:.4f}")
                         
                         if center_2d_explore is not None and confidence_explore >= 0.001:
-                            # Check if this is background (score > 15000)
+                            # Get component score for logging
                             component_score = 0
                             if hasattr(debug_info_explore, 'get'):
                                 component_score = debug_info_explore.get('selected_component_score', 0)
                             
                             print(f"      Component score: {component_score:.0f}")
                             
-                            if component_score > 15000:
-                                print(f"      [SKIP] Background detected (score too high)")
-                                continue
-                            
+                            # For window 4, accept ANY detection that's not at edge!
+                            # Window 4 is irregular and might have high scores
                             print(f"      [SUCCESS] Window 4 FOUND at Y={current_pose['position'][1]:+.3f}!")
                             print(f"      Center pixel: ({center_2d_explore[0]:.0f}, {center_2d_explore[1]:.0f})")
                             print(f"      Confidence: {confidence_explore:.3f}")
@@ -487,7 +485,7 @@ class ReturnNavigationSkills:
         angle_offset_x = np.arctan(pixel_offset_x / fx)
         angle_offset_y = np.arctan(pixel_offset_y / fy)
         
-        print(f"  Angular offset: ({np.degrees(angle_offset_x):+.1f}°, {np.degrees(angle_offset_y):+.1f}°)")
+        print(f"  Angular offset: ({np.degrees(angle_offset_x):+.1f}Â°, {np.degrees(angle_offset_y):+.1f}Â°)")
         
         # Calculate NED position based on current pose
         current_yaw = current_pose['rpy'][2]
@@ -668,11 +666,11 @@ class ReturnNavigationSkills:
         ])
         
         # Move forward a moderate distance
-        approach_distance = 1.0  # 1 splat unit forward
+        approach_distance = 0.16  # 8 steps * 0.02 = 0.16 splat units
         step_size = 0.02
-        num_steps = int(approach_distance / step_size)
+        num_steps = 8  # Fixed at 8 steps - enough to cross window 4
         
-        print(f"  Moving {approach_distance:.2f} units forward in {num_steps} steps")
+        print(f"  Moving {approach_distance:.2f} units forward in {num_steps} steps (optimized for window 4)")
         
         for step in range(num_steps):
             step_increment = forward_ned * step_size
@@ -721,7 +719,7 @@ class ReturnNavigationSkills:
         # Keep X, reset Y/Z/RPY to zero
         target_x = current_pose['position'][0]
         
-        print(f"  Goal: Keep X={target_x:.3f}, reset Y/Z to zero, maintain 180° yaw")
+        print(f"  Goal: Keep X={target_x:.3f}, reset Y/Z to zero, maintain 180Â° yaw")
         print(f"  Starting: [{current_pose['position'][0]:.3f}, {current_pose['position'][1]:.3f}, {current_pose['position'][2]:.3f}]")
         
         # Safety: move forward first
@@ -748,10 +746,10 @@ class ReturnNavigationSkills:
         # Update target X
         target_x = current_pose['position'][0]
         
-        # Iterative convergence to Y=0, Z=0, yaw=±180°
+        # Iterative convergence to Y=0, Z=0, yaw=Â±180Â°
         target_y = 0.0
         target_z = 0.0
-        target_yaw = np.pi  # 180 degrees (can also be -π)
+        target_yaw = np.pi  # 180 degrees (can also be -Ï€)
         
         max_iterations = 50
         position_tolerance = 0.01
@@ -785,10 +783,10 @@ class ReturnNavigationSkills:
                 rgb, _, _ = self.nav.renderer.render(current_pose['position'], current_pose['rpy'])
                 self.nav.record_frame(rgb, pose=current_pose,
                                     annotation=f"RETURN_RECENTER_iter{iteration}")
-                print(f"  Iter {iteration}: Y={current_pose['position'][1]:+.3f}, Z={current_pose['position'][2]:+.3f}, Yaw={np.degrees(current_pose['rpy'][2]):+.1f}°")
+                print(f"  Iter {iteration}: Y={current_pose['position'][1]:+.3f}, Z={current_pose['position'][2]:+.3f}, Yaw={np.degrees(current_pose['rpy'][2]):+.1f}Â°")
         
         print(f"  Final: [{current_pose['position'][0]:.3f}, {current_pose['position'][1]:.3f}, {current_pose['position'][2]:.3f}]")
-        print(f"  Final yaw: {np.degrees(current_pose['rpy'][2]):.1f}° (target: 180°)")
+        print(f"  Final yaw: {np.degrees(current_pose['rpy'][2]):.1f}Â° (target: 180Â°)")
         print(f"  [OK] Return recenter complete")
         
         return current_pose
