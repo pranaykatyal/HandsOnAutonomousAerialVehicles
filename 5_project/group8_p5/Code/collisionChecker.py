@@ -78,7 +78,7 @@ def doesItCollide(
     pos,
     ply_path: str = "../data/occupancy_grid/splat.ply",
     collision_threshold: float = 0.05,
-    drone_radius: float = 0.05,  # 5cm radius = 10cm diameter
+    drone_radius: float = 0.01,  # 1cm radius = 2cm diameter (UPDATED from 5cm)
     num_points: int = 20,
 ) -> bool:
     """

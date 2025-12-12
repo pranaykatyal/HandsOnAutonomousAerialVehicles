@@ -2,13 +2,14 @@
 
 # SI units unless specified otherwise
 
-# Benotsmane, R.; Vásárhelyi, J. Towards Optimization of Energy Consumption of Tello Quad-Rotor with Mpc Model Implementation. Energies 2022, 15, 9207. https://doi.org/10.3390/en15239207 
+# Benotsmane, R.; VÃ¡sÃ¡rhelyi, J. Towards Optimization of Energy Consumption of Tello Quad-Rotor with Mpc Model Implementation. Energies 2022, 15, 9207. https://doi.org/10.3390/en15239207 
 
 import numpy as np
 mass = 0.08
-Ixx = 0.0097
-Iyy = 0.0097
-Izz = 0.017
+# REDUCED BY 100x for very fast angular response
+Ixx = 0.000097  # Was 0.0097
+Iyy = 0.000097  # Was 0.0097
+Izz = 0.00017   # Was 0.017
 # inertia matrix as given in https://in.mathworks.com/help/aeroblks/6dofeulerangles.html
 inertiaMat = np.diag([Ixx, Iyy, Izz])
 
@@ -28,7 +29,7 @@ rpos = np.array([
 '''
 Weight: Approximately 80 g (Propellers and Battery Included)
 
-Dimensions: 98Ã—92.5Ã—41 mm - as found on : https://www.ryzerobotics.com/tello/specs
+Dimensions: 98Ãƒâ€”92.5Ãƒâ€”41 mm - as found on : https://www.ryzerobotics.com/tello/specs
 '''
 # Robot dimensions (cuboid) - tall vertical profile
 robot_width = 0.1   # meters (X direction)

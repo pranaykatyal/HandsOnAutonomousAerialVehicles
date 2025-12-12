@@ -12,7 +12,6 @@ Drone Navigation Skills Module
 
 import numpy as np
 import cv2
-from navigation import wrap_angle
 from collisionChecker import doesItCollide
 
 
@@ -96,6 +95,8 @@ class NavigationSkills:
         Returns:
             current_pose: Updated pose dict, or -1 if failed
         """
+        from navigation import wrap_angle  # Import here to avoid circular dependency
+        
         print(f"\n{'='*60}")
         print(f"[SKILL: FIX_YAW]")
         print(f"{'='*60}")
@@ -333,7 +334,7 @@ class NavigationSkills:
     def approach(self, current_pose, window_3d_pos):
         """
         SKILL 5: APPROACH
-        Move through the aligned window using trajectory following
+        Move through the aligned window using trajectory following with controller dynamics
         
         Args:
             current_pose: Current drone pose dict (must be well-aligned!)
@@ -345,16 +346,6 @@ class NavigationSkills:
         print(f"\n{'='*60}")
         print(f"[SKILL: APPROACH]")
         print(f"{'='*60}")
-        
-        # CRITICAL FIX: Don't use zero_rpy - it doesn't mean "level" in renderer coords!
-        # The renderer applies init_orientation transform, so zero angles = TILTED view
-        # Instead, maintain CURRENT orientation which is already well-aligned
-        approach_rpy = current_pose['rpy'].copy()
-        
-        print(f"  Maintaining current orientation for approach:")
-        print(f"    roll={np.degrees(approach_rpy[0]):.1f}°, "
-              f"pitch={np.degrees(approach_rpy[1]):.1f}°, yaw={np.degrees(approach_rpy[2]):.1f}°")
-        print(f"  (Renderer will transform this to maintain level view)")
         
         # Log alignment for debugging
         proj_pixel = self.nav.pnp_estimator.project_window_to_pixel(window_3d_pos, current_pose)
@@ -368,94 +359,38 @@ class NavigationSkills:
             
             print(f"  Pre-approach pixel error: {error_mag:.1f}px")
         
-        # Calculate distance and direction
+        # Calculate distance to window
         distance = np.linalg.norm(window_3d_pos - current_pose['position'])
         print(f"  Distance to window: {distance:.3f} splat units")
         
-        # CRITICAL FIX: Move in LOCAL body frame (forward = +X in body frame)
-        # Not global NED! The drone should move FORWARD relative to its orientation.
+        # Simply use the window position as the target (controller will handle the trajectory)
+        target_pos = window_3d_pos.copy()
+        target_pos = self.nav.clip_position_to_bounds(target_pos)
         
-        # Get current yaw from current_pose
-        current_yaw = current_pose['rpy'][2]
+        print(f"  Current position (NED): {current_pose['position']}")
+        print(f"  Target position (NED): {target_pos}")
         
-        # Create rotation matrix for yaw (NED to body frame)
-        # In NED: X=North, Y=East, Z=Down
-        # Body frame: X=Forward, Y=Right, Z=Down
-        cos_yaw = np.cos(current_yaw)
-        sin_yaw = np.sin(current_yaw)
+        # Use goToWaypoint with controller dynamics for smooth approach
+        # The controller works in global NED frame, so just give it the target
+        from navigation import goToWaypoint
         
-        # Rotation matrix: NED -> Body
-        R_ned_to_body = np.array([
-            [ cos_yaw, sin_yaw, 0],  # Body X = cos(yaw)*NED_X + sin(yaw)*NED_Y
-            [-sin_yaw, cos_yaw, 0],  # Body Y = -sin(yaw)*NED_X + cos(yaw)*NED_Y
-            [ 0,       0,       1]   # Body Z = NED_Z
-        ])
+        print(f"  Using default controller (no orientation constraints)")
+        print(f"  Controller will compute optimal orientation for NED movement")
         
-        # Direction to window in NED
-        direction_ned = window_3d_pos - current_pose['position']
+        result = goToWaypoint(
+            current_pose, 
+            target_pos,
+            velocity=0.5,  # INCREASED 10x: Need significant acceleration for controller to tilt drone
+            pose_history=self.nav.pose_history,
+            action=f'APPROACH_W{self.nav.window_count}',
+            navigator=self.nav
+        )
         
-        # Transform to body frame
-        direction_body = R_ned_to_body @ direction_ned
+        if result == -1:
+            print(f"  [ERROR] Approach navigation failed")
+            return -1
         
-        print(f"  Direction in NED: {direction_ned}")
-        print(f"  Direction in Body: {direction_body}")
-        print(f"    (Body X=forward, Y=right, Z=down)")
-        
-        # We want to move FORWARD (body +X), so create forward unit vector in body frame
-        forward_body = np.array([1.0, 0.0, 0.0])  # Pure forward
-        
-        # Transform back to NED for actual movement
-        R_body_to_ned = R_ned_to_body.T  # Inverse rotation
-        forward_ned = R_body_to_ned @ forward_body
-        
-        print(f"  Forward direction in NED: {forward_ned}")
-        print(f"  (This is the direction the drone will move)")
-        
-        # Normalize
-        forward_ned_norm = forward_ned / np.linalg.norm(forward_ned)
-        
-        # Use forward direction for movement
-        direction_to_use = forward_ned_norm
-        
-        # Move in steps toward window
-        step_size = 0.1  # Small steps for safety
-        num_steps = int(np.ceil(distance / step_size))
-        num_steps = max(3, min(num_steps, 10))  # 3-10 steps
-        
-        print(f"  Moving in {num_steps} steps (direct position updates)")
-        
-        for step in range(num_steps):
-            # Calculate target for this step (moving FORWARD in body frame)
-            progress = (step + 1) / num_steps
-            target_pos = current_pose['position'] + direction_to_use * (progress * distance)
-            target_pos = self.nav.clip_position_to_bounds(target_pos)
-            
-            # Collision check
-            if doesItCollide(target_pos):
-                print(f"  [ERROR] Step {step+1} would collide at {target_pos}")
-                return -1
-            
-            print(f"  Step {step+1}/{num_steps}: Moving to {target_pos}")
-            
-            # DIRECT POSITION UPDATE (no dynamics, no tilting!)
-            current_pose['position'] = target_pos.copy()
-            
-            # DEBUG: Log what we're about to render
-            print(f"    [DEBUG] About to render:")
-            print(f"      Position (NED): {current_pose['position']}")
-            print(f"      Orientation being used: {approach_rpy} (roll={np.degrees(approach_rpy[0]):.1f}°, "
-                  f"pitch={np.degrees(approach_rpy[1]):.1f}°, yaw={np.degrees(approach_rpy[2]):.1f}°)")
-            
-            # Render frame with CURRENT orientation (maintains level view)
-            rgb, _, _ = self.nav.renderer.render(current_pose['position'], approach_rpy)
-            
-            # DEBUG: Verify what orientation is in the pose we're recording
-            debug_pose = {'position': current_pose['position'], 'rpy': approach_rpy}
-            print(f"    [DEBUG] Recording frame with pose: pos={debug_pose['position']}, "
-                  f"rpy={np.degrees(debug_pose['rpy'])}°")
-            
-            self.nav.record_frame(rgb, pose=debug_pose,
-                                annotation=f"APPROACH_W{self.nav.window_count}_S{step+1}/{num_steps}")
+        current_pose = result
         
         print(f"  [OK] Approach complete")
         print(f"  Final position (NED): {current_pose['position']}")

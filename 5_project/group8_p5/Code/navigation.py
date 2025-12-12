@@ -227,6 +227,13 @@ def goToWaypoint(currentPose, targetPose, velocity=0.1, pose_history=None, actio
     direction = target_position - pos
     dist_dir = np.linalg.norm(direction)
     unit_direction = direction / dist_dir if dist_dir > 1e-6 else np.zeros(3)
+    
+    # DEBUG: Check trajectory direction
+    print(f"  [TRAJECTORY DEBUG]")
+    print(f"    Start: {pos}")
+    print(f"    Target: {target_position}")
+    print(f"    Direction: {direction}")
+    print(f"    Unit direction: {unit_direction}")
 
     accel_time = min(1.0, estimated_time * 0.25)
     decel_time = accel_time
@@ -290,10 +297,24 @@ def goToWaypoint(currentPose, targetPose, velocity=0.1, pose_history=None, actio
     
     last_capture_time = -1.0
     capture_interval = 0.5
+    
+    # DEBUG: Track first few control iterations
+    debug_iteration = 0
+    max_debug_iterations = 3
 
     for i, t in enumerate(time_points):
         control_input = controller.compute_control(state, t)
         current_pos = state[0:3]
+        
+        # DEBUG: Print first few iterations
+        if debug_iteration < max_debug_iterations:
+            pos_des, vel_des, acc_des = controller.get_desired_state(t)
+            print(f"\n  [CONTROL DEBUG {debug_iteration}] t={t:.3f}s")
+            print(f"    Current pos: {current_pos}")
+            print(f"    Desired pos: {pos_des}")
+            print(f"    Desired vel: {vel_des}")
+            print(f"    Desired acc: {acc_des}")
+            debug_iteration += 1
 
         if doesItCollide(current_pos):
             print(f"  [ERROR] goToWaypoint: collision detected during execution at time {t:.3f}, pos={current_pos}")

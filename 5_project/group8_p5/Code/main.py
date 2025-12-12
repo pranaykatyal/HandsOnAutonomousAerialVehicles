@@ -222,10 +222,10 @@ class WindowNavigator:
         self.detector.visualize(debug_info, viz_filename)
         
         if os.path.exists(viz_filename):
-            print(f"  ✓✓✓ SAVED DETECTION VISUALIZATION: {viz_filename} ✓✓✓")
+            print(f"  âœ“âœ“âœ“ SAVED DETECTION VISUALIZATION: {viz_filename} âœ“âœ“âœ“")
             print(f"      File size: {os.path.getsize(viz_filename)} bytes")
         else:
-            print(f"  ✗✗✗ FAILED TO SAVE: {viz_filename} ✗✗✗")
+            print(f"  âœ—âœ—âœ— FAILED TO SAVE: {viz_filename} âœ—âœ—âœ—")
         
         self.scan_count += 1
         
@@ -270,10 +270,10 @@ class WindowNavigator:
         self.pnp_estimator.visualize_pnp_result(ref_rgb, corners_2d, tvec_cam, rvec_cam, mask=mask, save_path=pnp_viz)
         
         if os.path.exists(pnp_viz):
-            print(f"  ✓✓✓ SAVED PNP VISUALIZATION: {pnp_viz} ✓✓✓")
+            print(f"  âœ“âœ“âœ“ SAVED PNP VISUALIZATION: {pnp_viz} âœ“âœ“âœ“")
             print(f"      File size: {os.path.getsize(pnp_viz)} bytes")
         else:
-            print(f"  ✗✗✗ FAILED TO SAVE: {pnp_viz} ✗✗✗")
+            print(f"  âœ—âœ—âœ— FAILED TO SAVE: {pnp_viz} âœ—âœ—âœ—")
         
         print(f"  Camera frame: t={tvec_cam}, dist={np.linalg.norm(tvec_cam):.2f}m")
         
@@ -435,11 +435,11 @@ class WindowNavigator:
                     # Limit step to prevent overshooting
                     z_correction = np.clip(z_correction, -0.02, 0.02)  # Smaller steps: 2cm max
                     current_pose['position'][2] += z_correction
-                    print(f"  Yaw iter {yaw_iter}: Yaw={np.degrees(current_pose['rpy'][2]):.1f}°, Error={np.degrees(yaw_error):.1f}°, Z_corr={z_correction:+.4f}m")
+                    print(f"  Yaw iter {yaw_iter}: Yaw={np.degrees(current_pose['rpy'][2]):.1f}Â°, Error={np.degrees(yaw_error):.1f}Â°, Z_corr={z_correction:+.4f}m")
                 else:
-                    print(f"  Yaw iter {yaw_iter}: Yaw={np.degrees(current_pose['rpy'][2]):.1f}°, Error={np.degrees(yaw_error):.1f}°")
+                    print(f"  Yaw iter {yaw_iter}: Yaw={np.degrees(current_pose['rpy'][2]):.1f}Â°, Error={np.degrees(yaw_error):.1f}Â°")
             else:
-                print(f"  Yaw iter {yaw_iter}: Yaw={np.degrees(current_pose['rpy'][2]):.1f}°, Error={np.degrees(yaw_error):.1f}°")
+                print(f"  Yaw iter {yaw_iter}: Yaw={np.degrees(current_pose['rpy'][2]):.1f}Â°, Error={np.degrees(yaw_error):.1f}Â°")
             
             vec_to_window = window_3d_pos - current_pose['position']
             desired_yaw = np.arctan2(vec_to_window[1], vec_to_window[0])
@@ -999,7 +999,7 @@ def main(renderer):
     print("\n" + "="*70)
     print("DRONE RACING - 6-SKILL ARCHITECTURE")
     print("="*70)
-    print("Skills: SCAN → FIX_YAW → ALIGN-VERIFY LOOP → APPROACH → RECENTER")
+    print("Skills: SCAN â†’ FIX_YAW â†’ ALIGN-VERIFY LOOP â†’ APPROACH â†’ RECENTER")
     print("="*70 + "\n")
 
     # Reset collision checker
@@ -1048,7 +1048,7 @@ def main(renderer):
         print(f"\n{'='*70}")
         print(f"WINDOW {window_num + 1} / {max_windows}")
         print(f"{'='*70}")
-        print(f"Flow: SCAN → [FIX_YAW if >5°] → ALIGN → VERIFY → APPROACH → RECENTER")
+        print(f"Flow: SCAN â†’ [FIX_YAW if >5Â°] â†’ ALIGN â†’ VERIFY â†’ APPROACH â†’ RECENTER")
         
         # =================================================================
         # SKILL 1: SCAN
@@ -1072,12 +1072,12 @@ def main(renderer):
         # ALWAYS store initial yaw error for VERIFY guidance (even if we skip FIX_YAW)
         skills.yaw_error_initial = yaw_error
         
-        print(f"\nYaw check: current={np.degrees(current_yaw):.1f}°, "
-              f"desired={np.degrees(desired_yaw):.1f}°, error={yaw_error_deg:.1f}°")
-        print(f"  Yaw hint for VERIFY: {np.degrees(yaw_error):.1f}° ({'RIGHT' if yaw_error > 0 else 'LEFT'})")
+        print(f"\nYaw check: current={np.degrees(current_yaw):.1f}Â°, "
+              f"desired={np.degrees(desired_yaw):.1f}Â°, error={yaw_error_deg:.1f}Â°")
+        print(f"  Yaw hint for VERIFY: {np.degrees(yaw_error):.1f}Â° ({'RIGHT' if yaw_error > 0 else 'LEFT'})")
         
         if yaw_error_deg > 5.0:
-            print(f"  → Yaw error {yaw_error_deg:.1f}° > 5° - running FIX_YAW")
+            print(f"  â†’ Yaw error {yaw_error_deg:.1f}Â° > 5Â° - running FIX_YAW")
             result = skills.fix_yaw(currentPose, window_3d_pos)
             
             if result == -1:
@@ -1086,7 +1086,7 @@ def main(renderer):
             
             currentPose = result
         else:
-            print(f"  → Yaw error {yaw_error_deg:.1f}° < 5° - skipping FIX_YAW ✓")
+            print(f"  â†’ Yaw error {yaw_error_deg:.1f}Â° < 5Â° - skipping FIX_YAW âœ“")
             print(f"  Already well aligned!")
         
         # =================================================================
@@ -1108,11 +1108,11 @@ def main(renderer):
             print(f"Post-yaw-alignment error: {error_mag:.1f}px")
             
             if error_mag < 25:  # Tighter threshold - approach only if very well aligned
-                print(f"  → Alignment excellent ({error_mag:.1f}px < 25px)")
-                print(f"  → Skipping ALIGN-VERIFY, going straight to APPROACH!")
+                print(f"  â†’ Alignment excellent ({error_mag:.1f}px < 25px)")
+                print(f"  â†’ Skipping ALIGN-VERIFY, going straight to APPROACH!")
             else:
-                print(f"  → Alignment needs refinement ({error_mag:.1f}px > 25px)")
-                print(f"  → Running ALIGN-VERIFY cycles until converged")
+                print(f"  â†’ Alignment needs refinement ({error_mag:.1f}px > 25px)")
+                print(f"  â†’ Running ALIGN-VERIFY cycles until converged")
                 
                 # ITERATIVE ALIGN-VERIFY LOOP (max 3 cycles)
                 max_cycles = 3
@@ -1129,15 +1129,15 @@ def main(renderer):
                     
                     if verified_window is None:
                         print(f"  [WARN] Verification failed (likely detected different window)")
-                        print(f"  [RETRY] Moving BACKWARD (in world) to reject window 2...")
+                        print(f"  [RETRY] Moving backward slightly to reject second window...")
                         
-                        # Move BACKWARD in world coordinates
+                        # Move backward in NED coordinates (negative X)
                         step_size = 0.02
                         new_pos = currentPose['position'].copy()
-                        new_pos[0] += step_size  # +X in NED = backward in world
+                        new_pos[0] -= step_size  # -X in NED = backward/south
                         new_pos = navigator.clip_position_to_bounds(new_pos)
                         
-                        print(f"  Moving +X (backward in world) by {step_size:.3f} units")
+                        print(f"  Moving -X (backward) by {step_size:.3f} units")
                         print(f"  From: {currentPose['position']}")
                         print(f"  To: {new_pos}")
                         
@@ -1145,7 +1145,7 @@ def main(renderer):
                         
                         rgb_retry, _, _ = renderer.render(currentPose['position'], currentPose['rpy'])
                         navigator.record_frame(rgb_retry, pose=currentPose, 
-                                             annotation="VERIFY_RETRY_BACKWARD")
+                                             annotation="VERIFY_RETRY_BACK")
                         
                         # RETRY VERIFY after moving backward
                         print(f"  [RETRY] Re-verifying after backward step...")
@@ -1174,7 +1174,7 @@ def main(renderer):
                     else:
                         print(f"  [CONTINUE] Need more refinement (error={error_mag:.1f}px)")
                         if cycle_num < max_cycles - 1:
-                            print(f"  → Running another ALIGN-VERIFY cycle")
+                            print(f"  â†’ Running another ALIGN-VERIFY cycle")
                         else:
                             print(f"  [STOP] Reached max cycles, proceeding anyway")
         else:

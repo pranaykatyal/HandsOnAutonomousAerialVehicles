@@ -107,9 +107,10 @@ class quad_control:
         
         ##################### SET YOUR GAINS FROM P2 #################################################
         # NED position controller. EDIT GAINS HERE
-        self.x_pid = pid(1.2, 0.0, 0.4, filter_tau, dt, minVal = minVel, maxVal=maxVel)
-        self.y_pid = pid(1.2, 0.0, 0.4, filter_tau, dt, minVal = minVel, maxVal=maxVel)
-        self.z_pid = pid(1.5, 0.0, 0.45, filter_tau, dt, minVal = minVel, maxVal=maxVel)
+        # INCREASED GAINS 10x for more aggressive trajectory tracking
+        self.x_pid = pid(12.0, 0.0, 4.0, filter_tau, dt, minVal = minVel, maxVal=maxVel)
+        self.y_pid = pid(12.0, 0.0, 4.0, filter_tau, dt, minVal = minVel, maxVal=maxVel)
+        self.z_pid = pid(15.0, 0.0, 4.5, filter_tau, dt, minVal = minVel, maxVal=maxVel)
 
         # NED velocity controller. EDIT GAINS HERE
         self.vx_pid = pid(1.5, 0.1, 0.3, filter_tau, dt, minVal = minAcc, maxVal=maxAcc)
@@ -117,11 +118,13 @@ class quad_control:
         self.vz_pid = pid(2.0, 0.2, 0.4, filter_tau, dt, minVal = minAcc, maxVal=maxAcc)
 
         # Quaternion based P Controller. Output is desired angular rate. tau is time constant of closed loop
-        self.tau_angle = 0.3
+        # INCREASED from 0.3 to 1.0 to prevent control saturation
+        self.tau_angle = 1.0
         self.angle_sf = np.array((1, 1, 0.4)) # deprioritize yaw control using this scale factor
 
         # Angular velocity controller
-        kp_angvel = 6.0
+        # REDUCED from 6.0 to 2.0 to prevent control saturation
+        kp_angvel = 2.0
         self.p_pid = pid(kp_angvel, 0, kp_angvel/15., filter_tau, dt, minVal = minAct, maxVal = maxAct)
         self.q_pid = pid(kp_angvel, 0, kp_angvel/15., filter_tau, dt, minVal = minAct, maxVal = maxAct)
         self.r_pid = pid(kp_angvel, 0, kp_angvel/15, filter_tau, dt, minVal = minAct, maxVal = maxAct)
@@ -141,7 +144,7 @@ class quad_control:
         quat_list = X[6:10]
         pqr = X[10:13]
 
-        # ✅ CRITICAL FIX: Dynamics outputs [qx, qy, qz, qw] but Quaternion() expects [w,x,y,z]
+        # âœ… CRITICAL FIX: Dynamics outputs [qx, qy, qz, qw] but Quaternion() expects [w,x,y,z]
         # Must use explicit x=, y=, z=, w= to avoid order confusion
         quat = Quaternion(x=quat_list[0], y=quat_list[1], z=quat_list[2], w=quat_list[3])
         ypr = quat.yaw_pitch_roll
@@ -169,6 +172,14 @@ class quad_control:
         # mass specific force to be applied by the actuation system
         f_inertial = np.array((acc_x_sp, acc_y_sp, acc_z_sp)) - np.array((0., 0., 9.81))
 
+        # TEMP DEBUG
+        if not hasattr(self, '_quat_debug_printed'):
+            self._quat_debug_printed = True
+            print(f"[QUATERNION COMPUTATION DEBUG]")
+            print(f"  Desired acc (NED): [{acc_x_sp:+.4f}, {acc_y_sp:+.4f}, {acc_z_sp:+.4f}]")
+            print(f"  f_inertial (before norm): {f_inertial}")
+            print(f"  f_inertial norm: {norm(f_inertial):.4f}")
+
         rotationAxis = np.cross(np.array((0., 0., -1.)), f_inertial/norm(f_inertial))
         rotationAxis += np.array((1e-3, 1e-3, 1e-3)) # Avoid numerical issue
 
@@ -178,6 +189,11 @@ class quad_control:
         cosAngle = np.dot( np.array((0., 0., -1.)), f_inertial/norm(f_inertial) )
 
         angle = math.atan2(sinAngle, cosAngle)
+
+        if not hasattr(self, '_quat_debug_printed2'):
+            self._quat_debug_printed2 = True
+            print(f"  Rotation axis: {rotationAxis}")
+            print(f"  Rotation angle (deg): {np.degrees(angle):.4f}")
 
         quat_wo_yaw = Quaternion(axis=rotationAxis, radians=angle)
 
@@ -195,9 +211,23 @@ class quad_control:
         
         pqr_sp = 2./self.tau_angle*np.sign(err_quat.w)*np.array((err_quat.x, err_quat.y, err_quat.z))
         # pqr_sp = np.array((0.1, 0.2, -0.2))
+        
+        # CRITICAL FIX: Invert pitch (q) component for FRD body frame convention
+        # In FRD, negative q = nose UP, but controller expects negative q = nose DOWN
+        pqr_sp[1] = -pqr_sp[1]
 
         pqr_sp = np.multiply(pqr_sp, self.angle_sf)
         pqr_sp = pqr_sp.clip(self.minRate, self.maxRate)
+        
+        # TEMP DEBUG: Print first control
+        if not hasattr(self, '_control_printed'):
+            self._control_printed = True
+            quat_sp_rpy = quat_sp.yaw_pitch_roll
+            print(f"[ATTITUDE DEBUG]")
+            print(f"  Current RPY (deg): [{np.degrees(roll):.1f}, {np.degrees(pitch):.1f}, {np.degrees(yaw):.1f}]")
+            print(f"  Desired RPY (deg): [{np.degrees(quat_sp_rpy[2]):.1f}, {np.degrees(quat_sp_rpy[1]):.1f}, {np.degrees(quat_sp_rpy[0]):.1f}]")
+            print(f"  Attitude error quat: {err_quat}")
+            print(f"  Desired pqr: {pqr_sp}")
 
         # ANGULAR VELOCITY
         tau_x = self.p_pid.step(pqr_sp[0], pqr[0])
@@ -219,6 +249,15 @@ class quad_control:
 
         U = np.array([u1, u2, u3, u4])
         U = U.clip(0.0, 1.0)
+        
+        # TEMP DEBUG
+        if not hasattr(self, '_u_printed'):
+            self._u_printed = True
+            print(f"[CONTROL OUTPUT DEBUG]")
+            print(f"  throttle: {throttle:.4f}")
+            print(f"  tau (roll, pitch, yaw): [{tau_x:.4f}, {tau_y:.4f}, {tau_z:.4f}]")
+            print(f"  U before clip: [{u1:.4f}, {u2:.4f}, {u3:.4f}, {u4:.4f}]")
+            print(f"  U after clip: {U}")
 
         # Logger
         self.controlArray = np.vstack((self.controlArray, np.array((throttle, tau_x, tau_y, tau_z))))

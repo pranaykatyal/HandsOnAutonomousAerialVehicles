@@ -48,8 +48,19 @@ def quad_dynamics_der(X, T_prop, torq_prop, param):
 
     # Force calculation
     F_rotor = np.array([0.0, 0.0, -T_prop.sum()])
-    F_gravity_b = param.mass*DCM_BE@np.array([0, 0, param.gravity])
+    # CRITICAL FIX: Gravity is in NED frame, transform to body using NED→Body = DCM_EB
+    F_gravity_b = param.mass*DCM_EB@np.array([0, 0, param.gravity])
     Fb = F_rotor + F_gravity_b
+    
+    # TEMP DEBUG: Print first forces
+    if not hasattr(quad_dynamics_der, '_force_printed'):
+        quad_dynamics_der._force_printed = True
+        print(f"[FORCE DEBUG]")
+        print(f"  T_prop sum: {T_prop.sum():.4f} N")
+        print(f"  F_rotor (body): {F_rotor}")
+        print(f"  F_gravity (body): {F_gravity_b}")
+        print(f"  Fb total (body): {Fb}")
+        print(f"  Fb/mass: {Fb/param.mass}")
 
     # Moment calculation (can be generalized for N rotor later if needed)
     M_rotor_thrust = np.array([0, 0.0, 0.0])
@@ -60,6 +71,15 @@ def quad_dynamics_der(X, T_prop, torq_prop, param):
     M_rotor_torq = [0.0, 0.0, M_rotor_torq_z]
 
     Mb = M_rotor_thrust + np.array(M_rotor_torq)
+    
+    # TEMP DEBUG: Print first moments
+    if not hasattr(quad_dynamics_der, '_moment_printed'):
+        quad_dynamics_der._moment_printed = True
+        print(f"[MOMENT DEBUG]")
+        print(f"  T_prop individual: {T_prop}")
+        print(f"  M_rotor_thrust: {M_rotor_thrust}")
+        print(f"  M_rotor_torq: {M_rotor_torq}")
+        print(f"  Mb total: {Mb}")
 
     return derivative_rigidBody(X, Fb, Mb, param)
 
@@ -84,11 +104,12 @@ def derivative_rigidBody(X, Fb, Mb, param):
     dprint('quat', quat_list)
     dprint('pqr', pqr)
 
-    # Direction Cosine Matrix. DCM_BE would convert a vector from earth to body and DCM_EB vice versa 
+    # Direction Cosine Matrix
+    # IMPORTANT: pyquaternion.rotation_matrix returns PASSIVE rotation (NED→Body)
     # quat_list has ordering [qx, qy, qz, qw]
     quat = Quaternion(x=float(quat_list[0]), y=float(quat_list[1]), z=float(quat_list[2]), w=float(quat_list[3]))
-    DCM_EB = quat.rotation_matrix
-    DCM_BE = DCM_EB.T
+    DCM_EB = quat.rotation_matrix  # PASSIVE: NED→Body (despite variable name!)
+    DCM_BE = DCM_EB.T              # ACTIVE: Body→NED
 
     # Quaternion derivative
     p = pqr[0].item()
@@ -113,14 +134,50 @@ def derivative_rigidBody(X, Fb, Mb, param):
 
     crossPart = np.cross(pqr.flatten(), np.ndarray.flatten(I@pqr))
     pqr_dot = np.linalg.inv(I)@(Mb - crossPart)
+    
+    # DEBUG: Print first 10 calls to see if pqr is updating
+    if not hasattr(quad_dynamics_der, '_pqr_call_count'):
+        quad_dynamics_der._pqr_call_count = 0
+    if quad_dynamics_der._pqr_call_count < 10:
+        print(f"[PQR CALL {quad_dynamics_der._pqr_call_count}] pqr={pqr.flatten()}, pqr_dot={pqr_dot}")
+        quad_dynamics_der._pqr_call_count += 1
 
     # Position derivative
     xyz_dot = vxyz
 
     # Velocity derivative
-    vxyz_dot = DCM_EB@(Fb/param.mass)
+    # CRITICAL FIX: pyquaternion.rotation_matrix gives PASSIVE rotation (NED→Body)
+    # DCM_EB = NED→Body, DCM_BE = Body→NED
+    # To transform body forces to NED accelerations, use Body→NED = DCM_BE
+    vxyz_dot = DCM_BE@(Fb/param.mass)
+    
+    # TEMP DEBUG: Print first acceleration to verify direction
+    if not hasattr(quad_dynamics_der, '_debug_printed'):
+        quad_dynamics_der._debug_printed = True
+        print(f"[DYNAMICS CHECK] First NED accel: X={vxyz_dot[0]:+.2f}, Y={vxyz_dot[1]:+.2f}, Z={vxyz_dot[2]:+.2f}")
+        print(f"  (Positive X = North/Forward, Negative X = South/Backward)")
+        print(f"[TRANSFORMATION DEBUG]")
+        print(f"  Fb (body frame): {Fb}")
+        print(f"  Fb/mass (body): {Fb/param.mass}")
+        print(f"  DCM_BE:\n{DCM_BE}")
+        print(f"  vxyz_dot (NED): {vxyz_dot}")
+        print(f"  Current quat (xyzw): {quat_list}")
+        yaw_temp, pitch_temp, roll_temp = quat.yaw_pitch_roll
+        print(f"  Current RPY (deg): [{np.degrees(roll_temp):.1f}, {np.degrees(pitch_temp):.1f}, {np.degrees(yaw_temp):.1f}]")
+
 
     X_dot = np.concatenate((xyz_dot.flatten(), vxyz_dot.flatten(), quat_dot.flatten(), pqr_dot.flatten()))
     X_dot = X_dot.reshape(-1, 1)
+    
+    # TEMP DEBUG
+    if not hasattr(quad_dynamics_der, '_xdot_printed'):
+        quad_dynamics_der._xdot_printed = True
+        print(f"[STATE DERIVATIVE DEBUG]")
+        print(f"  xyz_dot (pos deriv): {xyz_dot.flatten()}")
+        print(f"  vxyz_dot (vel deriv): {vxyz_dot.flatten()}")
+        print(f"  quat_dot (quat deriv): {quat_dot.flatten()}")
+        print(f"  pqr_dot (angvel deriv): {pqr_dot.flatten()}")
+        print(f"  X_dot shape: {X_dot.shape}")
+        print(f"  X_dot[10:13] (pqr component): {X_dot.flatten()[10:13]}")
     
     return X_dot.flatten()
