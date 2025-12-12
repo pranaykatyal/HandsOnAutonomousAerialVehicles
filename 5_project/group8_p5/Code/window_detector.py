@@ -86,7 +86,7 @@ class SimpleFlowDetector:
         self.device = device
         self.detection_resolution = detection_resolution
     
-    def detect_window(self, frames, prefer_larger=False, yaw_hint=None, target_score=None):
+    def detect_window(self, frames, prefer_larger=False, yaw_hint=None, target_score=None, window_count=0):
         """
         Detect window from sequence of frames
         
@@ -193,7 +193,7 @@ class SimpleFlowDetector:
         
         # Select best bounding box
         mask_refined, selected_score = self._select_best_bbox(binary_mask, prefer_larger=prefer_larger, 
-                                                                yaw_hint=yaw_hint, target_score=target_score)
+                                                                yaw_hint=yaw_hint, target_score=target_score, window_count=window_count)
         
         # Upsample to original resolution
         mask = cv2.resize(
@@ -231,7 +231,7 @@ class SimpleFlowDetector:
         
         return mask, center_2d, confidence, debug_info
     
-    def _select_best_bbox(self, mask, prefer_larger=False, yaw_hint=None, target_score=None):
+    def _select_best_bbox(self, mask, prefer_larger=False, yaw_hint=None, target_score=None, window_count=0):
         """
         Select best bounding box from binary mask
         
@@ -370,9 +370,17 @@ class SimpleFlowDetector:
             print(f"    Selected component {best_label} by SIZE (area={valid_components[0]['area']:.0f}) [VERIFY mode]")
         else:
             # SCAN mode: Use heuristic scoring (better quality)
-            valid_components.sort(key=lambda x: x['score'])
-            best_label = valid_components[0]['label_id']
-            print(f"    Selected component {best_label} by SCORE (score={valid_components[0]['score']:.0f}) [SCAN mode]")
+            # SPECIAL CASE: Window 4 (window_count >= 3) has irregular shape, select LARGEST score
+            if window_count >= 3:
+                # Window 4: Select largest score (biggest gap)
+                valid_components.sort(key=lambda x: x['score'], reverse=True)
+                best_label = valid_components[0]['label_id']
+                print(f"    Selected component {best_label} by LARGEST SCORE (score={valid_components[0]['score']:.0f}) [Window 4 mode]")
+            else:
+                # Windows 1-3: Original scoring (smallest score - better quality)
+                valid_components.sort(key=lambda x: x['score'])
+                best_label = valid_components[0]['label_id']
+                print(f"    Selected component {best_label} by SCORE (score={valid_components[0]['score']:.0f}) [SCAN mode]")
         
         # Create mask
         result = (labels == best_label).astype(np.uint8) * 255

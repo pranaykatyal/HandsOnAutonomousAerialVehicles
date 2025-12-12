@@ -122,7 +122,8 @@ class WindowNavigator:
             scan_frames, 
             prefer_larger=prefer_larger,
             yaw_hint=yaw_hint,
-            target_score=target_score
+            target_score=target_score,
+            window_count=self.window_count
         )
 
         # Extra debug: label all contours
@@ -241,53 +242,102 @@ class WindowNavigator:
         print(f"  Window at pixel {center_2d} (conf: {confidence:.3f})")
         
         # PnP POSE ESTIMATION
-        print("\n  Estimating pose with PnP...")
-        
+        # SPECIAL: Window 4 has irregular shape, skip PnP and use flow center only
         ref_idx = 0
         ref_pose = scan_poses[ref_idx]
         ref_rgb = scan_frames[ref_idx]
         
-        print(f"  Using frame {ref_idx} as reference")
-        print(f"  Mask shape: {mask.shape}")
-        print(f"  Image shape: {ref_rgb.shape}")
-        
-        if mask.shape[:2] != ref_rgb.shape[:2]:
-            print(f"  [ERROR] DIMENSION MISMATCH! mask={mask.shape[:2]}, img={ref_rgb.shape[:2]}")
-            return None, scan_frames, None, None, None
-        
-        mask_pixels = np.sum(mask > 0.5)
-        print(f"  Mask has {mask_pixels} nonzero pixels")
-        if mask_pixels < 100:
-            print(f"  [ERROR] Mask too small!")
-            return None, scan_frames, None, None, None
-        
-        success, tvec_cam, rvec_cam, corners_2d = self.pnp_estimator.estimate_pose(mask)
-        
-        if not success:
-            print(f"  [ERROR] PnP failed")
-            return None, scan_frames, None, None, None
-        
-        # Visualize
-        pnp_viz = f'./log/pnp_{scan_label}.png'
-        self.pnp_estimator.visualize_pnp_result(ref_rgb, corners_2d, tvec_cam, rvec_cam, mask=mask, save_path=pnp_viz)
-        
-        if os.path.exists(pnp_viz):
-            print(f"   SAVED PNP VISUALIZATION: {pnp_viz} ")
-            print(f"      File size: {os.path.getsize(pnp_viz)} bytes")
+        if self.window_count >= 3:
+            print(f"\n  [WINDOW 4] Skipping PnP - using flow segmentation center only")
+            
+            # Use the detected center directly as the target
+            # Convert pixel coordinates to a rough NED estimate based on current pose
+            img_h, img_w = ref_rgb.shape[:2]
+            center_x, center_y = center_2d
+            
+            # Estimate rough distance based on typical window approach
+            estimated_distance = 1.5  # splat units (rough guess)
+            
+            # Calculate angle offset from image center
+            pixel_offset_x = center_x - (img_w / 2)
+            pixel_offset_y = center_y - (img_h / 2)
+            
+            # Convert to angular offset using camera matrix
+            fx = self.camera_matrix[0, 0]
+            fy = self.camera_matrix[1, 1]
+            angle_offset_x = np.arctan(pixel_offset_x / fx)
+            angle_offset_y = np.arctan(pixel_offset_y / fy)
+            
+            # Calculate NED position based on current pose + offset
+            current_yaw = ref_pose['rpy'][2]
+            current_pitch = ref_pose['rpy'][1]
+            
+            # Direction to window in NED (accounting for pitch and yaw)
+            forward_distance = estimated_distance * np.cos(angle_offset_y)
+            lateral_offset = estimated_distance * np.sin(angle_offset_x)
+            vertical_offset = estimated_distance * np.sin(angle_offset_y)
+            
+            window_direction_ned = np.array([
+                np.cos(current_yaw) * forward_distance - np.sin(current_yaw) * lateral_offset,
+                np.sin(current_yaw) * forward_distance + np.cos(current_yaw) * lateral_offset,
+                vertical_offset
+            ])
+            
+            window_pos_ned = ref_pose['position'] + window_direction_ned
+            
+            print(f"  Center pixel: ({center_x:.0f}, {center_y:.0f})")
+            print(f"  Pixel offset from center: ({pixel_offset_x:+.0f}, {pixel_offset_y:+.0f})px")
+            print(f"  Angular offset: ({np.degrees(angle_offset_x):+.1f}, {np.degrees(angle_offset_y):+.1f})°")
+            print(f"  Estimated window position (from flow center): {window_pos_ned}")
+            
+            # No corners for window 4
+            corners_2d = None
+            
         else:
-            print(f"   FAILED TO SAVE: {pnp_viz} ")
-        
-        print(f"  Camera frame: t={tvec_cam}, dist={np.linalg.norm(tvec_cam):.2f}m")
-        
-        # Transform to NED with SCALE FACTOR
-        window_pos_ned, window_rpy_ned = self.pnp_estimator.transform_to_ned(
-            tvec_cam * self.PNP_SCALE_FACTOR,
-            rvec_cam, 
-            ref_pose
-        )
-        
-        print(f"  NED (scaled by {self.PNP_SCALE_FACTOR}): pos={window_pos_ned}")
-        print(f"       rpy(deg)={np.degrees(window_rpy_ned)}")
+            # Normal PnP for windows 1-3
+            print(f"\n  Estimating pose with PnP...")
+            
+            print(f"  Using frame {ref_idx} as reference")
+            print(f"  Mask shape: {mask.shape}")
+            print(f"  Image shape: {ref_rgb.shape}")
+            
+            if mask.shape[:2] != ref_rgb.shape[:2]:
+                print(f"  [ERROR] DIMENSION MISMATCH! mask={mask.shape[:2]}, img={ref_rgb.shape[:2]}")
+                return None, scan_frames, None, None, None
+            
+            mask_pixels = np.sum(mask > 0.5)
+            print(f"  Mask has {mask_pixels} nonzero pixels")
+            if mask_pixels < 100:
+                print(f"  [ERROR] Mask too small!")
+                return None, scan_frames, None, None, None
+            
+            success, tvec_cam, rvec_cam, corners_2d = self.pnp_estimator.estimate_pose(mask)
+            
+            if not success:
+                print(f"  [ERROR] PnP failed")
+                return None, scan_frames, None, None, None
+            
+            # Visualize
+            pnp_viz = f'./log/pnp_{scan_label}.png'
+            self.pnp_estimator.visualize_pnp_result(ref_rgb, corners_2d, tvec_cam, rvec_cam, mask=mask, save_path=pnp_viz)
+            
+            if os.path.exists(pnp_viz):
+                print(f"   SAVED PNP VISUALIZATION: {pnp_viz} ")
+                print(f"      File size: {os.path.getsize(pnp_viz)} bytes")
+            else:
+                print(f"   FAILED TO SAVE: {pnp_viz} ")
+            
+            print(f"  Camera frame: t={tvec_cam}, dist={np.linalg.norm(tvec_cam):.2f}m")
+            
+            # Transform to NED with SCALE FACTOR
+            window_pos_ned, window_rpy_ned = self.pnp_estimator.transform_to_ned(
+                tvec_cam * self.PNP_SCALE_FACTOR,
+                rvec_cam, 
+                ref_pose
+            )
+            
+            print(f"  NED (scaled by {self.PNP_SCALE_FACTOR}): pos={window_pos_ned}")
+            print(f"       rpy(deg)={np.degrees(window_rpy_ned)}")
         
         # Collision check
         if doesItCollide(window_pos_ned):
@@ -476,7 +526,7 @@ class WindowNavigator:
                 rgb_wp, _, _ = self.renderer.render(wp['position'], wp['rpy'])
                 scan_frames_verify.append(rgb_wp)
             
-            mask_verify, _, _, _ = self.detector.detect_window(scan_frames_verify)
+            mask_verify, _, _, _ = self.detector.detect_window(scan_frames_verify, window_count=self.window_count)
             
             if mask_verify is not None and np.sum(mask_verify > 0.5) > 100:
                 corners_verify = self.pnp_estimator.extract_window_corners(mask_verify)
