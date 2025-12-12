@@ -980,11 +980,21 @@ def main(renderer):
     os.makedirs('./log/frames', exist_ok=True)
     
     import glob
+    # Clean up old PNG files
     for f in glob.glob('./log/*.png'):
         try:
             os.remove(f)
         except:
             pass
+    
+    # CRITICAL: Clean up old frame files!
+    for f in glob.glob('./log/frames/*.png'):
+        try:
+            os.remove(f)
+        except:
+            pass
+    
+    print(f"  [OK] Cleaned up old frames")
     
     print("\n" + "="*70)
     print("DRONE RACING - 6-SKILL ARCHITECTURE")
