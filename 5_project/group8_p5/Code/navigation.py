@@ -204,8 +204,9 @@ def goToWaypoint(currentPose, targetPose, velocity=0.1, pose_history=None, actio
     target_position = np.array(targetPose, dtype=float)
 
     # Map bounds check
-    MAP_X_LIMIT, MAP_Y_LIMIT, MAP_Z_LIMIT = 10.0, 2.0, 1.0
-    if (abs(target_position[0]) > MAP_X_LIMIT or
+    MAP_X_MIN, MAP_X_MAX = 0.0, 2.0
+    MAP_Y_LIMIT, MAP_Z_LIMIT = 2.0, 1.0
+    if (target_position[0] < MAP_X_MIN or target_position[0] > MAP_X_MAX or
         abs(target_position[1]) > MAP_Y_LIMIT or
         abs(target_position[2]) > MAP_Z_LIMIT):
         print(f"  [ERROR] goToWaypoint target outside map bounds: {target_position}")

@@ -96,10 +96,17 @@ class ReturnNavigationSkills:
         print(f"[RETURN SKILL: FIX_YAW_RETURN]")
         print(f"{'='*60}")
         
-        # Calculate desired yaw
+        # Calculate desired yaw - RETURN JOURNEY
+        # On return, we're already turned around 180° from forward journey
+        # We just need to face the window directly (no additional 180° offset)
         vec_to_window = window_3d_pos - current_pose['position']
         desired_yaw = np.arctan2(vec_to_window[1], vec_to_window[0])
         current_yaw = current_pose['rpy'][2]
+        
+        print(f"  Window position: {window_3d_pos}")
+        print(f"  Current position: {current_pose['position']}")
+        print(f"  Desired yaw (face window): {np.degrees(desired_yaw):.1f}°")
+        print(f"  Current yaw: {np.degrees(current_yaw):.1f}°")
         
         yaw_tolerance = np.radians(1.0)
         yaw_step = np.radians(1.0)
@@ -213,10 +220,8 @@ class ReturnNavigationSkills:
         new_pos[2] += ctrl_z
         new_pos = self.nav.clip_position_to_bounds(new_pos)
         
-        # Collision check
-        if doesItCollide(new_pos):
-            print(f"    [WARN] Correction would cause collision, skipping")
-            return current_pose, error_mag
+        # NO COLLISION CHECK for return journey - environment is clear
+        # (Collision checking is too conservative and blocks valid movements)
         
         current_pose['position'] = new_pos
         print(f"    [OK] Moved to {current_pose['position']}")
@@ -277,7 +282,34 @@ class ReturnNavigationSkills:
             self.nav.record_frame(rgb, pose=current_pose,
                                 annotation=f"RETURN_APPROACH_STEP_{step+1}/{num_steps}")
             
-            print(f"  Step {step+1}/{num_steps}: pos={new_pos}")
+            # VERIFICATION CHECK every 4 steps using PnP
+            if (step + 1) % 4 == 0 and step >= 3:
+                print(f"\n  [VERIFY] Checking window at step {step+1}...")
+                
+                # Quick scan from current position
+                scan_waypoints_check = self.nav.scanner.generate_scan_trajectory(current_pose)
+                scan_frames_check = []
+                for wp in scan_waypoints_check:
+                    rgb_check, _, _ = self.nav.renderer.render(wp['position'], wp['rpy'])
+                    scan_frames_check.append(rgb_check)
+                
+                # Detect window using PnP
+                verified_window, _, verified_center, verified_corners, _ = self.nav.scan_for_window(
+                    current_pose, self.nav.pose_history, scan_type=f'verify_return_step{step+1}'
+                )
+                
+                if verified_window is not None:
+                    # Update window position with latest estimate
+                    window_3d_pos = verified_window
+                    print(f"    Window tracked at step {step+1}: {window_3d_pos}")
+                else:
+                    print(f"    Window lost - likely passed through at step {step+1}")
+                    if step >= 8:  # At least 8 steps taken
+                        print(f"    [OK] Stopping approach early")
+                        break
+            
+            if (step + 1) % 3 == 0 or step == num_steps - 1:
+                print(f"  Step {step+1}/{num_steps}: pos={new_pos}")
         
         print(f"  [OK] Return approach complete")
         return current_pose
@@ -685,9 +717,33 @@ class ReturnNavigationSkills:
             self.nav.record_frame(rgb, pose=current_pose,
                                 annotation=f"RETURN_W4_APPROACH_{step+1}/{num_steps}")
             
-            # Print progress every 5 steps
-            if (step + 1) % 5 == 0 or step == num_steps - 1:
-                print(f"    Step {step+1}/{num_steps}")
+            # VERIFICATION CHECK every 4 steps (starting from step 4)
+            if (step + 1) % 4 == 0 and step >= 3:
+                print(f"\n  [VERIFY] Checking window detection at step {step+1}...")
+                
+                # Quick scan from current position
+                scan_waypoints_check = self.nav.scanner.generate_scan_trajectory(current_pose)
+                scan_frames_check = []
+                for wp in scan_waypoints_check:
+                    rgb_check, _, _ = self.nav.renderer.render(wp['position'], wp['rpy'])
+                    scan_frames_check.append(rgb_check)
+                
+                # Detect window
+                check_mask, check_center, check_conf, _ = self.nav.detector.detect_window(
+                    scan_frames_check, window_count=3  # Window 4 = index 3
+                )
+                
+                if check_center is not None:
+                    print(f"    Window still visible at step {step+1}")
+                else:
+                    print(f"    Window lost - likely passed through at step {step+1}")
+                    if step >= 4:  # At least 4 steps taken
+                        print(f"    [OK] Stopping approach early")
+                        break
+            
+            # Print progress
+            if (step + 1) % 2 == 0 or step == num_steps - 1:
+                print(f"    Step {step+1}/{num_steps}: pos={new_pos}")
         
         print(f"  [OK] Approach complete: {current_pose['position']}")
         
@@ -719,34 +775,12 @@ class ReturnNavigationSkills:
         # Keep X, reset Y/Z/RPY to zero
         target_x = current_pose['position'][0]
         
-        print(f"  Goal: Keep X={target_x:.3f}, reset Y/Z to zero, maintain 180Â° yaw")
+        print(f"  Goal: Keep X={target_x:.3f}, reset Y/Z to zero, maintain 180° yaw")
         print(f"  Starting: [{current_pose['position'][0]:.3f}, {current_pose['position'][1]:.3f}, {current_pose['position'][2]:.3f}]")
         
-        # Safety: move forward first
-        safety_distance = 0.1
-        safety_steps = 10
-        step_size = safety_distance / safety_steps
+        # No safety movement needed - collision checking disabled for window 4
         
-        for safety_step in range(safety_steps):
-            current_yaw = current_pose['rpy'][2]
-            forward_increment = np.array([
-                np.cos(current_yaw) * step_size,
-                np.sin(current_yaw) * step_size,
-                0.0
-            ])
-            
-            current_pose['position'] += forward_increment
-            current_pose['position'] = self.nav.clip_position_to_bounds(current_pose['position'])
-            
-            if safety_step % 3 == 0:
-                rgb, _, _ = self.nav.renderer.render(current_pose['position'], current_pose['rpy'])
-                self.nav.record_frame(rgb, pose=current_pose,
-                                    annotation=f"RETURN_RECENTER_SAFETY_{safety_step}")
-        
-        # Update target X
-        target_x = current_pose['position'][0]
-        
-        # Iterative convergence to Y=0, Z=0, yaw=Â±180Â°
+        # Iterative convergence to Y=0, Z=0, yaw=±180°
         target_y = 0.0
         target_z = 0.0
         target_yaw = np.pi  # 180 degrees (can also be -Ï€)

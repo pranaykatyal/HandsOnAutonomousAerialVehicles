@@ -20,9 +20,10 @@ class WindowNavigator:
     """Manages window detection, alignment, and navigation with PnP pose estimation"""
     
     # CRITICAL: Map bounds for Gaussian splat environment
-    MAP_Y_LIMIT = 2.0   # East/West
-    MAP_Z_LIMIT = 0.5   # Down/Up
-    MAP_X_LIMIT = 10.0  # North/South (generous)
+    MAP_X_MIN = 0.0     # Forward (North) minimum
+    MAP_X_MAX = 2.0     # Forward (North) maximum
+    MAP_Y_LIMIT = 2.0   # East/West (±2.0)
+    MAP_Z_LIMIT = 0.5   # Down/Up (±0.5)
     
     def __init__(self, renderer, device='cuda'):
         self.renderer = renderer
@@ -64,18 +65,18 @@ class WindowNavigator:
         
         print("Window Navigator initialized with PnP")
         print(f"  Image: {img_w}x{img_h}, FOV: {np.degrees(fov):.1f} deg")
-        print(f"  Map bounds: X=+/-{self.MAP_X_LIMIT}m, Y=+/-{self.MAP_Y_LIMIT}m, Z=+/-{self.MAP_Z_LIMIT}m")
+        print(f"  Map bounds: X=[{self.MAP_X_MIN}, {self.MAP_X_MAX}], Y=±{self.MAP_Y_LIMIT}m, Z=±{self.MAP_Z_LIMIT}m")
     
     def is_position_in_bounds(self, pos):
         """Check if position is within map bounds"""
-        return (abs(pos[0]) <= self.MAP_X_LIMIT and
+        return (self.MAP_X_MIN <= pos[0] <= self.MAP_X_MAX and
                 abs(pos[1]) <= self.MAP_Y_LIMIT and
                 abs(pos[2]) <= self.MAP_Z_LIMIT)
     
     def clip_position_to_bounds(self, pos):
         """Clip position to map bounds"""
         return np.array([
-            np.clip(pos[0], -self.MAP_X_LIMIT, self.MAP_X_LIMIT),
+            np.clip(pos[0], self.MAP_X_MIN, self.MAP_X_MAX),
             np.clip(pos[1], -self.MAP_Y_LIMIT, self.MAP_Y_LIMIT),
             np.clip(pos[2], -self.MAP_Z_LIMIT, self.MAP_Z_LIMIT)
         ])
@@ -397,7 +398,7 @@ class WindowNavigator:
             
             print(f"  Center pixel: ({center_x:.0f}, {center_y:.0f})")
             print(f"  Pixel offset from center: ({pixel_offset_x:+.0f}, {pixel_offset_y:+.0f})px")
-            print(f"  Angular offset: ({np.degrees(angle_offset_x):+.1f}, {np.degrees(angle_offset_y):+.1f})°")
+            print(f"  Angular offset: ({np.degrees(angle_offset_x):+.1f}, {np.degrees(angle_offset_y):+.1f})Â°")
             print(f"  Estimated window position: {window_pos_ned}")
             
             # No corners for window 4
@@ -468,7 +469,7 @@ class WindowNavigator:
         if not self.is_position_in_bounds(window_pos_ned):
             print(f"  [ERROR] Window position outside map bounds!")
             print(f"    Position: X={window_pos_ned[0]:.2f}, Y={window_pos_ned[1]:.2f}, Z={window_pos_ned[2]:.2f}")
-            print(f"    Limits: X=+/-{self.MAP_X_LIMIT}, Y=+/-{self.MAP_Y_LIMIT}, Z=+/-{self.MAP_Z_LIMIT}")
+            print(f"    Limits: X=[{self.MAP_X_MIN}, {self.MAP_X_MAX}], Y=±{self.MAP_Y_LIMIT}, Z=±{self.MAP_Z_LIMIT}")
             return None, scan_frames, None, None, None
         
         # Save frames

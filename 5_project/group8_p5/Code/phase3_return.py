@@ -1,6 +1,6 @@
 """
 Phase 3: Return Journey
-Navigate back through windows 4→3→2→1
+Navigate back through windows 4â†’3â†’2â†’1
 """
 
 import numpy as np
@@ -10,22 +10,22 @@ from navigation import goToWaypoint, goToWaypoint_yaw, wrap_angle
 
 def run_return_journey(navigator, renderer, currentPose):
     """
-    Execute return journey through windows 4→3→2→1
+    Execute return journey through windows 4â†’3â†’2â†’1
     
     Args:
         navigator: WindowNavigator instance
         renderer: SplatRenderer instance
-        currentPose: Current drone pose dict (should be facing 180° after turnback)
+        currentPose: Current drone pose dict (should be facing 180Â° after turnback)
         
     Returns:
         currentPose: Updated pose after completing return journey, or -1 on failure
     """
-    print("\n[RETURN JOURNEY] Starting navigation through windows 4→1")
+    print("\n[RETURN JOURNEY] Starting navigation through windows 4â†’1")
     print(f"Current position: {currentPose['position']}")
-    print(f"Current yaw: {np.degrees(currentPose['rpy'][2]):.1f}°")
+    print(f"Current yaw: {np.degrees(currentPose['rpy'][2]):.1f}Â°")
     
     # ==========================================================================
-    # STEP 1: Navigate to starting position [1.75, -0.02, 0.0] with yaw=180°
+    # STEP 1: Navigate to starting position [1.75, -0.02, 0.0] with yaw=180Â°
     # ==========================================================================
     print(f"\n{'='*70}")
     print(f"RETURN PREP: Moving to start position [1.75, -0.02, 0.0]")
@@ -61,14 +61,14 @@ def run_return_journey(navigator, renderer, currentPose):
     else:
         print(f"  [OK] Already at start position (within 5cm)")
     
-    # Ensure yaw is 180°
+    # Ensure yaw is 180Â°
     target_yaw = np.pi  # 180 degrees
     current_yaw_error = abs(wrap_angle(target_yaw - currentPose['rpy'][2]))
     
-    if current_yaw_error > np.radians(5.0):  # More than 5° off
-        print(f"\n  Adjusting yaw to 180°...")
-        print(f"    Current yaw: {np.degrees(currentPose['rpy'][2]):.1f}°")
-        print(f"    Target yaw: 180.0°")
+    if current_yaw_error > np.radians(5.0):  # More than 5Â° off
+        print(f"\n  Adjusting yaw to 180Â°...")
+        print(f"    Current yaw: {np.degrees(currentPose['rpy'][2]):.1f}Â°")
+        print(f"    Target yaw: 180.0Â°")
         
         result = goToWaypoint_yaw(
             currentPose, target_yaw,
@@ -82,19 +82,23 @@ def run_return_journey(navigator, renderer, currentPose):
             return -1
         
         currentPose = result
-        print(f"  [OK] Yaw aligned: {np.degrees(currentPose['rpy'][2]):.1f}°")
+        print(f"  [OK] Yaw aligned: {np.degrees(currentPose['rpy'][2]):.1f}Â°")
     else:
-        print(f"  [OK] Yaw already aligned: {np.degrees(currentPose['rpy'][2]):.1f}°")
+        print(f"  [OK] Yaw already aligned: {np.degrees(currentPose['rpy'][2]):.1f}Â°")
     
     print(f"\n  [OK] Ready to start return navigation")
     print(f"  Position: {currentPose['position']}")
-    print(f"  Yaw: {np.degrees(currentPose['rpy'][2]):.1f}°")
+    print(f"  Yaw: {np.degrees(currentPose['rpy'][2]):.1f}Â°")
     
     # ==========================================================================
     # STEP 2: Begin return skills
     # ==========================================================================
     # Initialize return skills
     return_skills = ReturnNavigationSkills(navigator)
+    
+    # CRITICAL: Reset window_count for return journey
+    # Window 3 on return = index 2 (use PnP), not index 4 (flow)
+    # We'll manually set window_count before each window
     
     # Return through 4 windows in reverse order
     return_window_order = [4, 3, 2, 1]
@@ -103,6 +107,11 @@ def run_return_journey(navigator, renderer, currentPose):
         print(f"\n{'='*70}")
         print(f"RETURN WINDOW {return_win_num} / 4")
         print(f"{'='*70}")
+        
+        # Set navigator.window_count to match current window (0-indexed)
+        # Window 4 → index 3 (flow), Window 3 → index 2 (PnP), etc.
+        navigator.window_count = return_win_num - 1
+        print(f"  Set navigator.window_count = {navigator.window_count}")
         
         # =================================================================
         # WINDOW 4: Special flow-based handling (irregular shape)
@@ -140,21 +149,137 @@ def run_return_journey(navigator, renderer, currentPose):
                 print(f"\n[ABORT] Could not detect return window {return_win_num}")
                 return -1
             
-            # FIX_YAW
+            # =================================================================
+            # ALIGN-VERIFY LOOP (BEFORE YAW CORRECTION!)
+            # =================================================================
+            print(f"\n{'='*70}")
+            print(f"[RETURN ALIGN-VERIFY - Pre-Yaw Correction]")
+            print(f"{'='*70}")
+            print(f"Strategy: Align position FIRST, then rotate yaw to maintain tracking")
+            
+            # Check current alignment
+            proj_pixel = navigator.pnp_estimator.project_window_to_pixel(window_3d_pos, currentPose)
+            
+            if proj_pixel is not None:
+                img_h, img_w = renderer.image_height, renderer.image_width
+                error_x = proj_pixel[0] - img_w / 2
+                error_y = proj_pixel[1] - img_h / 2
+                error_mag = np.sqrt(error_x**2 + error_y**2)
+                
+                print(f"Initial alignment error: {error_mag:.1f}px")
+                
+                if error_mag < 25:
+                    print(f"  Good alignment ({error_mag:.1f}px < 25px)")
+                    print(f"  Proceeding to yaw correction")
+                else:
+                    print(f"  Needs refinement ({error_mag:.1f}px > 25px)")
+                    print(f"  Running RETURN ALIGN-VERIFY cycles")
+                    
+                    # ITERATIVE ALIGN-VERIFY LOOP
+                    max_cycles = 3
+                    for cycle_num in range(max_cycles):
+                        print(f"\n  --- Cycle {cycle_num + 1}/{max_cycles} ---")
+                        
+                        # ALIGN
+                        currentPose, error_before = return_skills.align_return(
+                            currentPose, window_3d_pos, corners_2d
+                        )
+                        
+                        # VERIFY - Re-scan to confirm window position
+                        print(f"  [VERIFY] Re-scanning window...")
+                        verified_window, verified_corners, scan_data = return_skills.scan_return(
+                            currentPose, scan_type=f'return_w{return_win_num}_verify_c{cycle_num}'
+                        )
+                        
+                        if verified_window is None:
+                            print(f"  [WARN] Verification failed")
+                            print(f"  [RETRY] Moving backward...")
+                            
+                            # Move backward (for return journey with yaw~180°, backward = +X)
+                            step_size = 0.02
+                            new_pos = currentPose['position'].copy()
+                            new_pos[0] += step_size
+                            new_pos = navigator.clip_position_to_bounds(new_pos)
+                            currentPose['position'] = new_pos
+                            
+                            # Retry verification
+                            verified_window, verified_corners, scan_data = return_skills.scan_return(
+                                currentPose, scan_type=f'return_w{return_win_num}_verify_c{cycle_num}_retry'
+                            )
+                            
+                            if verified_window is None:
+                                print(f"  [WARN] Second verify failed, continuing")
+                                break
+                            else:
+                                window_3d_pos = verified_window
+                                corners_2d = verified_corners
+                        else:
+                            window_3d_pos = verified_window
+                            corners_2d = verified_corners
+                        
+                        # Check alignment after verify
+                        proj_pixel_check = navigator.pnp_estimator.project_window_to_pixel(
+                            window_3d_pos, currentPose
+                        )
+                        
+                        if proj_pixel_check is not None:
+                            error_x_check = proj_pixel_check[0] - img_w / 2
+                            error_y_check = proj_pixel_check[1] - img_h / 2
+                            error_mag = np.sqrt(error_x_check**2 + error_y_check**2)
+                        else:
+                            error_mag = float('inf')
+                        
+                        alignment_good = error_mag < 50
+                        
+                        # Check convergence
+                        if alignment_good or error_mag < 20:
+                            print(f"  [CONVERGED] error={error_mag:.1f}px")
+                            break
+                        elif cycle_num < max_cycles - 1:
+                            print(f"  [CONTINUE] error={error_mag:.1f}px")
+                        else:
+                            print(f"  [MAX CYCLES] Proceeding anyway")
+            else:
+                print(f"  [WARN] Cannot project window")
+            
+            # =================================================================
+            # FIX_YAW (AFTER ALIGNMENT)
+            # =================================================================
+            print(f"\n{'='*70}")
+            print(f"[FIX_YAW - After Position Alignment]")
+            print(f"{'='*70}")
+            
             result = return_skills.fix_yaw_return(currentPose, window_3d_pos)
             if result == -1:
                 print(f"\n[ABORT] Return yaw alignment failed")
                 return -1
             currentPose = result
             
-            # ALIGN
-            currentPose, error_mag = return_skills.align_return(
-                currentPose, window_3d_pos, corners_2d
-            )
+            # =================================================================
+            # FINAL VERIFICATION (After Yaw Correction)
+            # =================================================================
+            print(f"\n{'='*70}")
+            print(f"[FINAL VERIFICATION - Post-Yaw]")
+            print(f"{'='*70}")
             
-            print(f"  Alignment error: {error_mag:.1f}px")
+            # Quick final check
+            proj_pixel_final = navigator.pnp_estimator.project_window_to_pixel(window_3d_pos, currentPose)
             
+            if proj_pixel_final is not None:
+                error_x_final = proj_pixel_final[0] - img_w / 2
+                error_y_final = proj_pixel_final[1] - img_h / 2
+                error_mag_final = np.sqrt(error_x_final**2 + error_y_final**2)
+                
+                print(f"Final alignment error: {error_mag_final:.1f}px")
+                
+                if error_mag_final > 50:
+                    print(f"  [WARN] Alignment degraded after yaw correction")
+                    print(f"  Running one more ALIGN pass...")
+                    currentPose, _ = return_skills.align_return(currentPose, window_3d_pos, corners_2d)
+            
+            # =================================================================
             # APPROACH
+            # =================================================================
             result = return_skills.approach_return(currentPose, window_3d_pos)
             if result == -1:
                 print(f"\n[ABORT] Return approach failed")
@@ -175,7 +300,7 @@ def run_return_journey(navigator, renderer, currentPose):
     print(f"{'='*70}")
     print(f"  Windows traversed: {return_skills.return_window_count}")
     print(f"  Final position: {currentPose['position']}")
-    print(f"  Final yaw: {np.degrees(currentPose['rpy'][2]):.1f}°")
+    print(f"  Final yaw: {np.degrees(currentPose['rpy'][2]):.1f}Â°")
     print(f"{'='*70}")
     
     return currentPose
