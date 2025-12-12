@@ -3,6 +3,12 @@ Drone Racing Navigation System - WITH PnP INTEGRATION
 [UPDATED] Projection-only visual servoing to avoid detector jumping to wrong windows
 """
 
+# =============================================================================
+# CONFIGURATION FLAGS
+# =============================================================================
+GENERATE_VIDEO = False  # Set to False to skip video generation (saves time)
+# =============================================================================
+
 from splat_render import SplatRenderer
 import numpy as np
 import cv2
@@ -233,6 +239,66 @@ class WindowNavigator:
             print(f"      File size: {os.path.getsize(viz_filename)} bytes")
         else:
             print(f"   FAILED TO SAVE: {viz_filename} ")
+        
+        # Extract and save individual detection frames for video
+        if debug_info is not None and 'Xi' in debug_info:
+            try:
+                import matplotlib.pyplot as plt
+                import matplotlib
+                matplotlib.use('Agg')
+                
+                # Get current frame count for sequential naming
+                base_frame_id = len(self.video_frames)
+                
+                # 1. Flow magnitude visualization
+                flow_img = debug_info['Xi']
+                fig, ax = plt.subplots(figsize=(12, 9))
+                im = ax.imshow(flow_img, cmap='jet')
+                ax.set_title('Flow Magnitude', fontsize=20, fontweight='bold')
+                ax.axis('off')
+                plt.colorbar(im, ax=ax, fraction=0.046)
+                plt.tight_layout()
+                flow_frame_path = f'./log/frames/frame_{base_frame_id:04d}.png'
+                plt.savefig(flow_frame_path, dpi=100, bbox_inches='tight')
+                plt.close()
+                self.video_frames.append(None)  # Placeholder
+                print(f"    Saved flow frame: {flow_frame_path}")
+                
+                # 2. Binary mask visualization
+                binary_mask = debug_info['binary_mask']
+                fig, ax = plt.subplots(figsize=(12, 9))
+                ax.imshow(binary_mask, cmap='gray')
+                ax.set_title('Binary Mask (Thresholded)', fontsize=20, fontweight='bold')
+                ax.axis('off')
+                plt.tight_layout()
+                mask_frame_path = f'./log/frames/frame_{base_frame_id+1:04d}.png'
+                plt.savefig(mask_frame_path, dpi=100, bbox_inches='tight')
+                plt.close()
+                self.video_frames.append(None)  # Placeholder
+                print(f"    Saved mask frame: {mask_frame_path}")
+                
+                # 3. Final detection overlay
+                scan_frames_db = debug_info.get('frames', [])
+                mask_refined = debug_info['mask_refined']
+                if len(scan_frames_db) > 0:
+                    overlay = scan_frames_db[0].copy()
+                    mask_overlay = np.zeros_like(overlay)
+                    mask_overlay[mask_refined > 0.5] = [0, 255, 0]
+                    overlay = cv2.addWeighted(overlay, 0.7, mask_overlay, 0.3, 0)
+                    
+                    fig, ax = plt.subplots(figsize=(12, 9))
+                    ax.imshow(overlay)
+                    ax.set_title('Final Detection', fontsize=20, fontweight='bold')
+                    ax.axis('off')
+                    plt.tight_layout()
+                    detection_frame_path = f'./log/frames/frame_{base_frame_id+2:04d}.png'
+                    plt.savefig(detection_frame_path, dpi=100, bbox_inches='tight')
+                    plt.close()
+                    self.video_frames.append(None)  # Placeholder
+                    print(f"    Saved detection frame: {detection_frame_path}")
+                
+            except Exception as e:
+                print(f"    [WARN] Failed to save detection frames: {e}")
         
         self.scan_count += 1
         
@@ -1344,8 +1410,16 @@ def main(renderer):
             
             currentPose = skills.turnback(currentPose)
             
+            # Import return skills for 180° yaw handling
+            from returnskills import ReturnNavigationSkills
+            return_skills = ReturnNavigationSkills(navigator)
+            
+            # Recenter with 180° yaw (not 0°)
+            print(f"\n[RECENTERING AFTER TURNBACK - Target yaw: 180°]")
+            currentPose = return_skills.recenter_return(currentPose)
+            
             print(f"\n{'='*70}")
-            print(f"[OK] Window {window_num + 1} complete! Turned back.")
+            print(f"[OK] Window {window_num + 1} complete! Turned back and recentered.")
             print(f"{'='*70}")
         else:
             # Try to find next window - if not found, explore
@@ -1381,46 +1455,53 @@ def main(renderer):
     navigator.save_frames_summary()
     
     # Generate video using ffmpeg
-    print("\n" + "="*70)
-    print("GENERATING VIDEO")
-    print("="*70)
-    
-    import subprocess
-    
-    video_output = './log/navigation_video.mp4'
-    frames_pattern = './log/frames/frame_%04d.png'
-    
-    # ffmpeg command: create video from image sequence
-    # -framerate: frames per second
-    # -i: input pattern
-    # -c:v: video codec (libx264 for H.264)
-    # -pix_fmt: pixel format (yuv420p for compatibility)
-    # -y: overwrite output file
-    ffmpeg_cmd = [
-        'ffmpeg',
-        '-framerate', '30',  # 30 fps
-        '-i', frames_pattern,
-        '-c:v', 'libx264',
-        '-pix_fmt', 'yuv420p',
-        '-y',
-        video_output
-    ]
-    
-    try:
-        print(f"  Running ffmpeg to create video...")
-        result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, check=True)
-        print(f"  [OK] Video saved to: {video_output}")
-    except subprocess.CalledProcessError as e:
-        print(f"  [ERROR] ffmpeg failed:")
-        print(f"    {e.stderr}")
-    except FileNotFoundError:
-        print(f"  [ERROR] ffmpeg not found. Install with: sudo apt-get install ffmpeg")
-    
-    print("\n" + "="*70)
-    print("NAVIGATION COMPLETE")
-    print(f"  Windows passed: {navigator.window_count}")
-    print(f"  Video: {video_output}")
-    print("="*70 + "\n")
+    if GENERATE_VIDEO:
+        print("\n" + "="*70)
+        print("GENERATING VIDEO")
+        print("="*70)
+        
+        import subprocess
+        
+        video_output = './log/navigation_video.mp4'
+        frames_pattern = './log/frames/frame_%04d.png'
+        
+        # ffmpeg command: create video from image sequence
+        # -framerate: frames per second
+        # -i: input pattern
+        # -c:v: video codec (mpeg4 - universally available)
+        # -q:v: quality (2 = high quality)
+        # -y: overwrite output file
+        ffmpeg_cmd = [
+            'ffmpeg',
+            '-framerate', '10',  # 10 fps
+            '-i', frames_pattern,
+            '-c:v', 'mpeg4',
+            '-q:v', '2',
+            '-y',
+            video_output
+        ]
+        
+        try:
+            print(f"  Running ffmpeg to create video...")
+            result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, check=True)
+            print(f"  [OK] Video saved to: {video_output}")
+        except subprocess.CalledProcessError as e:
+            print(f"  [ERROR] ffmpeg failed:")
+            print(f"    {e.stderr}")
+        except FileNotFoundError:
+            print(f"  [ERROR] ffmpeg not found. Install with: sudo apt-get install ffmpeg")
+        
+        print("\n" + "="*70)
+        print("NAVIGATION COMPLETE")
+        print(f"  Windows passed: {navigator.window_count}")
+        print(f"  Video: {video_output}")
+        print("="*70 + "\n")
+    else:
+        print("\n" + "="*70)
+        print("NAVIGATION COMPLETE")
+        print(f"  Windows passed: {navigator.window_count}")
+        print(f"  Video generation: SKIPPED (GENERATE_VIDEO = False)")
+        print("="*70 + "\n")
 
 
 if __name__ == "__main__":
