@@ -6,10 +6,10 @@
 
 import numpy as np
 mass = 0.08
-# REDUCED BY 100x for very fast angular response
-Ixx = 0.000097  # Was 0.0097
-Iyy = 0.000097  # Was 0.0097
-Izz = 0.00017   # Was 0.017
+# REALISTIC VALUES - Per INSTABILITY_ANALYSIS.md
+Ixx = 0.0097  # Realistic Tello value
+Iyy = 0.0097  # Realistic Tello value
+Izz = 0.017   # Realistic Tello value
 # inertia matrix as given in https://in.mathworks.com/help/aeroblks/6dofeulerangles.html
 inertiaMat = np.diag([Ixx, Iyy, Izz])
 

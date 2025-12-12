@@ -128,8 +128,8 @@ class NavigationSkills:
             
             # Log progress every 6 iterations
             if yaw_iter % 6 == 0:
-                print(f"  Yaw iter {yaw_iter}: Yaw={np.degrees(current_pose['rpy'][2]):.1f}°, "
-                      f"Error={np.degrees(yaw_error):.1f}°")
+                print(f"  Yaw iter {yaw_iter}: Yaw={np.degrees(current_pose['rpy'][2]):.1f}, "
+                      f"Error={np.degrees(yaw_error):.1f}")
             
             # Record frame
             rgb, _, _ = self.nav.renderer.render(current_pose['position'], current_pose['rpy'])
@@ -403,7 +403,7 @@ class NavigationSkills:
     def recenter(self, current_pose):
         """
         SKILL 6: RECENTER
-        Reset yaw to 0° only (skip Y/Z to avoid collisions)
+        Reset yaw to 0 only (skip Y/Z to avoid collisions)
         
         Args:
             current_pose: Current drone pose dict
@@ -418,7 +418,7 @@ class NavigationSkills:
         current_yaw_deg = np.degrees(current_pose['rpy'][2])
         
         if abs(current_yaw_deg) > 2.0:
-            print(f"  Resetting yaw from {current_yaw_deg:.1f}° to 0°")
+            print(f"  Resetting yaw from {current_yaw_deg:.1f} to 0")
             from navigation import goToWaypoint_yaw
             result = goToWaypoint_yaw(
                 current_pose, 0.0,
@@ -430,7 +430,7 @@ class NavigationSkills:
             if result != -1:
                 current_pose = result
         else:
-            print(f"  Yaw already near 0° ({current_yaw_deg:.1f}°), skipping")
+            print(f"  Yaw already near 0 ({current_yaw_deg:.1f}), skipping")
         
         # Skip Y/Z reset - causes collisions
         print(f"  Position: [{current_pose['position'][0]:.2f}, "
