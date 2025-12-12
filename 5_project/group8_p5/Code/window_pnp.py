@@ -221,7 +221,7 @@ class WindowPnPEstimator:
             print("[DEBUG] PnP failed to estimate pose.")
             return False, None, None, None
         
-        print(f"[DEBUG] PnP results: tvec={tvec.flatten()}, rvec={rvec.flatten()}")
+        # print(f"[DEBUG] PnP results: tvec={tvec.flatten()}, rvec={rvec.flatten()}")
         
         # Extract as 1D arrays
         tvec = tvec.flatten()
@@ -309,11 +309,11 @@ class WindowPnPEstimator:
         # Vector from drone to window in NED
         vec_to_window_ned = window_pos_ned - drone_pos_ned
         
-        print(f"\n    [PnP PROJECTION DEBUG]")
-        print(f"      Window NED: {window_pos_ned}")
-        print(f"      Drone NED: {drone_pos_ned}")
-        print(f"      Vec to window (NED): {vec_to_window_ned}")
-        print(f"      Drone yaw: {np.degrees(drone_rpy_ned[2]):.1f}°")
+        # print(f"\n    [PnP PROJECTION DEBUG]")
+        # print(f"      Window NED: {window_pos_ned}")
+        # print(f"      Drone NED: {drone_pos_ned}")
+        # print(f"      Vec to window (NED): {vec_to_window_ned}")
+        # print(f"      Drone yaw: {np.degrees(drone_rpy_ned[2]):.1f}°")
         
         # Drone orientation (NED to body)
         R_drone_ned = self._euler_to_rotation_matrix(drone_rpy_ned[0], drone_rpy_ned[1], drone_rpy_ned[2])
@@ -321,19 +321,19 @@ class WindowPnPEstimator:
         # Transform to body frame
         vec_to_window_body = R_drone_ned.T @ vec_to_window_ned
         
-        print(f"      Vec to window (body): {vec_to_window_body}")
-        print(f"        Body X (fwd): {vec_to_window_body[0]:+.2f}")
-        print(f"        Body Y (right): {vec_to_window_body[1]:+.2f}")
-        print(f"        Body Z (down): {vec_to_window_body[2]:+.2f}")
+        # print(f"      Vec to window (body): {vec_to_window_body}")
+        # print(f"        Body X (fwd): {vec_to_window_body[0]:+.2f}")
+        # print(f"        Body Y (right): {vec_to_window_body[1]:+.2f}")
+        # print(f"        Body Z (down): {vec_to_window_body[2]:+.2f}")
         
         # Transform from body to camera frame
         R_body_to_cam = self.R_cam_to_body.T  # Inverse of cam-to-body
         vec_to_window_cam = R_body_to_cam @ vec_to_window_body
         
-        print(f"      Vec to window (camera): {vec_to_window_cam}")
-        print(f"        Camera X (right): {vec_to_window_cam[0]:+.2f}")
-        print(f"        Camera Y (down): {vec_to_window_cam[1]:+.2f}")
-        print(f"        Camera Z (fwd): {vec_to_window_cam[2]:+.2f}")
+        # print(f"      Vec to window (camera): {vec_to_window_cam}")
+        # print(f"        Camera X (right): {vec_to_window_cam[0]:+.2f}")
+        # print(f"        Camera Y (down): {vec_to_window_cam[1]:+.2f}")
+        # print(f"        Camera Z (fwd): {vec_to_window_cam[2]:+.2f}")
         
         # Check if window is in front of camera (positive Z)
         if vec_to_window_cam[2] <= 0:
@@ -350,7 +350,7 @@ class WindowPnPEstimator:
         pixel_coords = np.array([u, v])
         
         print(f"      Projected pixel: [{u:.1f}, {v:.1f}]")
-        print(f"      [END PnP DEBUG]\n")
+        # print(f"      [END PnP DEBUG]\n")
         
         return pixel_coords
 

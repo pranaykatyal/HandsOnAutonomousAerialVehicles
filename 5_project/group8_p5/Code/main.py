@@ -82,8 +82,13 @@ class WindowNavigator:
             np.clip(pos[2], -self.MAP_Z_LIMIT, self.MAP_Z_LIMIT)
         ])
     
-    def scan_for_window(self, current_pose, pose_history, scan_type='initial', target_pixel=None):
-        """Scan for window and estimate pose with PnP"""
+    def scan_for_window(self, current_pose, pose_history, scan_type='initial', target_pixel=None, yaw_hint=None):
+        """Scan for window and estimate pose with PnP
+        
+        Args:
+            yaw_hint: Initial yaw error (radians) to guide VERIFY selection
+                     +ve = window on RIGHT, -ve = window on LEFT
+        """
         scan_label = f"{scan_type}_window{self.window_count}_scan{self.scan_count}"
         print(f"\n=== SCANNING FOR WINDOW ({scan_label}) ===")
         
@@ -108,7 +113,15 @@ class WindowNavigator:
         
         # Detect window
         print("\n  Detecting window...")
-        mask, center_2d, confidence, debug_info = self.detector.detect_window(scan_frames)
+        
+        # VERIFY mode: prefer LARGER component (closer window)
+        # SCAN mode: use heuristic scoring (better quality)
+        prefer_larger = scan_type.startswith('verify')
+        mask, center_2d, confidence, debug_info = self.detector.detect_window(
+            scan_frames, 
+            prefer_larger=prefer_larger,
+            yaw_hint=yaw_hint
+        )
 
         # Extra debug: label all contours
         try:
@@ -1025,6 +1038,7 @@ def main(renderer):
         print(f"\n{'='*70}")
         print(f"WINDOW {window_num + 1} / {max_windows}")
         print(f"{'='*70}")
+        print(f"Flow: SCAN → [FIX_YAW if >5°] → ALIGN → VERIFY → APPROACH → RECENTER")
         
         # =================================================================
         # SKILL 1: SCAN
@@ -1036,68 +1050,125 @@ def main(renderer):
             break
         
         # =================================================================
-        # SKILL 2: FIX_YAW
+        # SKILL 2: FIX_YAW (Conditional - only if needed)
         # =================================================================
-        result = skills.fix_yaw(currentPose, window_3d_pos)
+        # Check if yaw alignment is needed
+        vec_to_window = window_3d_pos - currentPose['position']
+        desired_yaw = np.arctan2(vec_to_window[1], vec_to_window[0])
+        current_yaw = currentPose['rpy'][2]
+        yaw_error = wrap_angle(desired_yaw - current_yaw)
+        yaw_error_deg = np.degrees(abs(yaw_error))
         
-        if result == -1:
-            print(f"\n[ABORT] Yaw alignment failed")
-            break
+        # ALWAYS store initial yaw error for VERIFY guidance (even if we skip FIX_YAW)
+        skills.yaw_error_initial = yaw_error
         
-        currentPose = result
+        print(f"\nYaw check: current={np.degrees(current_yaw):.1f}°, "
+              f"desired={np.degrees(desired_yaw):.1f}°, error={yaw_error_deg:.1f}°")
+        print(f"  Yaw hint for VERIFY: {np.degrees(yaw_error):.1f}° ({'RIGHT' if yaw_error > 0 else 'LEFT'})")
+        
+        if yaw_error_deg > 5.0:
+            print(f"  → Yaw error {yaw_error_deg:.1f}° > 5° - running FIX_YAW")
+            result = skills.fix_yaw(currentPose, window_3d_pos)
+            
+            if result == -1:
+                print(f"\n[ABORT] Yaw alignment failed")
+                break
+            
+            currentPose = result
+        else:
+            print(f"  → Yaw error {yaw_error_deg:.1f}° < 5° - skipping FIX_YAW ✓")
+            print(f"  Already well aligned!")
         
         # =================================================================
-        # SKILLS 3-4: ALIGN-VERIFY LOOP
+        # SKILLS 3-4: ALIGN-VERIFY LOOP (Conditional)
         # =================================================================
         print(f"\n{'='*70}")
-        print(f"[ALIGN-VERIFY LOOP]")
+        print(f"[ALIGN-VERIFY CHECK]")
         print(f"{'='*70}")
         
-        max_cycles = 5
-        align_threshold = 50  # pixels
-        alignment_converged = False
-        final_error = float('inf')
+        # NOW check alignment (after yaw is done!)
+        proj_pixel = navigator.pnp_estimator.project_window_to_pixel(window_3d_pos, currentPose)
         
-        for cycle in range(max_cycles):
-            print(f"\n  --- Cycle {cycle + 1}/{max_cycles} ---")
+        if proj_pixel is not None:
+            img_h, img_w = renderer.image_height, renderer.image_width
+            error_x = proj_pixel[0] - img_w / 2
+            error_y = proj_pixel[1] - img_h / 2
+            error_mag = np.sqrt(error_x**2 + error_y**2)
             
-            # SKILL 4: VERIFY
-            verified_window, corners_2d, alignment_good, error_mag = skills.verify(
-                currentPose, window_3d_pos, cycle_num=cycle
-            )
+            print(f"Post-yaw-alignment error: {error_mag:.1f}px")
             
-            if verified_window is None:
-                print(f"  [WARN] Verification failed")
-                if cycle == 0:
-                    print(f"\n[ABORT] Cannot see window")
-                    break
-                else:
-                    print(f"  Using last known position")
-                    break
-            
-            # Update window position with verified estimate
-            window_3d_pos = verified_window
-            final_error = error_mag
-            
-            # Check if aligned
-            if alignment_good:
-                print(f"  [SUCCESS] Aligned! (error={error_mag:.1f}px < {align_threshold}px)")
-                alignment_converged = True
-                break
-            
-            # SKILL 3: ALIGN
-            currentPose, error_after_align = skills.align(currentPose, window_3d_pos, corners_2d)
-            
-            print(f"  Error after alignment: {error_after_align:.1f}px")
-        
-        if not alignment_converged:
-            print(f"\n[WARN] Alignment did not converge after {max_cycles} cycles")
-            print(f"Final error: {final_error:.1f}px")
-            if final_error > 100:
-                print(f"[ABORT] Error too large to approach safely")
-                break
+            if error_mag < 25:  # Tighter threshold - approach only if very well aligned
+                print(f"  → Alignment excellent ({error_mag:.1f}px < 25px)")
+                print(f"  → Skipping ALIGN-VERIFY, going straight to APPROACH!")
             else:
-                print(f"[CONTINUE] Error acceptable, will attempt approach")
+                print(f"  → Alignment needs refinement ({error_mag:.1f}px > 25px)")
+                print(f"  → Running ALIGN-VERIFY cycles until converged")
+                
+                # ITERATIVE ALIGN-VERIFY LOOP (max 3 cycles)
+                max_cycles = 3
+                for cycle_num in range(max_cycles):
+                    print(f"\n  --- ALIGN-VERIFY Cycle {cycle_num + 1}/{max_cycles} ---")
+                    
+                    # SKILL 3: ALIGN (adjust Y/Z position)
+                    currentPose, error_before_verify = skills.align(currentPose, window_3d_pos, corners_2d)
+                    
+                    # SKILL 4: VERIFY (re-scan to confirm)
+                    verified_window, corners_2d, alignment_good, error_mag = skills.verify(
+                        currentPose, window_3d_pos, cycle_num=cycle_num
+                    )
+                    
+                    if verified_window is None:
+                        print(f"  [WARN] Verification failed (likely detected different window)")
+                        print(f"  [RETRY] Moving BACKWARD (in world) to reject window 2...")
+                        
+                        # Move BACKWARD in world coordinates
+                        step_size = 0.02
+                        new_pos = currentPose['position'].copy()
+                        new_pos[0] += step_size  # +X in NED = backward in world
+                        new_pos = navigator.clip_position_to_bounds(new_pos)
+                        
+                        print(f"  Moving +X (backward in world) by {step_size:.3f} units")
+                        print(f"  From: {currentPose['position']}")
+                        print(f"  To: {new_pos}")
+                        
+                        currentPose['position'] = new_pos
+                        
+                        rgb_retry, _, _ = renderer.render(currentPose['position'], currentPose['rpy'])
+                        navigator.record_frame(rgb_retry, pose=currentPose, 
+                                             annotation="VERIFY_RETRY_BACKWARD")
+                        
+                        # RETRY VERIFY after moving backward
+                        print(f"  [RETRY] Re-verifying after backward step...")
+                        verified_window, corners_2d, alignment_good, error_mag = skills.verify(
+                            currentPose, window_3d_pos, cycle_num=cycle_num
+                        )
+                        
+                        if verified_window is None:
+                            print(f"  [WARN] Second verify also failed")
+                            print(f"  [OK] Continuing with original scan position")
+                            break
+                        else:
+                            print(f"  [SUCCESS] Second verify succeeded!")
+                            window_3d_pos = verified_window
+                    else:
+                        # Verify succeeded
+                        window_3d_pos = verified_window
+                    
+                    # Check convergence
+                    if alignment_good:
+                        print(f"  [CONVERGED] Excellent alignment! (error={error_mag:.1f}px < 50px)")
+                        break
+                    elif error_mag < 20:
+                        print(f"  [GOOD ENOUGH] Ready to approach (error={error_mag:.1f}px < 20px)")
+                        break
+                    else:
+                        print(f"  [CONTINUE] Need more refinement (error={error_mag:.1f}px)")
+                        if cycle_num < max_cycles - 1:
+                            print(f"  → Running another ALIGN-VERIFY cycle")
+                        else:
+                            print(f"  [STOP] Reached max cycles, proceeding anyway")
+        else:
+            print(f"  [WARN] Cannot project window - skipping ALIGN-VERIFY")
         
         # =================================================================
         # SKILL 5: APPROACH
@@ -1105,7 +1176,7 @@ def main(renderer):
         result = skills.approach(currentPose, window_3d_pos)
         
         if result == -1:
-            print(f"\n[ABORT] Approach failed")
+            print(f"\n[ABORT] Approach failed - stopping navigation")
             break
         
         currentPose = result
@@ -1119,6 +1190,8 @@ def main(renderer):
         print(f"\n{'='*70}")
         print(f"[OK] Window {window_num + 1} complete!")
         print(f"{'='*70}")
+        
+        # Ready for next window - loop will call SCAN again
     
     # Save results
     with open('./log/pose_history.json', 'w') as f:

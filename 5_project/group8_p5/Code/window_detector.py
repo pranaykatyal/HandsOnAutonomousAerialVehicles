@@ -86,12 +86,16 @@ class SimpleFlowDetector:
         self.device = device
         self.detection_resolution = detection_resolution
     
-    def detect_window(self, frames):
+    def detect_window(self, frames, prefer_larger=False, yaw_hint=None):
         """
         Detect window from sequence of frames
         
         Args:
             frames: List of (H, W, 3) RGB numpy arrays (0-255)
+            prefer_larger: If True, select largest component (for VERIFY - closer window)
+                          If False, use scoring heuristic (for SCAN - better quality)
+            yaw_hint: Initial yaw error (radians) to guide selection
+                     +ve = window on RIGHT, -ve = window on LEFT
             
         Returns:
             mask: (H, W) binary mask at original resolution
@@ -158,7 +162,7 @@ class SimpleFlowDetector:
         flow_range = flow_max - flow_min
 
         # Calculate percentage-based thresholds
-        lower_percentage = 0.01  # 1% (reduced from 11% to catch lower flow windows)
+        lower_percentage = 0.05  # 5% (reduced from 11% to catch lower flow windows)
         upper_percentage = 0.33  # 33%
 
         background_threshold = flow_min + flow_range * lower_percentage
@@ -187,7 +191,7 @@ class SimpleFlowDetector:
         print(f"    Pixels after morphology: {pixels_after_morph} ({pixels_after_morph/binary_mask.size*100:.1f}%)")
         
         # Select best bounding box
-        mask_refined = self._select_best_bbox(binary_mask)
+        mask_refined = self._select_best_bbox(binary_mask, prefer_larger=prefer_larger, yaw_hint=yaw_hint)
         
         # Upsample to original resolution
         mask = cv2.resize(
@@ -224,12 +228,16 @@ class SimpleFlowDetector:
         
         return mask, center_2d, confidence, debug_info
     
-    def _select_best_bbox(self, mask):
+    def _select_best_bbox(self, mask, prefer_larger=False, yaw_hint=None):
         """
         Select best bounding box from binary mask
         
         Args:
             mask: (H, W) uint8 binary mask
+            prefer_larger: If True, prefer largest area (VERIFY - closer window)
+                          If False, use heuristic scoring (SCAN - better quality)
+            yaw_hint: Initial yaw error (radians) from FIX_YAW
+                     +ve = window on RIGHT, -ve = window on LEFT
             
         Returns:
             result_mask: (H, W) float32 mask
@@ -311,6 +319,7 @@ class SimpleFlowDetector:
                 'label_id': label_id,
                 'score': score,
                 'area': area,
+                'center_x': cx,
                 'center_y': cy
             })
         
@@ -319,11 +328,29 @@ class SimpleFlowDetector:
             print("    No valid components found!")
             return np.zeros((H, W), dtype=np.float32)
         
-        # valid_components.sort(key=lambda x: x['score'], reverse=True)
-        # valid_components.sort(key=lambda x: x['area'])
-        valid_components.sort(key=lambda x: x['score'])
-        best_label = valid_components[0]['label_id']
-        print(f"    Selected component {best_label} (score={valid_components[0]['score']:.0f})")
+        if yaw_hint is not None and abs(yaw_hint) > 0.05:  # >~3 degrees
+            # YAW-GUIDED SELECTION: Use initial yaw error to pick correct window
+            # After FIX_YAW rotates to face the window, use the hint to select correct side
+            if yaw_hint > 0:
+                # Positive yaw = window was on RIGHT → select RIGHTMOST
+                valid_components.sort(key=lambda x: x['center_x'], reverse=True)
+                best_label = valid_components[0]['label_id']
+                print(f"    Selected component {best_label} by RIGHTMOST position (yaw_hint={np.degrees(yaw_hint):.1f}°) [VERIFY+YAW mode]")
+            else:
+                # Negative yaw = window was on LEFT → select LEFTMOST
+                valid_components.sort(key=lambda x: x['center_x'])
+                best_label = valid_components[0]['label_id']
+                print(f"    Selected component {best_label} by LEFTMOST position (yaw_hint={np.degrees(yaw_hint):.1f}°) [VERIFY+YAW mode]")
+        elif prefer_larger:
+            # VERIFY mode without yaw hint: Select LARGEST component (closer window)
+            valid_components.sort(key=lambda x: x['area'], reverse=True)
+            best_label = valid_components[0]['label_id']
+            print(f"    Selected component {best_label} by SIZE (area={valid_components[0]['area']:.0f}) [VERIFY mode]")
+        else:
+            # SCAN mode: Use heuristic scoring (better quality)
+            valid_components.sort(key=lambda x: x['score'])
+            best_label = valid_components[0]['label_id']
+            print(f"    Selected component {best_label} by SCORE (score={valid_components[0]['score']:.0f}) [SCAN mode]")
         
         # Create mask
         result = (labels == best_label).astype(np.uint8) * 255

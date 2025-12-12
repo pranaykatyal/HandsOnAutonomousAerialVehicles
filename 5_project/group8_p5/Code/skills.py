@@ -25,11 +25,12 @@ class NavigationSkills:
             navigator: WindowNavigator instance with renderer, detector, pnp_estimator, etc.
         """
         self.nav = navigator
+        self.yaw_error_initial = 0.0  # Store initial yaw error from FIX_YAW for VERIFY guidance
         
     # =========================================================================
     # SKILL 1: SCAN
     # =========================================================================
-    def scan(self, current_pose, scan_type='initial'):
+    def scan(self, current_pose, scan_type='initial', yaw_hint=None):
         """
         SKILL 1: SCAN
         Initial window detection using optical flow and PnP
@@ -37,6 +38,7 @@ class NavigationSkills:
         Args:
             current_pose: Current drone pose dict
             scan_type: Label for this scan ('initial', 'verify', etc.)
+            yaw_hint: Initial yaw error (radians) for VERIFY directional selection
             
         Returns:
             window_3d_pos: (3,) Window position in NED, or None if failed
@@ -63,7 +65,7 @@ class NavigationSkills:
         # Detect window
         print(f"  Detecting window...")
         window_3d_pos, _, center_2d, corners_2d = self.nav.scan_for_window(
-            current_pose, self.nav.pose_history, scan_type=scan_type
+            current_pose, self.nav.pose_history, scan_type=scan_type, yaw_hint=yaw_hint
         )
         
         scan_data = {
@@ -103,12 +105,11 @@ class NavigationSkills:
         desired_yaw = np.arctan2(vec_to_window[1], vec_to_window[0])
         current_yaw = current_pose['rpy'][2]
         
+        # yaw_error_initial already set in main.py before calling this function
+        
         yaw_tolerance = np.radians(1.0)  # 1 degree
         yaw_step = np.radians(1.0)  # 1 degree per iteration
         max_yaw_iterations = 40
-        
-        z_threshold_px = 20  # Start correcting Z when vertical error > 20px
-        z_step_max = 0.02  # Max Z correction per iteration
         
         yaw_iter = 0
         
@@ -120,40 +121,14 @@ class NavigationSkills:
                 print(f"  [OK] Yaw aligned after {yaw_iter} iterations")
                 break
             
-            # Yaw correction
+            # Yaw correction only
             step_yaw = np.clip(yaw_error, -yaw_step, yaw_step)
             current_pose['rpy'][2] += step_yaw
             
-            # Z correction during yaw rotation
-            proj_pixel = self.nav.pnp_estimator.project_window_to_pixel(
-                window_3d_pos, current_pose
-            )
-            
-            if proj_pixel is not None:
-                rgb, _, _ = self.nav.renderer.render(current_pose['position'], current_pose['rpy'])
-                img_h, img_w = rgb.shape[:2]
-                error_y_px = proj_pixel[1] - img_h / 2
-                
-                if abs(error_y_px) > z_threshold_px and yaw_iter > 5:
-                    # Correct Z
-                    Z_cam = 0.3  # Approximate
-                    fy = self.nav.pnp_estimator.camera_matrix_original[1, 1]
-                    delta_y_cam = (error_y_px * Z_cam) / fy
-                    
-                    # Transform to NED
-                    delta_cam = np.array([0.0, delta_y_cam, 0.0])
-                    delta_body = self.nav.pnp_estimator.R_cam_to_body @ delta_cam
-                    R_drone_ned = self.nav.pnp_estimator._euler_to_rotation_matrix(
-                        current_pose['rpy'][0], current_pose['rpy'][1], current_pose['rpy'][2]
-                    )
-                    delta_ned = R_drone_ned @ delta_body
-                    z_correction = np.clip(delta_ned[2], -z_step_max, z_step_max)
-                    
-                    current_pose['position'][2] += z_correction
-                    current_pose['position'] = self.nav.clip_position_to_bounds(current_pose['position'])
-                    
-                    print(f"  Yaw iter {yaw_iter}: Yaw={np.degrees(current_pose['rpy'][2]):.1f}°, "
-                          f"Error={np.degrees(yaw_error):.1f}°, Z_corr={z_correction:+.3f}")
+            # Log progress every 6 iterations
+            if yaw_iter % 6 == 0:
+                print(f"  Yaw iter {yaw_iter}: Yaw={np.degrees(current_pose['rpy'][2]):.1f}°, "
+                      f"Error={np.degrees(yaw_error):.1f}°")
             
             # Record frame
             rgb, _, _ = self.nav.renderer.render(current_pose['position'], current_pose['rpy'])
@@ -264,11 +239,11 @@ class NavigationSkills:
     def verify(self, current_pose, window_3d_pos, cycle_num=0):
         """
         SKILL 4: VERIFY
-        Re-detect window and check alignment quality
+        Re-scan to verify alignment and confirm we're tracking the SAME window
         
         Args:
             current_pose: Current drone pose dict
-            window_3d_pos: Expected window position
+            window_3d_pos: Expected window position (from initial scan)
             cycle_num: Which align-verify cycle this is
             
         Returns:
@@ -277,30 +252,30 @@ class NavigationSkills:
             alignment_good: Bool, True if aligned well enough
             error_mag: Pixel error magnitude
         """
-        print(f"\n  [SKILL: VERIFY] Cycle {cycle_num}")
+        print(f"\n  [SKILL: VERIFY] Cycle {cycle_num} - Re-scanning...")
         
-        # Re-detect window
+        # Re-scan to get fresh detection
+        # Pass yaw_hint for directional selection: +ve = RIGHT, -ve = LEFT
         verified_window, corners_2d, scan_data = self.scan(
-            current_pose, scan_type=f'verify_cycle{cycle_num}'
+            current_pose, scan_type=f'verify_c{cycle_num}', yaw_hint=self.yaw_error_initial
         )
         
         if verified_window is None:
             print(f"    [FAIL] Cannot see window")
             return None, None, False, float('inf')
         
-        # Check position consistency to prevent false detections
+        # CRITICAL: Check position consistency to prevent tracking DIFFERENT window
         pos_drift = np.linalg.norm(verified_window - window_3d_pos)
         print(f"    Position drift: {pos_drift:.3f} splat units")
         
-        # CRITICAL: Reject if window jumped too far (likely different window)
-        # Allow larger drift on first cycle (initial detection), smaller on refinement
+        # Stricter on refinement cycles - must be same window!
         max_drift = 0.8 if cycle_num == 0 else 0.3
         
         if pos_drift > max_drift:
             print(f"    [ERROR] Position drift {pos_drift:.3f} > {max_drift:.3f}!")
-            print(f"    Original window: {window_3d_pos}")
-            print(f"    Detected window: {verified_window}")
-            print(f"    This is likely a DIFFERENT window - rejecting!")
+            print(f"    Expected: {window_3d_pos}")
+            print(f"    Detected: {verified_window}")
+            print(f"    This is likely a DIFFERENT WINDOW - rejecting!")
             return None, None, False, float('inf')
         
         # Check alignment
@@ -328,12 +303,12 @@ class NavigationSkills:
         
         px_proj = (int(round(proj_pixel[0])), int(round(proj_pixel[1])))
         cv2.circle(rgb_annotated, px_proj, 20, (255, 0, 255), 3)
-        cv2.putText(rgb_annotated, f'Cycle {cycle_num}', (px_proj[0]+25, px_proj[1]),
+        cv2.putText(rgb_annotated, f'C{cycle_num}', (px_proj[0]+25, px_proj[1]),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 255), 2)
         cv2.arrowedLine(rgb_annotated, (int(img_center_x), int(img_center_y)),
                       px_proj, (255, 255, 0), 3, tipLength=0.1)
         
-        # Draw corners if available
+        # Draw corners
         if corners_2d is not None:
             corners_int = corners_2d.astype(np.int32)
             cv2.polylines(rgb_annotated, [corners_int], True, (255, 255, 0), 2)
@@ -341,14 +316,14 @@ class NavigationSkills:
         self.nav.record_frame(rgb_annotated, pose=current_pose,
                             annotation=f"VERIFY_C{cycle_num}_ERR={error_mag:.0f}px")
         
-        # Determine if alignment is good
+        # Determine if aligned
         align_threshold = 50  # pixels
         alignment_good = error_mag < align_threshold
         
         if alignment_good:
-            print(f"    [OK] Alignment verified (error < {align_threshold}px)")
+            print(f"    [OK] Aligned (error < {align_threshold}px)")
         else:
-            print(f"    [WARN] Alignment needs improvement (error ≥ {align_threshold}px)")
+            print(f"    [CONTINUE] Need more alignment")
         
         return verified_window, corners_2d, alignment_good, error_mag
     
@@ -358,7 +333,7 @@ class NavigationSkills:
     def approach(self, current_pose, window_3d_pos):
         """
         SKILL 5: APPROACH
-        Move through the aligned window
+        Move through the aligned window using trajectory following
         
         Args:
             current_pose: Current drone pose dict (must be well-aligned!)
@@ -371,7 +346,15 @@ class NavigationSkills:
         print(f"[SKILL: APPROACH]")
         print(f"{'='*60}")
         
-        # Final alignment check
+        # CRITICAL: Use COMPLETELY ZERO orientation for level flight during approach
+        # This ensures no tilting, pitching, or rolling during pass-through
+        zero_rpy = np.array([0.0, 0.0, 0.0])  # All zeros - completely level
+        print(f"  Using completely level orientation for approach:")
+        print(f"    Current: roll={np.degrees(current_pose['rpy'][0]):.1f}°, "
+              f"pitch={np.degrees(current_pose['rpy'][1]):.1f}°, yaw={np.degrees(current_pose['rpy'][2]):.1f}°")
+        print(f"    Approach: roll=0.0°, pitch=0.0°, yaw=0.0° (LEVEL FLIGHT)")
+        
+        # Log alignment for debugging
         proj_pixel = self.nav.pnp_estimator.project_window_to_pixel(window_3d_pos, current_pose)
         
         if proj_pixel is not None:
@@ -381,86 +364,49 @@ class NavigationSkills:
             error_y = proj_pixel[1] - img_h / 2
             error_mag = np.sqrt(error_x**2 + error_y**2)
             
-            print(f"  Pre-approach alignment: {error_mag:.1f}px")
-            
-            if error_mag > 100:
-                print(f"  [ERROR] Alignment too poor to approach safely!")
-                return -1
+            print(f"  Pre-approach pixel error: {error_mag:.1f}px")
         
-        # Calculate distance
+        # Calculate distance and direction
         distance = np.linalg.norm(window_3d_pos - current_pose['position'])
         print(f"  Distance to window: {distance:.3f} splat units")
         
-        # Approach to 0.2 units from window
-        approach_distance = 0.2
+        # TRUE direction in NED (for collision checking and actual movement)
+        direction_ned = window_3d_pos - current_pose['position']
+        direction_ned_norm = direction_ned / (np.linalg.norm(direction_ned) + 1e-6)
         
-        if distance > approach_distance:
-            # Move forward along camera axis
-            R_drone_ned = self.nav.pnp_estimator._euler_to_rotation_matrix(
-                current_pose['rpy'][0], current_pose['rpy'][1], current_pose['rpy'][2]
-            )
-            forward_direction = R_drone_ned @ np.array([1, 0, 0])
+        print(f"  Direction (TRUE NED): {direction_ned_norm}")
+        
+        # Move in steps toward window
+        step_size = 0.1  # Small steps for safety
+        num_steps = int(np.ceil(distance / step_size))
+        num_steps = max(3, min(num_steps, 10))  # 3-10 steps
+        
+        print(f"  Moving in {num_steps} steps (direct position updates)")
+        
+        for step in range(num_steps):
+            # Calculate target for this step (TRUE NED coordinates)
+            progress = (step + 1) / num_steps
+            target_pos = current_pose['position'] + direction_ned_norm * (progress * distance)
+            target_pos = self.nav.clip_position_to_bounds(target_pos)
             
-            move_distance = distance - approach_distance
-            approach_point = current_pose['position'] + forward_direction * move_distance
-            
-            print(f"  Moving forward {move_distance:.3f} units")
-            
-            # Bounds and collision check
-            approach_point = self.nav.clip_position_to_bounds(approach_point)
-            if doesItCollide(approach_point):
-                print(f"  [ERROR] Approach point collides!")
+            # Collision check
+            if doesItCollide(target_pos):
+                print(f"  [ERROR] Step {step+1} would collide at {target_pos}")
                 return -1
             
-            # Move using goToWaypoint
-            from navigation import goToWaypoint
-            result = goToWaypoint(
-                current_pose, approach_point,
-                velocity=0.03,
-                pose_history=self.nav.pose_history,
-                action=f'APPROACH_W{self.nav.window_count}',
-                lock_roll_pitch=True,
-                navigator=self.nav
-            )
+            print(f"  Step {step+1}/{num_steps}: Moving to {target_pos}")
             
-            if result == -1:
-                print(f"  [ERROR] Approach failed")
-                return -1
+            # DIRECT POSITION UPDATE (no dynamics, no tilting!)
+            current_pose['position'] = target_pos.copy()
             
-            current_pose = result
-            print(f"  [OK] Approached to {approach_distance} units")
+            # Render frame with ZERO roll/pitch for level flight visualization
+            # (Don't modify current_pose['rpy'] - keep it for next stages)
+            rgb, _, _ = self.nav.renderer.render(current_pose['position'], zero_rpy)
+            self.nav.record_frame(rgb, pose={'position': current_pose['position'], 'rpy': zero_rpy},
+                                annotation=f"APPROACH_W{self.nav.window_count}_S{step+1}/{num_steps}")
         
-        # Pass through
-        print(f"  Passing through window...")
-        through_distance = 0.5
-        
-        R_drone_ned = self.nav.pnp_estimator._euler_to_rotation_matrix(
-            current_pose['rpy'][0], current_pose['rpy'][1], current_pose['rpy'][2]
-        )
-        forward_direction = R_drone_ned @ np.array([1, 0, 0])
-        through_point = current_pose['position'] + forward_direction * through_distance
-        
-        through_point = self.nav.clip_position_to_bounds(through_point)
-        if doesItCollide(through_point):
-            print(f"  [ERROR] Pass-through point collides!")
-            return -1
-        
-        from navigation import goToWaypoint
-        result = goToWaypoint(
-            current_pose, through_point,
-            velocity=0.05,
-            pose_history=self.nav.pose_history,
-            action=f'PASS_THROUGH_W{self.nav.window_count}',
-            lock_roll_pitch=True,
-            navigator=self.nav
-        )
-        
-        if result == -1:
-            print(f"  [ERROR] Pass-through failed")
-            return -1
-        
-        current_pose = result
-        print(f"  [OK] Passed through window!")
+        print(f"  [OK] Approach complete")
+        print(f"  Final position (NED): {current_pose['position']}")
         
         return current_pose
     
@@ -470,62 +416,38 @@ class NavigationSkills:
     def recenter(self, current_pose):
         """
         SKILL 6: RECENTER
-        Reset yaw, Y, Z to prepare for next window
+        Reset yaw to 0° only (skip Y/Z to avoid collisions)
         
         Args:
             current_pose: Current drone pose dict
             
         Returns:
-            current_pose: Updated pose dict with reset orientation/position
+            current_pose: Updated pose dict
         """
         print(f"\n{'='*60}")
         print(f"[SKILL: RECENTER]")
         print(f"{'='*60}")
         
-        # Reset yaw to 0
-        print(f"  Resetting yaw from {np.degrees(current_pose['rpy'][2]):.1f}° to 0°")
-        from navigation import goToWaypoint_yaw
-        result = goToWaypoint_yaw(
-            current_pose, 0.0,
-            pose_history=self.nav.pose_history,
-            action=f'RECENTER_YAW_W{self.nav.window_count}',
-            navigator=self.nav
-        )
+        current_yaw_deg = np.degrees(current_pose['rpy'][2])
         
-        if result != -1:
-            current_pose = result
-        
-        # Reset Y and Z toward 0
-        target_y = 0.0
-        target_z = 0.0
-        
-        current_y = current_pose['position'][1]
-        current_z = current_pose['position'][2]
-        
-        if abs(current_y) > 0.1 or abs(current_z) > 0.1:
-            print(f"  Recentering position from Y={current_y:.2f}, Z={current_z:.2f} to Y=0, Z=0")
+        if abs(current_yaw_deg) > 2.0:
+            print(f"  Resetting yaw from {current_yaw_deg:.1f}° to 0°")
+            from navigation import goToWaypoint_yaw
+            result = goToWaypoint_yaw(
+                current_pose, 0.0,
+                pose_history=self.nav.pose_history,
+                action=f'RECENTER_YAW_W{self.nav.window_count}',
+                navigator=self.nav
+            )
             
-            target_pos = current_pose['position'].copy()
-            target_pos[1] = target_y
-            target_pos[2] = target_z
-            
-            target_pos = self.nav.clip_position_to_bounds(target_pos)
-            
-            if not doesItCollide(target_pos):
-                from navigation import goToWaypoint
-                result = goToWaypoint(
-                    current_pose, target_pos,
-                    velocity=0.05,
-                    pose_history=self.nav.pose_history,
-                    action=f'RECENTER_POS_W{self.nav.window_count}',
-                    maintain_orientation=True,
-                    navigator=self.nav
-                )
-                
-                if result != -1:
-                    current_pose = result
+            if result != -1:
+                current_pose = result
+        else:
+            print(f"  Yaw already near 0° ({current_yaw_deg:.1f}°), skipping")
         
-        print(f"  [OK] Recentered to Y={current_pose['position'][1]:.2f}, "
-              f"Z={current_pose['position'][2]:.2f}, Yaw={np.degrees(current_pose['rpy'][2]):.1f}°")
+        # Skip Y/Z reset - causes collisions
+        print(f"  Position: [{current_pose['position'][0]:.2f}, "
+              f"{current_pose['position'][1]:.2f}, {current_pose['position'][2]:.2f}]")
+        print(f"  [OK] Recentered (yaw only)")
         
         return current_pose
