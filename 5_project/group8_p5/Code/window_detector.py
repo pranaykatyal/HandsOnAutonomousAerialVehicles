@@ -163,7 +163,7 @@ class SimpleFlowDetector:
         flow_range = flow_max - flow_min
 
         # Calculate percentage-based thresholds
-        lower_percentage = 0.05  # 5% (reduced from 11% to catch lower flow windows)
+        lower_percentage = 0.005  # 5% (reduced from 11% to catch lower flow windows)
         upper_percentage = 0.33  # 33%
 
         background_threshold = flow_min + flow_range * lower_percentage

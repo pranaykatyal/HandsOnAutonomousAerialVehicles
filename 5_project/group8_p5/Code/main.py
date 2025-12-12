@@ -64,6 +64,10 @@ class WindowNavigator:
         self.scan_count = 0
         self.video_frames = []
         
+        # Window 4 tracking - maintain position consistency
+        self.window_4_position = None  # Estimated 3D position for window 4
+        self.window_4_detected = False
+        
         print("Window Navigator initialized with PnP")
         print(f"  Image: {img_w}x{img_h}, FOV: {np.degrees(fov):.1f} deg")
         print(f"  Map bounds: X=+/-{self.MAP_X_LIMIT}m, Y=+/-{self.MAP_Y_LIMIT}m, Z=+/-{self.MAP_Z_LIMIT}m")
@@ -248,15 +252,54 @@ class WindowNavigator:
         ref_rgb = scan_frames[ref_idx]
         
         if self.window_count >= 3:
-            print(f"\n  [WINDOW 4] Skipping PnP - using flow segmentation center only")
+            print(f"\n  [WINDOW 4] Irregular shape - using hybrid flow + projection tracking")
             
             # Use the detected center directly as the target
             # Convert pixel coordinates to a rough NED estimate based on current pose
             img_h, img_w = ref_rgb.shape[:2]
             center_x, center_y = center_2d
             
-            # Estimate rough distance based on typical window approach
-            estimated_distance = 1.5  # splat units (rough guess)
+            # If we already have a tracked position, use projection to guide detection
+            if self.window_4_position is not None and scan_type.startswith('verify'):
+                print(f"  Using tracked window 4 position: {self.window_4_position}")
+                
+                # Project expected position to pixel
+                expected_pixel = self.pnp_estimator.project_window_to_pixel(
+                    self.window_4_position, ref_pose
+                )
+                
+                if expected_pixel is not None:
+                    # Check if detected center is consistent with projection
+                    error_x = center_x - expected_pixel[0]
+                    error_y = center_y - expected_pixel[1]
+                    error_mag = np.sqrt(error_x**2 + error_y**2)
+                    
+                    print(f"  Detection vs projection error: {error_mag:.1f}px")
+                    print(f"    Detected: ({center_x:.0f}, {center_y:.0f})")
+                    print(f"    Expected: ({expected_pixel[0]:.0f}, {expected_pixel[1]:.0f})")
+                    
+                    # If detection is way off, use projection instead
+                    if error_mag > 150:  # Large drift threshold
+                        print(f"  [CORRECTION] Large drift detected, using projection")
+                        center_x, center_y = expected_pixel[0], expected_pixel[1]
+                        center_2d = (center_x, center_y)
+                    elif error_mag > 80:  # Medium drift - blend
+                        print(f"  [CORRECTION] Medium drift, blending detection + projection")
+                        blend_factor = 0.7  # 70% projection, 30% detection
+                        center_x = blend_factor * expected_pixel[0] + (1 - blend_factor) * center_x
+                        center_y = blend_factor * expected_pixel[1] + (1 - blend_factor) * center_y
+                        center_2d = (center_x, center_y)
+            
+            # Estimate depth based on approach state
+            if self.window_4_position is not None:
+                # Use current distance to tracked position
+                vec_to_window = self.window_4_position - ref_pose['position']
+                estimated_distance = np.linalg.norm(vec_to_window)
+                print(f"  Distance to tracked position: {estimated_distance:.3f} splat units")
+            else:
+                # Initial guess
+                estimated_distance = 1.5  # splat units
+                print(f"  Initial distance estimate: {estimated_distance:.3f} splat units")
             
             # Calculate angle offset from image center
             pixel_offset_x = center_x - (img_w / 2)
@@ -285,10 +328,23 @@ class WindowNavigator:
             
             window_pos_ned = ref_pose['position'] + window_direction_ned
             
+            # Update tracked position with smoothing if we already have one
+            if self.window_4_position is not None:
+                # Exponential smoothing: blend old and new estimates
+                alpha = 0.3  # Weight for new observation
+                window_pos_ned = alpha * window_pos_ned + (1 - alpha) * self.window_4_position
+                print(f"  Smoothed position update")
+            else:
+                print(f"  Initial position estimate")
+            
+            # Store/update tracked position
+            self.window_4_position = window_pos_ned
+            self.window_4_detected = True
+            
             print(f"  Center pixel: ({center_x:.0f}, {center_y:.0f})")
             print(f"  Pixel offset from center: ({pixel_offset_x:+.0f}, {pixel_offset_y:+.0f})px")
             print(f"  Angular offset: ({np.degrees(angle_offset_x):+.1f}, {np.degrees(angle_offset_y):+.1f})°")
-            print(f"  Estimated window position (from flow center): {window_pos_ned}")
+            print(f"  Estimated window position: {window_pos_ned}")
             
             # No corners for window 4
             corners_2d = None
@@ -1114,32 +1170,37 @@ def main(renderer):
         # =================================================================
         # SKILL 2: FIX_YAW (Conditional - only if needed)
         # =================================================================
-        # Check if yaw alignment is needed
-        vec_to_window = window_3d_pos - currentPose['position']
-        desired_yaw = np.arctan2(vec_to_window[1], vec_to_window[0])
-        current_yaw = currentPose['rpy'][2]
-        yaw_error = wrap_angle(desired_yaw - current_yaw)
-        yaw_error_deg = np.degrees(abs(yaw_error))
-        
-        # ALWAYS store initial yaw error for VERIFY guidance (even if we skip FIX_YAW)
-        skills.yaw_error_initial = yaw_error
-        
-        print(f"\nYaw check: current={np.degrees(current_yaw):.1f}, "
-              f"desired={np.degrees(desired_yaw):.1f}, error={yaw_error_deg:.1f}")
-        print(f"  Yaw hint for VERIFY: {np.degrees(yaw_error):.1f} ({'RIGHT' if yaw_error > 0 else 'LEFT'})")
-        
-        if yaw_error_deg > 5.0:
-            print(f"   Yaw error {yaw_error_deg:.1f} > 5 - running FIX_YAW")
-            result = skills.fix_yaw(currentPose, window_3d_pos)
-            
-            if result == -1:
-                print(f"\n[ABORT] Yaw alignment failed")
-                break
-            
-            currentPose = result
+        # SKIP for window 4 (irregular shape)
+        if navigator.window_count >= 3:
+            print(f"\n[WINDOW 4] Skipping FIX_YAW - going straight to alignment")
+            skills.yaw_error_initial = 0.0
         else:
-            print(f"   Yaw error {yaw_error_deg:.1f} < 5 - skipping FIX_YAW ")
-            print(f"  Already well aligned!")
+            # Check if yaw alignment is needed
+            vec_to_window = window_3d_pos - currentPose['position']
+            desired_yaw = np.arctan2(vec_to_window[1], vec_to_window[0])
+            current_yaw = currentPose['rpy'][2]
+            yaw_error = wrap_angle(desired_yaw - current_yaw)
+            yaw_error_deg = np.degrees(abs(yaw_error))
+            
+            # ALWAYS store initial yaw error for VERIFY guidance (even if we skip FIX_YAW)
+            skills.yaw_error_initial = yaw_error
+            
+            print(f"\nYaw check: current={np.degrees(current_yaw):.1f}, "
+                  f"desired={np.degrees(desired_yaw):.1f}, error={yaw_error_deg:.1f}")
+            print(f"  Yaw hint for VERIFY: {np.degrees(yaw_error):.1f} ({'RIGHT' if yaw_error > 0 else 'LEFT'})")
+            
+            if yaw_error_deg > 5.0:
+                print(f"   Yaw error {yaw_error_deg:.1f} > 5 - running FIX_YAW")
+                result = skills.fix_yaw(currentPose, window_3d_pos)
+                
+                if result == -1:
+                    print(f"\n[ABORT] Yaw alignment failed")
+                    break
+                
+                currentPose = result
+            else:
+                print(f"   Yaw error {yaw_error_deg:.1f} < 5 - skipping FIX_YAW ")
+                print(f"  Already well aligned!")
         
         # =================================================================
         # SKILLS 3-4: ALIGN-VERIFY LOOP (Conditional)
@@ -1148,89 +1209,101 @@ def main(renderer):
         print(f"[ALIGN-VERIFY CHECK]")
         print(f"{'='*70}")
         
-        # NOW check alignment (after yaw is done!)
-        proj_pixel = navigator.pnp_estimator.project_window_to_pixel(window_3d_pos, currentPose)
-        
-        if proj_pixel is not None:
-            img_h, img_w = renderer.image_height, renderer.image_width
-            error_x = proj_pixel[0] - img_w / 2
-            error_y = proj_pixel[1] - img_h / 2
-            error_mag = np.sqrt(error_x**2 + error_y**2)
+        # SPECIAL CASE: Window 4 - just align once and go
+        if navigator.window_count >= 3:
+            print(f"[WINDOW 4] Simplified navigation: ALIGN once, then APPROACH")
             
-            print(f"Post-yaw-alignment error: {error_mag:.1f}px")
+            # Single alignment
+            currentPose, error_mag = skills.align(currentPose, window_3d_pos, corners_2d)
+            print(f"  Alignment error after single pass: {error_mag:.1f}px")
             
-            if error_mag < 25:  # Tighter threshold - approach only if very well aligned
-                print(f"   Alignment excellent ({error_mag:.1f}px < 25px)")
-                print(f"   Skipping ALIGN-VERIFY, going straight to APPROACH!")
-            else:
-                print(f"   Alignment needs refinement ({error_mag:.1f}px > 25px)")
-                print(f"   Running ALIGN-VERIFY cycles until converged")
+            # Go directly to approach
+            print(f"  Proceeding to APPROACH without verify loop")
+        else:
+            # Normal flow for windows 1-3
+            # NOW check alignment (after yaw is done!)
+            proj_pixel = navigator.pnp_estimator.project_window_to_pixel(window_3d_pos, currentPose)
+            
+            if proj_pixel is not None:
+                img_h, img_w = renderer.image_height, renderer.image_width
+                error_x = proj_pixel[0] - img_w / 2
+                error_y = proj_pixel[1] - img_h / 2
+                error_mag = np.sqrt(error_x**2 + error_y**2)
                 
-                # ITERATIVE ALIGN-VERIFY LOOP (max 3 cycles)
-                max_cycles = 3
-                for cycle_num in range(max_cycles):
-                    print(f"\n  --- ALIGN-VERIFY Cycle {cycle_num + 1}/{max_cycles} ---")
+                print(f"Post-yaw-alignment error: {error_mag:.1f}px")
+                
+                if error_mag < 25:  # Tighter threshold - approach only if very well aligned
+                    print(f"   Alignment excellent ({error_mag:.1f}px < 25px)")
+                    print(f"   Skipping ALIGN-VERIFY, going straight to APPROACH!")
+                else:
+                    print(f"   Alignment needs refinement ({error_mag:.1f}px > 25px)")
+                    print(f"   Running ALIGN-VERIFY cycles until converged")
                     
-                    # SKILL 3: ALIGN (adjust Y/Z position)
-                    currentPose, error_before_verify = skills.align(currentPose, window_3d_pos, corners_2d)
-                    
-                    # SKILL 4: VERIFY (re-scan to confirm)
-                    verified_window, corners_2d, alignment_good, error_mag = skills.verify(
-                        currentPose, window_3d_pos, cycle_num=cycle_num
-                    )
-                    
-                    if verified_window is None:
-                        print(f"  [WARN] Verification failed (likely detected different window)")
-                        print(f"  [RETRY] Moving backward slightly to reject second window...")
+                    # ITERATIVE ALIGN-VERIFY LOOP (max 3 cycles)
+                    max_cycles = 3
+                    for cycle_num in range(max_cycles):
+                        print(f"\n  --- ALIGN-VERIFY Cycle {cycle_num + 1}/{max_cycles} ---")
                         
-                        # Move backward in NED coordinates (negative X)
-                        step_size = 0.02
-                        new_pos = currentPose['position'].copy()
-                        new_pos[0] -= step_size  # -X in NED = backward/south
-                        new_pos = navigator.clip_position_to_bounds(new_pos)
+                        # SKILL 3: ALIGN (adjust Y/Z position)
+                        currentPose, error_before_verify = skills.align(currentPose, window_3d_pos, corners_2d)
                         
-                        print(f"  Moving -X (backward) by {step_size:.3f} units")
-                        print(f"  From: {currentPose['position']}")
-                        print(f"  To: {new_pos}")
-                        
-                        currentPose['position'] = new_pos
-                        
-                        rgb_retry, _, _ = renderer.render(currentPose['position'], currentPose['rpy'])
-                        navigator.record_frame(rgb_retry, pose=currentPose, 
-                                             annotation="VERIFY_RETRY_BACK")
-                        
-                        # RETRY VERIFY after moving backward
-                        print(f"  [RETRY] Re-verifying after backward step...")
+                        # SKILL 4: VERIFY (re-scan to confirm)
                         verified_window, corners_2d, alignment_good, error_mag = skills.verify(
                             currentPose, window_3d_pos, cycle_num=cycle_num
                         )
                         
                         if verified_window is None:
-                            print(f"  [WARN] Second verify also failed")
-                            print(f"  [OK] Continuing with original scan position")
+                            print(f"  [WARN] Verification failed (likely detected different window)")
+                            print(f"  [RETRY] Moving backward slightly to reject second window...")
+                            
+                            # Move backward in NED coordinates (negative X)
+                            step_size = 0.02
+                            new_pos = currentPose['position'].copy()
+                            new_pos[0] -= step_size  # -X in NED = backward/south
+                            new_pos = navigator.clip_position_to_bounds(new_pos)
+                            
+                            print(f"  Moving -X (backward) by {step_size:.3f} units")
+                            print(f"  From: {currentPose['position']}")
+                            print(f"  To: {new_pos}")
+                            
+                            currentPose['position'] = new_pos
+                            
+                            rgb_retry, _, _ = renderer.render(currentPose['position'], currentPose['rpy'])
+                            navigator.record_frame(rgb_retry, pose=currentPose, 
+                                                 annotation="VERIFY_RETRY_BACK")
+                            
+                            # RETRY VERIFY after moving backward
+                            print(f"  [RETRY] Re-verifying after backward step...")
+                            verified_window, corners_2d, alignment_good, error_mag = skills.verify(
+                                currentPose, window_3d_pos, cycle_num=cycle_num
+                            )
+                            
+                            if verified_window is None:
+                                print(f"  [WARN] Second verify also failed")
+                                print(f"  [OK] Continuing with original scan position")
+                                break
+                            else:
+                                print(f"  [SUCCESS] Second verify succeeded!")
+                                window_3d_pos = verified_window
+                        else:
+                            # Verify succeeded
+                            window_3d_pos = verified_window
+                        
+                        # Check convergence
+                        if alignment_good:
+                            print(f"  [CONVERGED] Excellent alignment! (error={error_mag:.1f}px < 50px)")
+                            break
+                        elif error_mag < 20:
+                            print(f"  [GOOD ENOUGH] Ready to approach (error={error_mag:.1f}px < 20px)")
                             break
                         else:
-                            print(f"  [SUCCESS] Second verify succeeded!")
-                            window_3d_pos = verified_window
-                    else:
-                        # Verify succeeded
-                        window_3d_pos = verified_window
-                    
-                    # Check convergence
-                    if alignment_good:
-                        print(f"  [CONVERGED] Excellent alignment! (error={error_mag:.1f}px < 50px)")
-                        break
-                    elif error_mag < 20:
-                        print(f"  [GOOD ENOUGH] Ready to approach (error={error_mag:.1f}px < 20px)")
-                        break
-                    else:
-                        print(f"  [CONTINUE] Need more refinement (error={error_mag:.1f}px)")
-                        if cycle_num < max_cycles - 1:
-                            print(f"   Running another ALIGN-VERIFY cycle")
-                        else:
-                            print(f"  [STOP] Reached max cycles, proceeding anyway")
-        else:
-            print(f"  [WARN] Cannot project window - skipping ALIGN-VERIFY")
+                            print(f"  [CONTINUE] Need more refinement (error={error_mag:.1f}px)")
+                            if cycle_num < max_cycles - 1:
+                                print(f"   Running another ALIGN-VERIFY cycle")
+                            else:
+                                print(f"  [STOP] Reached max cycles, proceeding anyway")
+            else:
+                print(f"  [WARN] Cannot project window - skipping ALIGN-VERIFY")
         
         # =================================================================
         # SKILL 5: APPROACH
@@ -1260,31 +1333,44 @@ def main(renderer):
         currentPose = skills.recenter(currentPose)
         
         # =================================================================
-        # SKILL 7: EXPLORE (if next window not immediately visible)
+        # SKILL 7: EXPLORE or TURNBACK (depending on window)
         # =================================================================
-        # Try to find next window - if not found, explore
-        print(f"\n{'='*70}")
-        print(f"[CHECKING FOR NEXT WINDOW]")
-        print(f"{'='*70}")
-        
-        # Quick scan from current position
-        next_window, _, _ = skills.scan(currentPose, scan_type='lookahead')
-        
-        if next_window is None:
-            print(f"  No window visible from current position")
-            print(f"  Triggering EXPLORATION...")
+        # After window 4: Turn back 180 degrees
+        # After other windows: Explore for next window
+        if navigator.window_count >= 4:
+            print(f"\n{'='*70}")
+            print(f"[WINDOW 4 COMPLETE - TURNING BACK 180°]")
+            print(f"{'='*70}")
             
-            currentPose, window_found = skills.explore(currentPose, came_from_left=came_from_left)
+            currentPose = skills.turnback(currentPose)
             
-            if not window_found:
-                print(f"\n[ABORT] No more windows found after exploration")
-                break
+            print(f"\n{'='*70}")
+            print(f"[OK] Window {window_num + 1} complete! Turned back.")
+            print(f"{'='*70}")
         else:
-            print(f"  [OK] Next window visible at {next_window}")
-        
-        print(f"\n{'='*70}")
-        print(f"[OK] Window {window_num + 1} complete!")
-        print(f"{'='*70}")
+            # Try to find next window - if not found, explore
+            print(f"\n{'='*70}")
+            print(f"[CHECKING FOR NEXT WINDOW]")
+            print(f"{'='*70}")
+            
+            # Quick scan from current position
+            next_window, _, _ = skills.scan(currentPose, scan_type='lookahead')
+            
+            if next_window is None:
+                print(f"  No window visible from current position")
+                print(f"  Triggering EXPLORATION...")
+                
+                currentPose, window_found = skills.explore(currentPose, came_from_left=came_from_left)
+                
+                if not window_found:
+                    print(f"\n[ABORT] No more windows found after exploration")
+                    break
+            else:
+                print(f"  [OK] Next window visible at {next_window}")
+            
+            print(f"\n{'='*70}")
+            print(f"[OK] Window {window_num + 1} complete!")
+            print(f"{'='*70}")
         
         # Ready for next window - loop will call SCAN again
     
@@ -1294,9 +1380,46 @@ def main(renderer):
     
     navigator.save_frames_summary()
     
+    # Generate video using ffmpeg
+    print("\n" + "="*70)
+    print("GENERATING VIDEO")
+    print("="*70)
+    
+    import subprocess
+    
+    video_output = './log/navigation_video.mp4'
+    frames_pattern = './log/frames/frame_%04d.png'
+    
+    # ffmpeg command: create video from image sequence
+    # -framerate: frames per second
+    # -i: input pattern
+    # -c:v: video codec (libx264 for H.264)
+    # -pix_fmt: pixel format (yuv420p for compatibility)
+    # -y: overwrite output file
+    ffmpeg_cmd = [
+        'ffmpeg',
+        '-framerate', '30',  # 30 fps
+        '-i', frames_pattern,
+        '-c:v', 'libx264',
+        '-pix_fmt', 'yuv420p',
+        '-y',
+        video_output
+    ]
+    
+    try:
+        print(f"  Running ffmpeg to create video...")
+        result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, check=True)
+        print(f"  [OK] Video saved to: {video_output}")
+    except subprocess.CalledProcessError as e:
+        print(f"  [ERROR] ffmpeg failed:")
+        print(f"    {e.stderr}")
+    except FileNotFoundError:
+        print(f"  [ERROR] ffmpeg not found. Install with: sudo apt-get install ffmpeg")
+    
     print("\n" + "="*70)
     print("NAVIGATION COMPLETE")
     print(f"  Windows passed: {navigator.window_count}")
+    print(f"  Video: {video_output}")
     print("="*70 + "\n")
 
 

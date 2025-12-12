@@ -135,8 +135,8 @@ class NavigationSkills:
             
             # Log progress every 6 iterations
             if yaw_iter % 6 == 0:
-                print(f"  Yaw iter {yaw_iter}: Yaw={np.degrees(current_pose['rpy'][2]):.1f}Â°, "
-                      f"Error={np.degrees(yaw_error):.1f}Â°")
+                print(f"  Yaw iter {yaw_iter}: Yaw={np.degrees(current_pose['rpy'][2]):.1f}Ã‚Â°, "
+                      f"Error={np.degrees(yaw_error):.1f}Ã‚Â°")
             
             # Record frame
             rgb, _, _ = self.nav.renderer.render(current_pose['position'], current_pose['rpy'])
@@ -250,7 +250,7 @@ class NavigationSkills:
     def align_flow_based(self, current_pose):
         """
         Flow-based alignment for window 4 (irregular shape)
-        Uses continuous flow detection to center on the window
+        Uses projection tracking with flow detection fallback
         
         Args:
             current_pose: Current drone pose dict
@@ -259,7 +259,80 @@ class NavigationSkills:
             current_pose: Updated pose dict
             error_mag: Final pixel error magnitude
         """
-        print(f"\n  [SKILL: ALIGN - FLOW-BASED for Window 4]")
+        print(f"\n  [SKILL: ALIGN - PROJECTION-TRACKED for Window 4]")
+        
+        # PRIORITY 1: Use tracked position if available
+        if self.nav.window_4_position is not None:
+            print(f"    Using tracked window 4 position: {self.nav.window_4_position}")
+            
+            # Project to get expected pixel location
+            proj_pixel = self.nav.pnp_estimator.project_window_to_pixel(
+                self.nav.window_4_position, current_pose
+            )
+            
+            if proj_pixel is not None:
+                # Use projection as primary alignment guide
+                rgb, _, _ = self.nav.renderer.render(current_pose['position'], current_pose['rpy'])
+                img_h, img_w = rgb.shape[:2]
+                img_center_x = img_w / 2
+                img_center_y = img_h / 2
+                
+                error_x_px = proj_pixel[0] - img_center_x
+                error_y_px = proj_pixel[1] - img_center_y
+                error_mag = np.sqrt(error_x_px**2 + error_y_px**2)
+                
+                print(f"    Projection-based error: ({error_x_px:+.1f}, {error_y_px:+.1f})px, mag={error_mag:.1f}px")
+                
+                # Get depth to window
+                vec_to_window = self.nav.window_4_position - current_pose['position']
+                Z_cam_est = np.linalg.norm(vec_to_window)
+                
+                # Compute corrections using projection
+                fx = self.nav.pnp_estimator.camera_matrix_original[0, 0]
+                fy = self.nav.pnp_estimator.camera_matrix_original[1, 1]
+                
+                delta_x_cam = (error_x_px * Z_cam_est) / fx
+                delta_y_cam = (error_y_px * Z_cam_est) / fy
+                delta_cam = np.array([delta_x_cam, delta_y_cam, 0.0])
+                
+                # Transform to NED
+                delta_body = self.nav.pnp_estimator.R_cam_to_body @ delta_cam
+                R_drone_ned = self.nav.pnp_estimator._euler_to_rotation_matrix(
+                    current_pose['rpy'][0], current_pose['rpy'][1], current_pose['rpy'][2]
+                )
+                delta_ned = R_drone_ned @ delta_body
+                
+                ctrl_y = delta_ned[1]
+                ctrl_z = delta_ned[2]
+                
+                # Limit step size
+                max_step = 0.05
+                ctrl_magnitude = np.sqrt(ctrl_y**2 + ctrl_z**2)
+                if ctrl_magnitude > max_step:
+                    scale = max_step / ctrl_magnitude
+                    ctrl_y *= scale
+                    ctrl_z *= scale
+                
+                print(f"    Corrections: Y={ctrl_y:+.4f}, Z={ctrl_z:+.4f}")
+                
+                # Apply
+                new_pos = current_pose['position'].copy()
+                new_pos[1] += ctrl_y
+                new_pos[2] += ctrl_z
+                new_pos = self.nav.clip_position_to_bounds(new_pos)
+                
+                # Collision check
+                if doesItCollide(new_pos):
+                    print(f"    [WARN] Correction would cause collision, skipping")
+                    return current_pose, error_mag
+                
+                current_pose['position'] = new_pos
+                print(f"    [OK] Moved to {current_pose['position']}")
+                
+                return current_pose, error_mag
+        
+        # FALLBACK: If no tracked position, use flow detection
+        print(f"    No tracked position, using flow detection...")
         
         # Quick scan to get current window center
         scan_waypoints = self.nav.scanner.generate_scan_trajectory(current_pose)
@@ -615,12 +688,12 @@ class NavigationSkills:
                         # As we pass through: area DROPS from peak
                         
                         if area_ratio_from_peak < 0.5 and step >= 8:
-                            # Area dropped by >50% from peak after at least 8 steps â†’ We've passed through!
+                            # Area dropped by >50% from peak after at least 8 steps Ã¢â€ â€™ We've passed through!
                             print(f"    [OK] Window area dropped {(1-area_ratio_from_peak)*100:.0f}% from peak - passed through!")
                             print(f"    Stopping at step {step+1}/{num_steps}")
                             break
                         elif area_ratio_from_peak < 0.6 and step >= 12:
-                            # Area dropped by >40% from peak after many steps â†’ likely passed
+                            # Area dropped by >40% from peak after many steps Ã¢â€ â€™ likely passed
                             print(f"    [OK] Window area dropped {(1-area_ratio_from_peak)*100:.0f}% from peak after {step+1} steps - likely passed!")
                             print(f"    Stopping at step {step+1}/{num_steps}")
                             break
@@ -642,8 +715,8 @@ class NavigationSkills:
     
     def approach_flow_based(self, current_pose):
         """
-        Flow-based approach for window 4 (irregular shape)
-        Continuously evaluates flow segmentation center while approaching
+        Projection-tracked approach for window 4 (irregular shape)
+        Uses tracked position for alignment and distance-based passing detection
         
         Args:
             current_pose: Current drone pose dict
@@ -652,8 +725,12 @@ class NavigationSkills:
             current_pose: Updated pose dict, or -1 if failed
         """
         print(f"\n{'='*60}")
-        print(f"[SKILL: APPROACH - FLOW-BASED for Window 4]")
+        print(f"[SKILL: APPROACH - PROJECTION-TRACKED for Window 4]")
         print(f"{'='*60}")
+        
+        if self.nav.window_4_position is None:
+            print(f"  [ERROR] No tracked position for window 4!")
+            return -1
         
         # Get forward direction
         current_yaw = current_pose['rpy'][2]
@@ -665,18 +742,36 @@ class NavigationSkills:
         
         print(f"  Current yaw: {np.degrees(current_yaw):.1f} deg")
         print(f"  Forward direction (NED): {forward_ned}")
+        print(f"  Target window position: {self.nav.window_4_position}")
+        
+        # Calculate initial distance to window
+        vec_to_window = self.nav.window_4_position - current_pose['position']
+        initial_distance = np.linalg.norm(vec_to_window)
+        print(f"  Initial distance to window: {initial_distance:.3f} splat units")
         
         # Approach parameters
         step_size = 0.02  # Small steps for continuous evaluation
-        total_distance = 2.0  # Go up to 2 splat units forward
+        total_distance = initial_distance + 0.3  # Go 0.3 units past window
         num_steps = int(total_distance / step_size)
+        num_steps = min(num_steps, 20)  # Cap at 20 steps for window 4 (usually passes by step 15)
         
-        # Centering parameters
+        # Alignment parameters
         check_interval = 5  # Check alignment every 5 steps
         recenter_threshold = 80  # pixels - recenter if error > this
         
-        print(f"  Moving forward with continuous flow-based centering")
-        print(f"  Total distance: {total_distance:.2f}, Steps: {num_steps}, Step size: {step_size:.3f}")
+        # Passing detection
+        min_distance_reached = initial_distance
+        distance_increasing_count = 0
+        
+        print(f"  Moving forward with projection-based centering")
+        print(f"  Total planned distance: {total_distance:.2f}, Steps: {num_steps}, Step size: {step_size:.3f}")
+        
+        # Apply offset for window 4 before approach
+        print(f"  Applying window 4 offset: Y=+0.02, Z=+0.02")
+        current_pose['position'][1] += 0.02  # East
+        current_pose['position'][2] += 0.02  # Down (positive Z in NED)
+        current_pose['position'] = self.nav.clip_position_to_bounds(current_pose['position'])
+        print(f"  New position after offset: {current_pose['position']}")
         
         for step in range(num_steps):
             # Move forward
@@ -685,45 +780,56 @@ class NavigationSkills:
             new_pos = self.nav.clip_position_to_bounds(new_pos)
             current_pose['position'] = new_pos.copy()
             
+            # Calculate current distance to window
+            vec_to_window = self.nav.window_4_position - current_pose['position']
+            current_distance = np.linalg.norm(vec_to_window)
+            
+            # Track minimum distance (closest approach)
+            if current_distance < min_distance_reached:
+                min_distance_reached = current_distance
+                distance_increasing_count = 0
+            elif current_distance > min_distance_reached + 0.05:  # 5cm threshold
+                distance_increasing_count += 1
+            
             # Render
             rgb, _, _ = self.nav.renderer.render(current_pose['position'], current_pose['rpy'])
             self.nav.record_frame(rgb, pose=current_pose,
-                                annotation=f"APPROACH_FLOW_STEP_{step+1}/{num_steps}")
+                                annotation=f"APPROACH_W4_STEP_{step+1}/{num_steps}_dist={current_distance:.2f}")
             
-            # Check alignment every check_interval steps
+            # Check if we've passed through (distance increasing after getting close)
+            if min_distance_reached < 0.3 and distance_increasing_count >= 3:
+                print(f"  Step {step+1}: PASSED THROUGH DETECTED")
+                print(f"    Minimum distance reached: {min_distance_reached:.3f}")
+                print(f"    Current distance: {current_distance:.3f}")
+                print(f"    Distance increasing for {distance_increasing_count} consecutive checks")
+                break
+            
+            # Check alignment and recenter every check_interval steps
             if (step + 1) % check_interval == 0:
-                # Quick scan
-                scan_waypoints = self.nav.scanner.generate_scan_trajectory(current_pose)
-                scan_frames = []
-                for wp in scan_waypoints:
-                    rgb_scan, _, _ = self.nav.renderer.render(wp['position'], wp['rpy'])
-                    scan_frames.append(rgb_scan)
-                
-                # Detect window
-                mask, center_2d, confidence, debug_info = self.nav.detector.detect_window(
-                    scan_frames, window_count=self.nav.window_count
+                # Use projection for alignment
+                proj_pixel = self.nav.pnp_estimator.project_window_to_pixel(
+                    self.nav.window_4_position, current_pose
                 )
                 
-                if center_2d is not None:
+                if proj_pixel is not None:
                     # Measure error
                     img_h, img_w = rgb.shape[:2]
-                    error_x = center_2d[0] - img_w / 2
-                    error_y = center_2d[1] - img_h / 2
+                    error_x = proj_pixel[0] - img_w / 2
+                    error_y = proj_pixel[1] - img_h / 2
                     error_mag = np.sqrt(error_x**2 + error_y**2)
                     
-                    print(f"  Step {step+1}: Error={error_mag:.1f}px, Center=({center_2d[0]:.0f}, {center_2d[1]:.0f})")
+                    print(f"  Step {step+1}: Dist={current_distance:.3f}, Error={error_mag:.1f}px")
                     
-                    # Recenter if needed
-                    if error_mag > recenter_threshold:
+                    # Recenter if needed and not too close
+                    if error_mag > recenter_threshold and current_distance > 0.2:
                         print(f"    [RECENTER] Error > {recenter_threshold}px, adjusting...")
                         
-                        # Compute correction
-                        Z_cam = 1.0
+                        # Compute correction using current distance
                         fx = self.nav.pnp_estimator.camera_matrix_original[0, 0]
                         fy = self.nav.pnp_estimator.camera_matrix_original[1, 1]
                         
-                        delta_x_cam = (error_x * Z_cam) / fx
-                        delta_y_cam = (error_y * Z_cam) / fy
+                        delta_x_cam = (error_x * current_distance) / fx
+                        delta_y_cam = (error_y * current_distance) / fy
                         delta_cam = np.array([delta_x_cam, delta_y_cam, 0.0])
                         
                         delta_body = self.nav.pnp_estimator.R_cam_to_body @ delta_cam
@@ -741,25 +847,19 @@ class NavigationSkills:
                         current_pose['position'] = self.nav.clip_position_to_bounds(current_pose['position'])
                         
                         print(f"    Applied correction: Y={ctrl_y:+.4f}, Z={ctrl_z:+.4f}")
-                    
-                    # Check if passed through (area dropping)
-                    if hasattr(debug_info, 'get'):
-                        selected_score = debug_info.get('selected_score', 0)
-                        if selected_score > 0 and selected_score < 1000:  # Very small score = passed through
-                            print(f"    [OK] Small score ({selected_score:.0f}) detected - likely passed through!")
-                            break
                 else:
-                    print(f"  Step {step+1}: No window detected - may have passed through")
-                    if step >= 30:  # After significant distance
-                        print(f"    [OK] Lost window tracking - assuming passed through")
+                    print(f"  Step {step+1}: Window behind camera - likely passed through")
+                    if step >= 20:
+                        print(f"    [OK] Lost projection - assuming passed through")
                         break
             else:
                 # Just print progress
                 if (step + 1) % 10 == 0:
-                    print(f"  Step {step+1}/{num_steps}")
+                    print(f"  Step {step+1}/{num_steps}: dist={current_distance:.3f}")
         
-        print(f"  [OK] Flow-based approach complete")
+        print(f"  [OK] Projection-tracked approach complete")
         print(f"  Final position: {current_pose['position']}")
+        print(f"  Minimum distance reached: {min_distance_reached:.3f} splat units")
         
         return current_pose
     
@@ -923,7 +1023,7 @@ class NavigationSkills:
             # Log progress every iteration to track collision pattern
             collision_status = "COLLISION" if is_colliding else "clear"
             print(f"  Iter {iteration}: Y={current_pose['position'][1]:+.3f}, Z={current_pose['position'][2]:+.3f}, "
-                  f"Yaw={np.degrees(current_pose['rpy'][2]):+.1f}Â° [{collision_status}]")
+                  f"Yaw={np.degrees(current_pose['rpy'][2]):+.1f}Ã‚Â° [{collision_status}]")
         
         print(f"  Final pose:")
         print(f"    Position: [{current_pose['position'][0]:.3f}, {current_pose['position'][1]:.3f}, {current_pose['position'][2]:.3f}]")
@@ -1021,3 +1121,58 @@ class NavigationSkills:
         
         print(f"  [FAIL] No window found during exploration")
         return current_pose, False
+    
+    # =========================================================================
+    # SKILL 8: TURNBACK
+    # =========================================================================
+    def turnback(self, current_pose):
+        """
+        SKILL 8: TURNBACK
+        Rotate drone 180 degrees in place
+        
+        Args:
+            current_pose: Current drone pose dict
+            
+        Returns:
+            current_pose: Updated pose dict
+        """
+        from navigation import wrap_angle
+        
+        print(f"\n{'='*60}")
+        print(f"[SKILL: TURNBACK]")
+        print(f"{'='*60}")
+        
+        current_yaw = current_pose['rpy'][2]
+        target_yaw = wrap_angle(current_yaw + np.pi)  # Add 180 degrees
+        
+        print(f"  Current yaw: {np.degrees(current_yaw):.1f}°")
+        print(f"  Target yaw: {np.degrees(target_yaw):.1f}°")
+        print(f"  Rotating 180 degrees...")
+        
+        yaw_tolerance = np.radians(1.0)  # 1 degree tolerance
+        yaw_step = np.radians(2.0)  # 2 degrees per step
+        max_iterations = 100
+        
+        iteration = 0
+        while iteration < max_iterations:
+            yaw_error = wrap_angle(target_yaw - current_pose['rpy'][2])
+            
+            if abs(yaw_error) < yaw_tolerance:
+                print(f"  [OK] Turned 180° after {iteration} iterations")
+                break
+            
+            # Apply yaw correction
+            step_yaw = np.clip(yaw_error, -yaw_step, yaw_step)
+            current_pose['rpy'][2] += step_yaw
+            
+            # Render and record
+            if iteration % 10 == 0:
+                rgb, _, _ = self.nav.renderer.render(current_pose['position'], current_pose['rpy'])
+                self.nav.record_frame(rgb, pose=current_pose, 
+                                    annotation=f"TURNBACK_iter{iteration}")
+                print(f"  Iteration {iteration}: Yaw={np.degrees(current_pose['rpy'][2]):.1f}°")
+            
+            iteration += 1
+        
+        print(f"  Final yaw: {np.degrees(current_pose['rpy'][2]):.1f}°")
+        return current_pose
