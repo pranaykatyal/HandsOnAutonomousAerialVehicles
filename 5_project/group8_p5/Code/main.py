@@ -82,12 +82,13 @@ class WindowNavigator:
             np.clip(pos[2], -self.MAP_Z_LIMIT, self.MAP_Z_LIMIT)
         ])
     
-    def scan_for_window(self, current_pose, pose_history, scan_type='initial', target_pixel=None, yaw_hint=None):
+    def scan_for_window(self, current_pose, pose_history, scan_type='initial', target_pixel=None, yaw_hint=None, target_score=None):
         """Scan for window and estimate pose with PnP
         
         Args:
             yaw_hint: Initial yaw error (radians) to guide VERIFY selection
                      +ve = window on RIGHT, -ve = window on LEFT
+            target_score: Component score to match (for VERIFY score matching)
         """
         scan_label = f"{scan_type}_window{self.window_count}_scan{self.scan_count}"
         print(f"\n=== SCANNING FOR WINDOW ({scan_label}) ===")
@@ -114,13 +115,14 @@ class WindowNavigator:
         # Detect window
         print("\n  Detecting window...")
         
-        # VERIFY mode: prefer LARGER component (closer window)
+        # VERIFY mode: prefer LARGER component (closer window) OR use score matching
         # SCAN mode: use heuristic scoring (better quality)
         prefer_larger = scan_type.startswith('verify')
         mask, center_2d, confidence, debug_info = self.detector.detect_window(
             scan_frames, 
             prefer_larger=prefer_larger,
-            yaw_hint=yaw_hint
+            yaw_hint=yaw_hint,
+            target_score=target_score
         )
 
         # Extra debug: label all contours
@@ -234,7 +236,7 @@ class WindowNavigator:
             print(f"    Confidence: {confidence:.3f} (threshold: 0.005)")
             print(f"    Mask pixels: {np.sum(mask > 0.5) if mask is not None else 0:.0f}")
             print(f"    Center: {center_2d}")
-            return None, scan_frames, None, None
+            return None, scan_frames, None, None, None
         
         print(f"  Window at pixel {center_2d} (conf: {confidence:.3f})")
         
@@ -251,19 +253,19 @@ class WindowNavigator:
         
         if mask.shape[:2] != ref_rgb.shape[:2]:
             print(f"  [ERROR] DIMENSION MISMATCH! mask={mask.shape[:2]}, img={ref_rgb.shape[:2]}")
-            return None, scan_frames, None, None
+            return None, scan_frames, None, None, None
         
         mask_pixels = np.sum(mask > 0.5)
         print(f"  Mask has {mask_pixels} nonzero pixels")
         if mask_pixels < 100:
             print(f"  [ERROR] Mask too small!")
-            return None, scan_frames, None, None
+            return None, scan_frames, None, None, None
         
         success, tvec_cam, rvec_cam, corners_2d = self.pnp_estimator.estimate_pose(mask)
         
         if not success:
             print(f"  [ERROR] PnP failed")
-            return None, scan_frames, None, None
+            return None, scan_frames, None, None, None
         
         # Visualize
         pnp_viz = f'./log/pnp_{scan_label}.png'
@@ -300,21 +302,21 @@ class WindowNavigator:
                     break
             else:
                 print(f"  [ERROR] No collision-free position")
-                return None, scan_frames, None, None
+                return None, scan_frames, None, None, None
         
         # Check if window position is within map bounds
         if not self.is_position_in_bounds(window_pos_ned):
             print(f"  [ERROR] Window position outside map bounds!")
             print(f"    Position: X={window_pos_ned[0]:.2f}, Y={window_pos_ned[1]:.2f}, Z={window_pos_ned[2]:.2f}")
             print(f"    Limits: X=+/-{self.MAP_X_LIMIT}, Y=+/-{self.MAP_Y_LIMIT}, Z=+/-{self.MAP_Z_LIMIT}")
-            return None, scan_frames, None, None
+            return None, scan_frames, None, None, None
         
         # Save frames
         for idx, (frame, pose) in enumerate(zip(scan_frames, scan_poses)):
             self.record_frame(frame, pose=pose, annotation=f"SCAN {scan_type}")
             print(f"  [OK] Saved scan frame {idx+1}/{len(scan_frames)}")
         
-        return window_pos_ned, scan_frames, center_2d, corners_2d
+        return window_pos_ned, scan_frames, center_2d, corners_2d, debug_info
     
     def estimate_depth_from_height(self, corners_2d, real_height=0.067):
         """
@@ -1183,6 +1185,9 @@ def main(renderer):
         # =================================================================
         # SKILL 5: APPROACH
         # =================================================================
+        # Remember start position to determine approach direction
+        start_pos = currentPose['position'].copy()
+        
         result = skills.approach(currentPose, window_3d_pos)
         
         if result == -1:
@@ -1195,7 +1200,37 @@ def main(renderer):
         # =================================================================
         # SKILL 6: RECENTER
         # =================================================================
+        # Track which direction we approached from (based on Y displacement)
+        y_displacement = currentPose['position'][1] - start_pos[1] if 'start_pos' in locals() else 0
+        came_from_left = y_displacement < 0  # If Y is negative, we came from left
+        
+        print(f"\n  Y displacement during approach: {y_displacement:+.3f}")
+        print(f"  Came from: {'LEFT (-Y)' if came_from_left else 'RIGHT (+Y)'}")
+        
         currentPose = skills.recenter(currentPose)
+        
+        # =================================================================
+        # SKILL 7: EXPLORE (if next window not immediately visible)
+        # =================================================================
+        # Try to find next window - if not found, explore
+        print(f"\n{'='*70}")
+        print(f"[CHECKING FOR NEXT WINDOW]")
+        print(f"{'='*70}")
+        
+        # Quick scan from current position
+        next_window, _, _ = skills.scan(currentPose, scan_type='lookahead')
+        
+        if next_window is None:
+            print(f"  No window visible from current position")
+            print(f"  Triggering EXPLORATION...")
+            
+            currentPose, window_found = skills.explore(currentPose, came_from_left=came_from_left)
+            
+            if not window_found:
+                print(f"\n[ABORT] No more windows found after exploration")
+                break
+        else:
+            print(f"  [OK] Next window visible at {next_window}")
         
         print(f"\n{'='*70}")
         print(f"[OK] Window {window_num + 1} complete!")

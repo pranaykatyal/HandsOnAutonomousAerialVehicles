@@ -86,7 +86,7 @@ class SimpleFlowDetector:
         self.device = device
         self.detection_resolution = detection_resolution
     
-    def detect_window(self, frames, prefer_larger=False, yaw_hint=None):
+    def detect_window(self, frames, prefer_larger=False, yaw_hint=None, target_score=None):
         """
         Detect window from sequence of frames
         
@@ -96,6 +96,7 @@ class SimpleFlowDetector:
                           If False, use scoring heuristic (for SCAN - better quality)
             yaw_hint: Initial yaw error (radians) to guide selection
                      +ve = window on RIGHT, -ve = window on LEFT
+            target_score: If provided, select component with closest score match (for VERIFY)
             
         Returns:
             mask: (H, W) binary mask at original resolution
@@ -191,7 +192,8 @@ class SimpleFlowDetector:
         print(f"    Pixels after morphology: {pixels_after_morph} ({pixels_after_morph/binary_mask.size*100:.1f}%)")
         
         # Select best bounding box
-        mask_refined = self._select_best_bbox(binary_mask, prefer_larger=prefer_larger, yaw_hint=yaw_hint)
+        mask_refined, selected_score = self._select_best_bbox(binary_mask, prefer_larger=prefer_larger, 
+                                                                yaw_hint=yaw_hint, target_score=target_score)
         
         # Upsample to original resolution
         mask = cv2.resize(
@@ -220,7 +222,8 @@ class SimpleFlowDetector:
             'high_threshold': hole_threshold,       # For visualization (upper bound)
             'binary_mask': binary_mask,
             'mask_refined': mask_refined,
-            'frames': downsampled_frames
+            'frames': downsampled_frames,
+            'selected_component_score': selected_score  # For VERIFY matching
         }
         
         print(f"  Final mask pixels: {np.sum(mask > 0.5):.0f}")
@@ -228,7 +231,7 @@ class SimpleFlowDetector:
         
         return mask, center_2d, confidence, debug_info
     
-    def _select_best_bbox(self, mask, prefer_larger=False, yaw_hint=None):
+    def _select_best_bbox(self, mask, prefer_larger=False, yaw_hint=None, target_score=None):
         """
         Select best bounding box from binary mask
         
@@ -238,6 +241,7 @@ class SimpleFlowDetector:
                           If False, use heuristic scoring (SCAN - better quality)
             yaw_hint: Initial yaw error (radians) from FIX_YAW
                      +ve = window on RIGHT, -ve = window on LEFT
+            target_score: If provided, select component with closest Euclidean score distance
             
         Returns:
             result_mask: (H, W) float32 mask
@@ -326,21 +330,39 @@ class SimpleFlowDetector:
         # Select best
         if not valid_components:
             print("    No valid components found!")
-            return np.zeros((H, W), dtype=np.float32)
+            return np.zeros((H, W), dtype=np.float32), 0.0
         
-        if yaw_hint is not None and abs(yaw_hint) > 0.05:  # >~3 degrees
+        if target_score is not None:
+            # VERIFY mode with score matching: Select component with closest score
+            # Use Euclidean distance between scores
+            best_label = None
+            best_distance = float('inf')
+            
+            for comp in valid_components:
+                score_distance = abs(comp['score'] - target_score)
+                if score_distance < best_distance:
+                    best_distance = score_distance
+                    best_label = comp['label_id']
+                    best_comp = comp
+            
+            print(f"    Selected component {best_label} by SCORE MATCHING")
+            print(f"      Target score: {target_score:.0f}")
+            print(f"      Matched score: {best_comp['score']:.0f}")
+            print(f"      Distance: {best_distance:.0f}")
+            print(f"      Area: {best_comp['area']:.0f}")
+        elif yaw_hint is not None and abs(yaw_hint) > 0.05:  # >~3 degrees
             # YAW-GUIDED SELECTION: Use initial yaw error to pick correct window
             # After FIX_YAW rotates to face the window, use the hint to select correct side
             if yaw_hint > 0:
-                # Positive yaw = window was on RIGHT → select RIGHTMOST
+                # Positive yaw = window was on RIGHT â†’ select RIGHTMOST
                 valid_components.sort(key=lambda x: x['center_x'], reverse=True)
                 best_label = valid_components[0]['label_id']
-                print(f"    Selected component {best_label} by RIGHTMOST position (yaw_hint={np.degrees(yaw_hint):.1f}°) [VERIFY+YAW mode]")
+                print(f"    Selected component {best_label} by RIGHTMOST position (yaw_hint={np.degrees(yaw_hint):.1f}Â°) [VERIFY+YAW mode]")
             else:
-                # Negative yaw = window was on LEFT → select LEFTMOST
+                # Negative yaw = window was on LEFT â†’ select LEFTMOST
                 valid_components.sort(key=lambda x: x['center_x'])
                 best_label = valid_components[0]['label_id']
-                print(f"    Selected component {best_label} by LEFTMOST position (yaw_hint={np.degrees(yaw_hint):.1f}°) [VERIFY+YAW mode]")
+                print(f"    Selected component {best_label} by LEFTMOST position (yaw_hint={np.degrees(yaw_hint):.1f}Â°) [VERIFY+YAW mode]")
         elif prefer_larger:
             # VERIFY mode without yaw hint: Select LARGEST component (closer window)
             valid_components.sort(key=lambda x: x['area'], reverse=True)
@@ -355,11 +377,14 @@ class SimpleFlowDetector:
         # Create mask
         result = (labels == best_label).astype(np.uint8) * 255
         
+        # Get the score of the selected component
+        selected_score = next((c['score'] for c in valid_components if c['label_id'] == best_label), 0.0)
+        
         # Light closing to smooth
         kernel_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
         result = cv2.morphologyEx(result, cv2.MORPH_CLOSE, kernel_close)
         
-        return result.astype(np.float32) / 255.0
+        return result.astype(np.float32) / 255.0, selected_score
     
     def visualize(self, debug_info, save_path='./log/window_detection.png'):
         """Visualize detection results"""
