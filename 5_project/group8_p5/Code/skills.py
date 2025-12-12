@@ -78,6 +78,18 @@ class NavigationSkills:
             return None, None, scan_data
         
         print(f"  [OK] Window detected at: {window_3d_pos}")
+        
+        # Store the detected area for later verification consistency checking
+        if corners_2d is not None:
+            # Calculate area from scan frames
+            scan_frames = scan_data.get('frames', [])
+            if len(scan_frames) > 0:
+                mask, _, _, _ = self.nav.detector.detect_window(scan_frames)
+                if mask is not None:
+                    detected_area = np.sum(mask > 0.5)
+                    self.nav.last_detected_area = detected_area
+                    print(f"  Stored detection area: {detected_area:.0f} pixels for consistency checking")
+        
         return window_3d_pos, corners_2d, scan_data
     
     # =========================================================================
@@ -128,8 +140,8 @@ class NavigationSkills:
             
             # Log progress every 6 iterations
             if yaw_iter % 6 == 0:
-                print(f"  Yaw iter {yaw_iter}: Yaw={np.degrees(current_pose['rpy'][2]):.1f}, "
-                      f"Error={np.degrees(yaw_error):.1f}")
+                print(f"  Yaw iter {yaw_iter}: Yaw={np.degrees(current_pose['rpy'][2]):.1f}°, "
+                      f"Error={np.degrees(yaw_error):.1f}°")
             
             # Record frame
             rgb, _, _ = self.nav.renderer.render(current_pose['position'], current_pose['rpy'])
@@ -241,6 +253,7 @@ class NavigationSkills:
         """
         SKILL 4: VERIFY
         Re-scan to verify alignment and confirm we're tracking the SAME window
+        Uses area consistency to ensure correct window tracking
         
         Args:
             current_pose: Current drone pose dict
@@ -254,6 +267,10 @@ class NavigationSkills:
             error_mag: Pixel error magnitude
         """
         print(f"\n  [SKILL: VERIFY] Cycle {cycle_num} - Re-scanning...")
+        
+        # Get the PREVIOUS area from last successful detection
+        # This is stored in the navigator after initial scan
+        previous_area = getattr(self.nav, 'last_detected_area', None)
         
         # Project the expected window position to get target pixel
         # This helps the detector prefer the CORRECT window if multiple are visible
@@ -270,16 +287,64 @@ class NavigationSkills:
             current_pose, scan_type=f'verify_c{cycle_num}', yaw_hint=self.yaw_error_initial
         )
         
-        # If we have a target pixel, check if detection needs correction
-        if verified_window is not None and target_pixel is not None:
-            # Re-scan with target pixel guidance
-            print(f"    Re-detecting with target pixel guidance...")
-            verified_window, _, center_2d, corners_2d = self.nav.scan_for_window(
-                current_pose, self.nav.pose_history, 
-                scan_type=f'verify_c{cycle_num}_guided',
-                target_pixel=target_pixel,
-                yaw_hint=self.yaw_error_initial
-            )
+        # Get the area from this detection
+        current_area = None
+        if verified_window is not None and 'frames' in scan_data:
+            # Re-detect to get the mask and calculate area
+            scan_frames = scan_data['frames']
+            mask, _, _, _ = self.nav.detector.detect_window(scan_frames, prefer_larger=True)
+            if mask is not None:
+                current_area = np.sum(mask > 0.5)
+                print(f"    Current detection area: {current_area:.0f} pixels")
+        
+        # AREA CONSISTENCY CHECK
+        if previous_area is not None and current_area is not None:
+            area_ratio = current_area / previous_area
+            area_change_pct = abs(area_ratio - 1.0) * 100
+            
+            print(f"    Previous area: {previous_area:.0f} pixels")
+            print(f"    Area ratio: {area_ratio:.2f} (change: {area_change_pct:.1f}%)")
+            
+            # During yaw alignment, area should be relatively stable
+            # Allow up to 100% change (2x or 0.5x) - beyond that it's likely wrong window
+            if area_ratio > 2.0 or area_ratio < 0.5:
+                print(f"    [ERROR] Area changed too much ({area_ratio:.2f}x)!")
+                print(f"    This is likely a DIFFERENT WINDOW - rejecting!")
+                
+                # Try to re-scan with better guidance
+                print(f"    [RETRY] Re-scanning with stricter target pixel guidance...")
+                if target_pixel is not None:
+                    verified_window, _, center_2d, corners_2d = self.nav.scan_for_window(
+                        current_pose, self.nav.pose_history, 
+                        scan_type=f'verify_c{cycle_num}_retry',
+                        target_pixel=target_pixel,
+                        yaw_hint=None  # Disable yaw hint, use target pixel only
+                    )
+                    
+                    # Recalculate area
+                    scan_waypoints_retry = self.nav.scanner.generate_scan_trajectory(current_pose)
+                    scan_frames_retry = []
+                    for wp in scan_waypoints_retry:
+                        rgb_wp, _, _ = self.nav.renderer.render(wp['position'], wp['rpy'])
+                        scan_frames_retry.append(rgb_wp)
+                    
+                    mask_retry, _, _, _ = self.nav.detector.detect_window(scan_frames_retry, prefer_larger=True)
+                    if mask_retry is not None:
+                        current_area = np.sum(mask_retry > 0.5)
+                        area_ratio = current_area / previous_area
+                        print(f"    Retry area ratio: {area_ratio:.2f}")
+                        
+                        if area_ratio > 2.0 or area_ratio < 0.5:
+                            print(f"    [FAIL] Still wrong window after retry")
+                            return None, None, False, float('inf')
+                else:
+                    return None, None, False, float('inf')
+            else:
+                print(f"    [OK] Area change within acceptable range")
+        
+        # Store current area for next verification
+        if current_area is not None:
+            self.nav.last_detected_area = current_area
         
         if verified_window is None:
             print(f"    [FAIL] Cannot see window")
@@ -505,12 +570,12 @@ class NavigationSkills:
                         # As we pass through: area DROPS from peak
                         
                         if area_ratio_from_peak < 0.5 and step >= 8:
-                            # Area dropped by >50% from peak after at least 8 steps  We've passed through!
+                            # Area dropped by >50% from peak after at least 8 steps → We've passed through!
                             print(f"    [OK] Window area dropped {(1-area_ratio_from_peak)*100:.0f}% from peak - passed through!")
                             print(f"    Stopping at step {step+1}/{num_steps}")
                             break
                         elif area_ratio_from_peak < 0.6 and step >= 12:
-                            # Area dropped by >40% from peak after many steps  likely passed
+                            # Area dropped by >40% from peak after many steps → likely passed
                             print(f"    [OK] Window area dropped {(1-area_ratio_from_peak)*100:.0f}% from peak after {step+1} steps - likely passed!")
                             print(f"    Stopping at step {step+1}/{num_steps}")
                             break
@@ -689,7 +754,7 @@ class NavigationSkills:
             # Log progress every iteration to track collision pattern
             collision_status = "COLLISION" if is_colliding else "clear"
             print(f"  Iter {iteration}: Y={current_pose['position'][1]:+.3f}, Z={current_pose['position'][2]:+.3f}, "
-                  f"Yaw={np.degrees(current_pose['rpy'][2]):+.1f} [{collision_status}]")
+                  f"Yaw={np.degrees(current_pose['rpy'][2]):+.1f}° [{collision_status}]")
         
         print(f"  Final pose:")
         print(f"    Position: [{current_pose['position'][0]:.3f}, {current_pose['position'][1]:.3f}, {current_pose['position'][2]:.3f}]")
