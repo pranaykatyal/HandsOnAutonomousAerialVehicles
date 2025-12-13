@@ -6,7 +6,7 @@ Main orchestration file that conditionally runs forward and/or return journeys
 # =============================================================================
 # CONFIGURATION FLAGS
 # =============================================================================
-GENERATE_VIDEO = True       # Set to False to skip video generation (saves time)
+GENERATE_VIDEO = False       # Set to False to skip video generation (saves time)
 RUN_PHASE_1_2 = True        # Forward journey (windows 1→2→3→4)
 RUN_PHASE_3 = True           # Return journey (windows 4→3→2→1)
 # =============================================================================
@@ -19,6 +19,7 @@ import os
 import json
 import glob
 import torch
+import time
 
 from windownavigator import WindowNavigator
 from collisionChecker import doesItCollide
@@ -91,6 +92,8 @@ def main(renderer):
     # ==========================================================================
     # PHASE 1-2: FORWARD JOURNEY (Windows 1→4)
     # ==========================================================================
+    start_time = time.time()
+
     if RUN_PHASE_1_2:
         print("\n" + "="*70)
         print("PHASE 1-2: FORWARD JOURNEY")
@@ -137,10 +140,14 @@ def main(renderer):
             return -1
         
         print(f"\n[OK] Return journey complete")
-    
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    print(f"Sim time taken to fly {elapsed_time} seconds")
+
     # ==========================================================================
     # SAVE RESULTS
     # ==========================================================================
+    
     with open('./log/pose_history.json', 'w') as f:
         json.dump(navigator.pose_history, f, indent=2, default=str)
     

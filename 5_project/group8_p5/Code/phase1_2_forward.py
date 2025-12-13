@@ -36,6 +36,7 @@ def run_forward_journey(navigator, renderer, currentPose):
         # =================================================================
         # SKILL 1: SCAN
         # =================================================================
+        
         window_3d_pos, corners_2d, scan_data = skills.scan(currentPose, scan_type='initial')
         
         if window_3d_pos is None:

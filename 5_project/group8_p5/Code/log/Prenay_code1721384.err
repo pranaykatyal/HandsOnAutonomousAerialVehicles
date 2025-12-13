@@ -1,0 +1,17 @@
+Loading cuda/12.4.0/3mdaov5
+  Loading requirement: gcc-runtime/13.2.0/yimvxxm libiconv/1.17/wwzbwbx
+    xz/5.4.1/4r3i74x zlib-ng/2.1.5/lovduqa libxml2/2.10.3/w5l7v2m
+Loading ffmpeg/6.1.1/cup2q2r
+  Loading requirement: alsa-lib/1.2.3.2/grjkjgj bzip2/1.0.8/ywb3ezr
+    font-util/1.4.0/j3jqaua libpng/1.6.39/tyzerfj freetype/2.11.1/mw5msje
+    util-linux-uuid/2.38.1/2x7vfxr fontconfig/2.14.2/3xsmfkh
+    fribidi/1.0.12/trrz4br libogg/1.3.5/fccllfn libvorbis/1.3.7/muxt73o
+    opus/1.3.1/35wmioh nasm/2.15.05/tkddyj6 x264/20240314/zqmh2yv
+    yasm/1.3.0/raxf7v7
+Loading miniconda3/25.1.1/24g7bpu
+  Loading requirement: gcc-runtime/13.2.0/s3f7i6x
+/home/hkortus/RBE595/VizFlyt/nerfstudio/nerfstudio/field_components/activations.py:32: FutureWarning: `torch.cuda.amp.custom_fwd(args...)` is deprecated. Please use `torch.amp.custom_fwd(args..., device_type='cuda')` instead.
+  @custom_fwd(cast_inputs=torch.float32)
+/home/hkortus/RBE595/VizFlyt/nerfstudio/nerfstudio/field_components/activations.py:39: FutureWarning: `torch.cuda.amp.custom_bwd(args...)` is deprecated. Please use `torch.amp.custom_bwd(args..., device_type='cuda')` instead.
+  def backward(ctx, g):
+slurmstepd: error: *** JOB 1721384 ON gpu-4-21 CANCELLED AT 2025-12-12T18:49:04 ***

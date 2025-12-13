@@ -151,12 +151,12 @@ class WindowNavigator:
                     vis_labeled = cv2.addWeighted(ref_img, 0.7, overlay, 0.3, 0)
                     labeled_path = f"./log/detection_{scan_label}_labeled.png"
                     os.makedirs('./log', exist_ok=True)
-                    cv2.imwrite(labeled_path, cv2.cvtColor(vis_labeled, cv2.COLOR_RGB2BGR))
+                    cv2.imwrite(labeled_path, vis_labeled)
                     print(f"  [DEBUG] Saved labeled contour visualization: {labeled_path}")
                     
                     # Create mask visualization
                     try:
-                        mask_viz = cv2.cvtColor(mask_uint8_dbg, cv2.COLOR_GRAY2BGR)
+                        mask_viz = mask_uint8_dbg
                         for idx_c, c in enumerate(contours_dbg):
                             area = cv2.contourArea(c)
                             M = cv2.moments(c)
@@ -171,7 +171,7 @@ class WindowNavigator:
                                 cv2.putText(mask_viz, f"{idx_c}", (cx+8, cy+6), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,255,0), 2)
                                 cv2.putText(mask_viz, f"A:{int(area)}", (cx+8, cy+28), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 2)
                         mask_labeled_path = f"./log/detection_{scan_label}_mask_labeled.png"
-                        cv2.imwrite(mask_labeled_path, cv2.cvtColor(mask_viz, cv2.COLOR_RGB2BGR))
+                        cv2.imwrite(mask_labeled_path, mask_viz)
                         print(f"  [DEBUG] Saved mask-labeled visualization: {mask_labeled_path}")
                     except Exception as e:
                         print(f"  [WARN] Failed to save mask-labeled visualization: {e}")
@@ -247,24 +247,24 @@ class WindowNavigator:
                 ax.axis('off')
                 plt.colorbar(im, ax=ax, fraction=0.046)
                 plt.tight_layout()
-                flow_frame_path = f'./log/frames/frame_{base_frame_id:04d}.png'
+                flow_frame_path = f'./log/frames/flow_frame_{base_frame_id:04d}.png'
                 plt.savefig(flow_frame_path, dpi=100, bbox_inches='tight')
                 plt.close()
                 self.video_frames.append(None)  # Placeholder
                 print(f"    Saved flow frame: {flow_frame_path}")
                 
-                # 2. Binary mask visualization
-                binary_mask = debug_info['binary_mask']
-                fig, ax = plt.subplots(figsize=(12, 9))
-                ax.imshow(binary_mask, cmap='gray')
-                ax.set_title('Binary Mask (Thresholded)', fontsize=20, fontweight='bold')
-                ax.axis('off')
-                plt.tight_layout()
-                mask_frame_path = f'./log/frames/frame_{base_frame_id+1:04d}.png'
-                plt.savefig(mask_frame_path, dpi=100, bbox_inches='tight')
-                plt.close()
-                self.video_frames.append(None)  # Placeholder
-                print(f"    Saved mask frame: {mask_frame_path}")
+                # # 2. Binary mask visualization
+                # binary_mask = debug_info['binary_mask']
+                # fig, ax = plt.subplots(figsize=(12, 9))
+                # ax.imshow(binary_mask, cmap='gray')
+                # ax.set_title('Binary Mask (Thresholded)', fontsize=20, fontweight='bold')
+                # ax.axis('off')
+                # plt.tight_layout()
+                # mask_frame_path = f'./log/frames/frame_{base_frame_id+1:04d}.png'
+                # plt.savefig(mask_frame_path, dpi=100, bbox_inches='tight')
+                # plt.close()
+                # self.video_frames.append(None)  # Placeholder
+                # print(f"    Saved mask frame: {mask_frame_path}")
                 
                 # 3. Final detection overlay
                 scan_frames_db = debug_info.get('frames', [])
@@ -276,11 +276,11 @@ class WindowNavigator:
                     overlay = cv2.addWeighted(overlay, 0.7, mask_overlay, 0.3, 0)
                     
                     fig, ax = plt.subplots(figsize=(12, 9))
-                    ax.imshow(overlay)
+                    ax.imshow(cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB) )
                     ax.set_title('Final Detection', fontsize=20, fontweight='bold')
                     ax.axis('off')
                     plt.tight_layout()
-                    detection_frame_path = f'./log/frames/frame_{base_frame_id+2:04d}.png'
+                    detection_frame_path = f'./log/frames/detection_frame_{base_frame_id+1:04d}.png'
                     plt.savefig(detection_frame_path, dpi=100, bbox_inches='tight')
                     plt.close()
                     self.video_frames.append(None)  # Placeholder
@@ -1135,7 +1135,7 @@ class WindowNavigator:
         
         # CRITICAL: Renderer outputs RGB, but OpenCV functions expect BGR
         # Convert to BGR first so all subsequent operations are in BGR
-        frame = cv2.cvtColor(rgb_frame, cv2.COLOR_RGB2BGR)
+        frame = rgb_frame
         
         if mask is not None:
             overlay = frame.copy()

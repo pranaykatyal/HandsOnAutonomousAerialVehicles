@@ -511,7 +511,7 @@ class WindowPnPEstimator:
                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
         
         if save_path:
-            cv2.imwrite(save_path, cv2.cvtColor(vis_img, cv2.COLOR_RGB2BGR))
+            cv2.imwrite(save_path, vis_img)
             print(f"  Saved PnP viz: {save_path}")
         
         return vis_img

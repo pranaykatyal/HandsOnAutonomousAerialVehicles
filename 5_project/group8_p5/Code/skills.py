@@ -29,7 +29,7 @@ class NavigationSkills:
     # =========================================================================
     # SKILL 1: SCAN
     # =========================================================================
-    def scan(self, current_pose, scan_type='initial', yaw_hint=None, target_score=None):
+    def     scan(self, current_pose, scan_type='initial', yaw_hint=None, target_score=None):
         """
         SKILL 1: SCAN
         Initial window detection using optical flow and PnP

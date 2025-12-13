@@ -1,0 +1,12 @@
+[18:48:58] Auto image downscale factor of 2                                                 nerfstudio_dataparser.py:484
+Train dataset has over 500 images, overriding cache_images to cpu. If you still get OOM errors or segfault, please 
+consider seting cache_images to 'disk'
+Loading latest checkpoint from load_dir
+✅ Done loading checkpoint from 
+../data/P5_colmap_splat/P5_colmap/splatfacto/2025-11-17_130359/nerfstudio_models/step-000029999.ckpt
+[18:49:01] Auto image downscale factor of 2                                                 nerfstudio_dataparser.py:484
+Train dataset has over 500 images, overriding cache_images to cpu. If you still get OOM errors or segfault, please 
+consider seting cache_images to 'disk'
+Loading latest checkpoint from load_dir
+✅ Done loading checkpoint from 
+../data/P5_colmap_splat/P5_colmap/splatfacto/2025-11-17_130359/nerfstudio_models/step-000029999.ckpt

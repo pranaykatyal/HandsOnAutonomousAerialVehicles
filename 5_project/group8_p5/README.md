@@ -1,8 +1,19 @@
 # Drone Racing !!!!!!!!!!!!!!!!
 
+
+## How to run
+cd Code/
+git clone https://github.com/princeton-vl/RAFT.git
+cd RAFT/
+./download_models.sh
+conda activate aerial_robotics
+python3 main.py
+
+
 ## Structure
 ```text
 ├── Code
+│   ├── RAFT
 │   ├── main.py                 # Main entry point - implement segmentNearestWindow() and navigation logic
 │   ├── splat_render.py         # Gaussian splat renderer: generates RGB + depth from pose
 │   ├── control.py              # PID controller and QuadrotorController class

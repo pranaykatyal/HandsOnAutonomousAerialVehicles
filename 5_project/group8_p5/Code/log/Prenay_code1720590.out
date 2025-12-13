@@ -1,0 +1,2526 @@
+[11:05:42] Auto image downscale factor of 2                                                 nerfstudio_dataparser.py:484
+Train dataset has over 500 images, overriding cache_images to cpu. If you still get OOM errors or segfault, please 
+consider seting cache_images to 'disk'
+Loading latest checkpoint from load_dir
+✅ Done loading checkpoint from 
+../data/P5_colmap_splat/P5_colmap/splatfacto/2025-11-17_130359/nerfstudio_models/step-000029999.ckpt
+[11:05:44] Auto image downscale factor of 2                                                 nerfstudio_dataparser.py:484
+Train dataset has over 500 images, overriding cache_images to cpu. If you still get OOM errors or segfault, please 
+consider seting cache_images to 'disk'
+Loading latest checkpoint from load_dir
+✅ Done loading checkpoint from 
+../data/P5_colmap_splat/P5_colmap/splatfacto/2025-11-17_130359/nerfstudio_models/step-000029999.ckpt
+  [OK] Cleaned up old frames
+
+======================================================================
+DRONE RACING - PHASE-BASED ARCHITECTURE
+======================================================================
+Configuration:
+  Phase 1-2 (Forward): ENABLED
+  Phase 3 (Return):    DISABLED
+  Video Generation:    ENABLED
+======================================================================
+
+[OK] RAFT model loaded from ./RAFT/models/raft-things.pth
+ PnP Estimator initialized
+  Window size: 1.20m x 1.20m
+  Camera matrix:
+[[1.7932382e+03 0.0000000e+00 1.3760000e+03]
+ [0.0000000e+00 1.7932382e+03 1.0320000e+03]
+ [0.0000000e+00 0.0000000e+00 1.0000000e+00]]
+Window Navigator initialized with PnP
+  Image: 2752x2064, FOV: 75.0 deg
+  Map bounds: X=+/-10.0m, Y=+/-2.0m, Z=+/-0.5m
+Initial position: [0.001 0.    0.   ]
+Checking collision at origin...
+[OK] Origin is collision-free
+
+======================================================================
+PHASE 1-2: FORWARD JOURNEY
+======================================================================
+
+[FORWARD JOURNEY] Starting navigation through windows 1→4
+
+======================================================================
+WINDOW 1 / 4
+======================================================================
+Flow: SCAN → FIX_YAW → ALIGN → VERIFY → APPROACH → RECENTER
+
+============================================================
+[SKILL: SCAN] Type: initial
+============================================================
+  Generated 5 scan waypoints
+    Frame 1/5
+    Frame 2/5
+    Frame 3/5
+    Frame 4/5
+    Frame 5/5
+  Detecting window...
+
+=== SCANNING FOR WINDOW (initial_window0_scan0) ===
+  Generated 5 scan waypoints
+    Frame 1/5
+    Frame 2/5
+    Frame 3/5
+    Frame 4/5
+    Frame 5/5
+
+  Detecting window...
+  Original frame size: 2752x2064
+  Downsampled to: 512x512
+  Computing standard optical flow (first[OK]last frame)...
+    Flow first[OK]last: range [2.8, 25.7], mean 10.2
+    Flow range: [2.82, 25.68]
+    Flow mean: 10.23, median: 8.63
+    PERCENTAGE-BASED thresholding:
+      Flow range: 22.85 (from 2.82 to 25.68)
+      Background threshold: 2.94 (18% of range)
+      Hole threshold: 10.36 (36% of range)
+    Pixels in middle flow range (before morphology): 164904 (62.9%)
+    Pixels after morphology: 165104 (63.0%)
+    Found 2 connected components
+      Component 1: REJECTED (size: 156744)
+      Component 2: VALID (area=8344, score=5675)
+    Selected component 2 by SCORE (score=5675) [SCAN mode]
+  Final mask pixels: 180940
+  Center: (2201, 1298), Confidence: 0.106
+  [DEBUG] Saved labeled contour visualization: ./log/detection_initial_window0_scan0_labeled.png
+  [DEBUG] Saved mask-labeled visualization: ./log/detection_initial_window0_scan0_mask_labeled.png
+  [DEBUG] Contour stats (idx, area, centroid):
+    - 0: area=180066, centroid=(2201, 1298)
+  [OK] Saved visualization to ./log/detection_initial_window0_scan0.png
+   SAVED DETECTION VISUALIZATION: ./log/detection_initial_window0_scan0.png 
+      File size: 2609915 bytes
+    Saved flow frame: ./log/frames/frame_0001.png
+    Saved mask frame: ./log/frames/frame_0002.png
+    Saved detection frame: ./log/frames/frame_0003.png
+  Window at pixel (2201, 1298) (conf: 0.106)
+
+  Estimating pose with PnP...
+  Using frame 0 as reference
+  Mask shape: (2064, 2752)
+  Image shape: (2064, 2752, 3)
+  Mask has 180940 nonzero pixels
+  extract_window_corners: mask shape = (2064, 2752), dtype = float32
+    mask range: [0.000, 1.000]
+    nonzero pixels: 180940
+    Found 1 contours
+    Contour areas: [180066.5]
+    Using largest contour: area = 180066 pixels
+    Polygon approximation: 4 vertices
+    Perfect quadrilateral found!
+    Raw corners: [[1962 1105]
+ [1978 1467]
+ [2424 1515]
+ [2418 1109]]
+    Ordered corners: [[1978 1467]
+ [2424 1515]
+ [2418 1109]
+ [1962 1105]]
+  Visualization dimensions:
+    Original image: 2752x2064
+    Mask: 2752x2064
+  Saved PnP viz: ./log/pnp_initial_window0_scan0.png
+   SAVED PNP VISUALIZATION: ./log/pnp_initial_window0_scan0.png 
+      File size: 4738220 bytes
+  Camera frame: t=[2.3632729  0.79325782 5.2501039 ], dist=5.81m
+  NED (scaled by 2.0): pos=[1.05102078 0.47265458 0.15865156]
+       rpy(deg)=[-75.78559834   0.44293838 119.05497749]
+  [OK] Saved scan frame 1/5
+  [OK] Saved scan frame 2/5
+  [OK] Saved scan frame 3/5
+  [OK] Saved scan frame 4/5
+  [OK] Saved scan frame 5/5
+  [OK] Window detected at: [1.05102078 0.47265458 0.15865156]
+  Stored component score: 5675 for next VERIFY
+
+Yaw check: current=0.0°, desired=24.2°, error=24.2°
+  Yaw hint: 24.2° (RIGHT)
+  Running FIX_YAW (error > 5°)
+
+============================================================
+[SKILL: FIX_YAW]
+============================================================
+  Yaw iter 0: Yaw=1.0Ã‚Â°, Error=24.2Ã‚Â°
+  Yaw iter 6: Yaw=7.0Ã‚Â°, Error=18.2Ã‚Â°
+  Yaw iter 12: Yaw=13.0Ã‚Â°, Error=12.2Ã‚Â°
+  Yaw iter 18: Yaw=19.0Ã‚Â°, Error=6.2Ã‚Â°
+  [OK] Yaw aligned after 24 iterations
+
+======================================================================
+[ALIGN-VERIFY CHECK]
+======================================================================
+      Projected pixel: [1383.3, 1279.1]
+Post-yaw error: 247.2px
+  Needs refinement (247.2px > 25px)
+  Running ALIGN-VERIFY cycles
+
+  --- Cycle 1/3 ---
+
+  [SKILL: ALIGN]
+      Projected pixel: [1383.3, 1279.1]
+    Current error: (+7.3, +247.1)px, mag=247.2px
+    Depth from height: h_px=384.0px -> Z=0.313 splat units
+    Corrections: Y=+0.0012, Z=+0.0431
+    [OK] Moved to [0.001      0.00116904 0.04310887]
+
+  [SKILL: VERIFY] Cycle 0 - Re-scanning...
+      Projected pixel: [1381.7, 1212.0]
+    Target pixel (projected from expected position): (1381, 1212)
+    Previous component score: 5675
+    Will match closest component by score (HIGHEST PRIORITY)
+
+============================================================
+[SKILL: SCAN] Type: verify_c0
+============================================================
+  Generated 5 scan waypoints
+    Frame 1/5
+    Frame 2/5
+    Frame 3/5
+    Frame 4/5
+    Frame 5/5
+  Detecting window...
+
+=== SCANNING FOR WINDOW (verify_c0_window0_scan1) ===
+  Generated 5 scan waypoints
+    Frame 1/5
+    Frame 2/5
+    Frame 3/5
+    Frame 4/5
+    Frame 5/5
+
+  Detecting window...
+  Original frame size: 2752x2064
+  Downsampled to: 512x512
+  Computing standard optical flow (first[OK]last frame)...
+    Flow first[OK]last: range [3.0, 22.6], mean 11.4
+    Flow range: [2.97, 22.58]
+    Flow mean: 11.38, median: 11.09
+    PERCENTAGE-BASED thresholding:
+      Flow range: 19.61 (from 2.97 to 22.58)
+      Background threshold: 3.07 (18% of range)
+      Hole threshold: 9.44 (36% of range)
+    Pixels in middle flow range (before morphology): 100917 (38.5%)
+    Pixels after morphology: 101021 (38.5%)
+    Found 3 connected components
+      Component 1: REJECTED (at edge)
+      Component 2: VALID (area=5393, score=5088)
+      Component 3: VALID (area=2534, score=1696)
+    Selected component 2 by SCORE MATCHING
+      Target score: 5675
+      Matched score: 5088
+      Distance: 587
+      Area: 5393
+  Final mask pixels: 116558
+  Center: (1534, 1104), Confidence: 0.068
+  [DEBUG] Saved labeled contour visualization: ./log/detection_verify_c0_window0_scan1_labeled.png
+  [DEBUG] Saved mask-labeled visualization: ./log/detection_verify_c0_window0_scan1_mask_labeled.png
+  [DEBUG] Contour stats (idx, area, centroid):
+    - 0: area=115874, centroid=(1534, 1104)
+  [OK] Saved visualization to ./log/detection_verify_c0_window0_scan1.png
+   SAVED DETECTION VISUALIZATION: ./log/detection_verify_c0_window0_scan1.png 
+      File size: 2512745 bytes
+    Saved flow frame: ./log/frames/frame_0033.png
+    Saved mask frame: ./log/frames/frame_0034.png
+    Saved detection frame: ./log/frames/frame_0035.png
+  Window at pixel (1534, 1104) (conf: 0.068)
+
+  Estimating pose with PnP...
+  Using frame 0 as reference
+  Mask shape: (2064, 2752)
+  Image shape: (2064, 2752, 3)
+  Mask has 116558 nonzero pixels
+  extract_window_corners: mask shape = (2064, 2752), dtype = float32
+    mask range: [0.000, 1.000]
+    nonzero pixels: 116558
+    Found 1 contours
+    Contour areas: [115874.0]
+    Using largest contour: area = 115874 pixels
+    Polygon approximation: 4 vertices
+    Perfect quadrilateral found!
+    Raw corners: [[1366  940]
+ [1376 1273]
+ [1703 1273]
+ [1703  940]]
+    Ordered corners: [[1376 1273]
+ [1703 1273]
+ [1703  940]
+ [1366  940]]
+  Visualization dimensions:
+    Original image: 2752x2064
+    Mask: 2752x2064
+  Saved PnP viz: ./log/pnp_verify_c0_window0_scan1.png
+   SAVED PNP VISUALIZATION: ./log/pnp_verify_c0_window0_scan1.png 
+      File size: 4558334 bytes
+  Camera frame: t=[0.57657038 0.27252024 6.4673937 ], dist=6.50m
+  NED (scaled by 2.0): pos=[1.13574917 0.63261889 0.09761292]
+       rpy(deg)=[-86.01184636   0.54639267 118.1724345 ]
+  [OK] Saved scan frame 1/5
+  [OK] Saved scan frame 2/5
+  [OK] Saved scan frame 3/5
+  [OK] Saved scan frame 4/5
+  [OK] Saved scan frame 5/5
+  [OK] Window detected at: [1.13574917 0.63261889 0.09761292]
+  Stored component score: 5088 for next VERIFY
+    Position drift: 0.191 splat units
+      Projected pixel: [1535.9, 1107.6]
+    Alignment error: (+159.9, +75.6)px, mag=176.8px
+    [CONTINUE] Need more alignment
+  [CONTINUE] error=176.8px
+
+  --- Cycle 2/3 ---
+
+  [SKILL: ALIGN]
+      Projected pixel: [1535.9, 1107.6]
+    Current error: (+159.9, +75.6)px, mag=176.8px
+    Depth from height: h_px=333.0px -> Z=0.361 splat units
+    Corrections: Y=+0.0294, Z=+0.0152
+    [OK] Moved to [0.001      0.03055377 0.05831217]
+
+  [SKILL: VERIFY] Cycle 1 - Re-scanning...
+      Projected pixel: [1499.8, 1087.0]
+    Target pixel (projected from expected position): (1499, 1086)
+    Previous component score: 5088
+    Will match closest component by score (HIGHEST PRIORITY)
+
+============================================================
+[SKILL: SCAN] Type: verify_c1
+============================================================
+  Generated 5 scan waypoints
+    Frame 1/5
+    Frame 2/5
+    Frame 3/5
+    Frame 4/5
+    Frame 5/5
+  Detecting window...
+
+=== SCANNING FOR WINDOW (verify_c1_window0_scan2) ===
+  Generated 5 scan waypoints
+    Frame 1/5
+    Frame 2/5
+    Frame 3/5
+    Frame 4/5
+    Frame 5/5
+
+  Detecting window...
+  Original frame size: 2752x2064
+  Downsampled to: 512x512
+  Computing standard optical flow (first[OK]last frame)...
+    Flow first[OK]last: range [3.1, 23.2], mean 12.0
+    Flow range: [3.13, 23.17]
+    Flow mean: 12.00, median: 11.75
+    PERCENTAGE-BASED thresholding:
+      Flow range: 20.04 (from 3.13 to 23.17)
+      Background threshold: 3.23 (18% of range)
+      Hole threshold: 9.74 (36% of range)
+    Pixels in middle flow range (before morphology): 92986 (35.5%)
+    Pixels after morphology: 92906 (35.4%)
+    Found 3 connected components
+      Component 1: REJECTED (at edge)
+      Component 2: VALID (area=5558, score=5421)
+      Component 3: VALID (area=2554, score=1635)
+    Selected component 2 by SCORE MATCHING
+      Target score: 5088
+      Matched score: 5421
+      Distance: 333
+      Area: 5558
+  Final mask pixels: 120459
+  Center: (1446, 1053), Confidence: 0.071
+  [DEBUG] Saved labeled contour visualization: ./log/detection_verify_c1_window0_scan2_labeled.png
+  [DEBUG] Saved mask-labeled visualization: ./log/detection_verify_c1_window0_scan2_mask_labeled.png
+  [DEBUG] Contour stats (idx, area, centroid):
+    - 0: area=119758, centroid=(1446, 1053)
+  [OK] Saved visualization to ./log/detection_verify_c1_window0_scan2.png
+   SAVED DETECTION VISUALIZATION: ./log/detection_verify_c1_window0_scan2.png 
+      File size: 2499998 bytes
+    Saved flow frame: ./log/frames/frame_0042.png
+    Saved mask frame: ./log/frames/frame_0043.png
+    Saved detection frame: ./log/frames/frame_0044.png
+  Window at pixel (1446, 1053) (conf: 0.071)
+
+  Estimating pose with PnP...
+  Using frame 0 as reference
+  Mask shape: (2064, 2752)
+  Image shape: (2064, 2752, 3)
+  Mask has 120459 nonzero pixels
+  extract_window_corners: mask shape = (2064, 2752), dtype = float32
+    mask range: [0.000, 1.000]
+    nonzero pixels: 120459
+    Found 1 contours
+    Contour areas: [119758.0]
+    Using largest contour: area = 119758 pixels
+    Polygon approximation: 4 vertices
+    Perfect quadrilateral found!
+    Raw corners: [[1612  879]
+ [1290  879]
+ [1269 1225]
+ [1612 1225]]
+    Ordered corners: [[1269 1225]
+ [1612 1225]
+ [1612  879]
+ [1290  879]]
+  Visualization dimensions:
+    Original image: 2752x2064
+    Mask: 2752x2064
+  Saved PnP viz: ./log/pnp_verify_c1_window0_scan2.png
+   SAVED PNP VISUALIZATION: ./log/pnp_verify_c1_window0_scan2.png 
+      File size: 4531568 bytes
+  Camera frame: t=[0.22749264 0.06129358 6.23392981], dist=6.24m
+  NED (scaled by 2.0): pos=[1.12148973 0.57923228 0.07057089]
+       rpy(deg)=[-98.64139941   0.24826187 129.54688405]
+  [OK] Saved scan frame 1/5
+  [OK] Saved scan frame 2/5
+  [OK] Saved scan frame 3/5
+  [OK] Saved scan frame 4/5
+  [OK] Saved scan frame 5/5
+  [OK] Window detected at: [1.12148973 0.57923228 0.07057089]
+  Stored component score: 5421 for next VERIFY
+    Position drift: 0.062 splat units
+      Projected pixel: [1441.4, 1049.6]
+    Alignment error: (+65.4, +17.6)px, mag=67.8px
+    [CONTINUE] Need more alignment
+  [CONTINUE] error=67.8px
+
+  --- Cycle 3/3 ---
+
+  [SKILL: ALIGN]
+      Projected pixel: [1441.4, 1049.6]
+    Current error: (+65.4, +17.6)px, mag=67.8px
+    Depth from height: h_px=346.0px -> Z=0.347 splat units
+    Corrections: Y=+0.0116, Z=+0.0034
+    [OK] Moved to [0.001      0.04213014 0.06172638]
+
+  [SKILL: VERIFY] Cycle 2 - Re-scanning...
+      Projected pixel: [1426.4, 1044.8]
+    Target pixel (projected from expected position): (1426, 1044)
+    Previous component score: 5421
+    Will match closest component by score (HIGHEST PRIORITY)
+
+============================================================
+[SKILL: SCAN] Type: verify_c2
+============================================================
+  Generated 5 scan waypoints
+    Frame 1/5
+    Frame 2/5
+    Frame 3/5
+    Frame 4/5
+    Frame 5/5
+  Detecting window...
+
+=== SCANNING FOR WINDOW (verify_c2_window0_scan3) ===
+  Generated 5 scan waypoints
+    Frame 1/5
+    Frame 2/5
+    Frame 3/5
+    Frame 4/5
+    Frame 5/5
+
+  Detecting window...
+  Original frame size: 2752x2064
+  Downsampled to: 512x512
+  Computing standard optical flow (first[OK]last frame)...
+    Flow first[OK]last: range [3.2, 23.6], mean 12.3
+    Flow range: [3.23, 23.59]
+    Flow mean: 12.27, median: 11.98
+    PERCENTAGE-BASED thresholding:
+      Flow range: 20.36 (from 3.23 to 23.59)
+      Background threshold: 3.33 (18% of range)
+      Hole threshold: 9.95 (36% of range)
+    Pixels in middle flow range (before morphology): 91223 (34.8%)
+    Pixels after morphology: 91423 (34.9%)
+    Found 4 connected components
+      Component 1: REJECTED (at edge)
+      Component 2: VALID (area=5571, score=5505)
+      Component 3: VALID (area=2667, score=1679)
+      Component 4: REJECTED (bad aspect: 0.24)
+    Selected component 2 by SCORE MATCHING
+      Target score: 5421
+      Matched score: 5505
+      Distance: 85
+      Area: 5571
+  Final mask pixels: 120808
+  Center: (1411, 1041), Confidence: 0.071
+  [DEBUG] Saved labeled contour visualization: ./log/detection_verify_c2_window0_scan3_labeled.png
+  [DEBUG] Saved mask-labeled visualization: ./log/detection_verify_c2_window0_scan3_mask_labeled.png
+  [DEBUG] Contour stats (idx, area, centroid):
+    - 0: area=120092, centroid=(1411, 1041)
+  [OK] Saved visualization to ./log/detection_verify_c2_window0_scan3.png
+   SAVED DETECTION VISUALIZATION: ./log/detection_verify_c2_window0_scan3.png 
+      File size: 2502309 bytes
+    Saved flow frame: ./log/frames/frame_0051.png
+    Saved mask frame: ./log/frames/frame_0052.png
+    Saved detection frame: ./log/frames/frame_0053.png
+  Window at pixel (1411, 1041) (conf: 0.071)
+
+  Estimating pose with PnP...
+  Using frame 0 as reference
+  Mask shape: (2064, 2752)
+  Image shape: (2064, 2752, 3)
+  Mask has 120808 nonzero pixels
+  extract_window_corners: mask shape = (2064, 2752), dtype = float32
+    mask range: [0.000, 1.000]
+    nonzero pixels: 120808
+    Found 1 contours
+    Contour areas: [120091.5]
+    Using largest contour: area = 120092 pixels
+    Polygon approximation: 4 vertices
+    Perfect quadrilateral found!
+    Raw corners: [[1574  859]
+ [1253  875]
+ [1231 1217]
+ [1580 1209]]
+    Ordered corners: [[1231 1217]
+ [1580 1209]
+ [1574  859]
+ [1253  875]]
+  Visualization dimensions:
+    Original image: 2752x2064
+    Mask: 2752x2064
+  Saved PnP viz: ./log/pnp_verify_c2_window0_scan3.png
+   SAVED PNP VISUALIZATION: ./log/pnp_verify_c2_window0_scan3.png 
+      File size: 4520562 bytes
+  Camera frame: t=[0.09788292 0.01559194 6.12359289], dist=6.12m
+  NED (scaled by 2.0): pos=[1.11187358 0.55815216 0.06484477]
+       rpy(deg)=[-102.45884416    2.19482026  131.23751492]
+  [OK] Saved scan frame 1/5
+  [OK] Saved scan frame 2/5
+  [OK] Saved scan frame 3/5
+  [OK] Saved scan frame 4/5
+  [OK] Saved scan frame 5/5
+  [OK] Window detected at: [1.11187358 0.55815216 0.06484477]
+  Stored component score: 5505 for next VERIFY
+    Position drift: 0.024 splat units
+      Projected pixel: [1404.7, 1036.6]
+    Alignment error: (+28.7, +4.6)px, mag=29.0px
+    [OK] Aligned (error < 50px)
+  [CONVERGED] error=29.0px
+
+============================================================
+[SKILL: APPROACH] - Geometric Forward Stepping
+============================================================
+      Projected pixel: [1404.7, 1036.6]
+  Pre-approach pixel error: 29.0px
+  Distance to window: 1.225 splat units
+  Current yaw: 24.0 deg
+  Forward direction (NED): [+0.914, +0.407, +0.000]
+  Moving 1.375 splat units forward in 20 steps
+  Step size: 0.030 splat units
+  Using reduced collision radius: 0.020 splat units
+
+  Getting initial window detection baseline...
+  Original frame size: 2752x2064
+  Downsampled to: 512x512
+  Computing standard optical flow (first[OK]last frame)...
+    Flow first[OK]last: range [3.2, 23.6], mean 12.3
+    Flow range: [3.23, 23.59]
+    Flow mean: 12.27, median: 11.98
+    PERCENTAGE-BASED thresholding:
+      Flow range: 20.36 (from 3.23 to 23.59)
+      Background threshold: 3.33 (18% of range)
+      Hole threshold: 9.95 (36% of range)
+    Pixels in middle flow range (before morphology): 91223 (34.8%)
+    Pixels after morphology: 91423 (34.9%)
+    Found 4 connected components
+      Component 1: REJECTED (at edge)
+      Component 2: VALID (area=5571, score=5505)
+      Component 3: VALID (area=2667, score=1679)
+      Component 4: REJECTED (bad aspect: 0.24)
+    Selected component 3 by SCORE (score=1679) [SCAN mode]
+  Final mask pixels: 57782
+  Center: (359, 1055), Confidence: 0.034
+  Initial window area: 57782 pixels
+  Step 1/20: pos=[0.02840636 0.05433224 0.06172638]
+  Step 2/20: pos=[0.05581273 0.06653434 0.06172638]
+  Step 3/20: pos=[0.08321909 0.07873644 0.06172638]
+  Step 4/20: pos=[0.11062545 0.09093853 0.06172638]
+
+  [VERIFY] Checking window detection at step 4...
+  Original frame size: 2752x2064
+  Downsampled to: 512x512
+  Computing standard optical flow (first[OK]last frame)...
+    Flow first[OK]last: range [3.6, 31.0], mean 15.2
+    Flow range: [3.60, 31.00]
+    Flow mean: 15.21, median: 14.71
+    PERCENTAGE-BASED thresholding:
+      Flow range: 27.41 (from 3.60 to 31.00)
+      Background threshold: 3.73 (18% of range)
+      Hole threshold: 12.64 (36% of range)
+    Pixels in middle flow range (before morphology): 93299 (35.6%)
+    Pixels after morphology: 94086 (35.9%)
+    Found 2 connected components
+      Component 1: REJECTED (at edge)
+      Component 2: VALID (area=13488, score=13296)
+    Selected component 2 by SCORE (score=13296) [SCAN mode]
+  Final mask pixels: 292677
+  Center: (1417, 1038), Confidence: 0.172
+    Current window area: 292677 pixels
+    New peak area: 292677 pixels
+    Area ratio from peak: 1.00
+    Peak area was: 292677 pixels
+    [CONTINUE] Window area at 100% of peak, continuing
+  Step 5/20: pos=[0.13803182 0.10314063 0.06172638]
+  Step 6/20: pos=[0.16543818 0.11534273 0.06172638]
+  Step 7/20: pos=[0.19284455 0.12754483 0.06172638]
+  Step 8/20: pos=[0.22025091 0.13974693 0.06172638]
+
+  [VERIFY] Checking window detection at step 8...
+  Original frame size: 2752x2064
+  Downsampled to: 512x512
+  Computing standard optical flow (first[OK]last frame)...
+    Flow first[OK]last: range [3.0, 68.3], mean 43.0
+    Flow range: [2.96, 68.30]
+    Flow mean: 42.97, median: 56.77
+    PERCENTAGE-BASED thresholding:
+      Flow range: 65.34 (from 2.96 to 68.30)
+      Background threshold: 3.28 (18% of range)
+      Hole threshold: 24.52 (36% of range)
+    Pixels in middle flow range (before morphology): 88652 (33.8%)
+    Pixels after morphology: 88725 (33.8%)
+    Found 2 connected components
+      Component 1: REJECTED (at edge)
+      Component 2: VALID (area=55681, score=53541)
+    Selected component 2 by SCORE (score=53541) [SCAN mode]
+  Final mask pixels: 1207176
+  Center: (1484, 1053), Confidence: 0.708
+    Current window area: 1207176 pixels
+    New peak area: 1207176 pixels
+    Area ratio from peak: 1.00
+    Peak area was: 1207176 pixels
+    [CONTINUE] Window area at 100% of peak, continuing
+  Step 9/20: pos=[0.24765727 0.15194903 0.06172638]
+  Step 10/20: pos=[0.27506364 0.16415113 0.06172638]
+  Step 11/20: pos=[0.30247    0.17635323 0.06172638]
+  Step 12/20: pos=[0.32987636 0.18855533 0.06172638]
+
+  [VERIFY] Checking window detection at step 12...
+  Original frame size: 2752x2064
+  Downsampled to: 512x512
+  Computing standard optical flow (first[OK]last frame)...
+    Flow first[OK]last: range [3.7, 26.3], mean 13.2
+    Flow range: [3.65, 26.34]
+    Flow mean: 13.22, median: 11.39
+    PERCENTAGE-BASED thresholding:
+      Flow range: 22.69 (from 3.65 to 26.34)
+      Background threshold: 3.77 (18% of range)
+      Hole threshold: 11.14 (36% of range)
+    Pixels in middle flow range (before morphology): 128134 (48.9%)
+    Pixels after morphology: 128304 (48.9%)
+    Found 1 connected components
+      Component 1: REJECTED (at edge)
+    No valid components found!
+  Final mask pixels: 0
+  Center: None, Confidence: 0.000
+    Current window area: 0 pixels
+    Area ratio from peak: 0.00
+    Peak area was: 1207176 pixels
+    [OK] Window area dropped 100% from peak - passed through!
+    Stopping at step 12/20
+  [OK] Approach complete - moved forward 1.375m
+  Final position (NED): [0.32987636 0.18855533 0.06172638]
+
+  Y displacement: +0.146
+  Came from: RIGHT
+
+============================================================
+[SKILL: RECENTER]
+============================================================
+  Goal: Keep X=0.330 (forward distance traveled), reset Y/Z/RPY to zero
+  Starting pose:
+    Position: [0.330, 0.189, 0.062]
+    RPY (deg): [0.0, 0.0, 24.0]
+
+  [SAFETY] Moving 0.1 splat units forward to clear window 1...
+  Safety movement complete. New position: [0.42123091 0.22922899 0.06172638]
+  Total forward distance: 0.421 splat units
+
+  Now starting lateral/yaw recenter with X=0.421
+  Iter 0: Y=+0.219, Z=+0.052, Yaw=+23.0Ã‚Â° [clear]
+  Iter 1: Y=+0.209, Z=+0.042, Yaw=+22.0Ã‚Â° [clear]
+  Iter 2: Y=+0.199, Z=+0.032, Yaw=+21.0Ã‚Â° [clear]
+  Iter 3: Y=+0.189, Z=+0.022, Yaw=+20.0Ã‚Â° [clear]
+  Iter 4: Y=+0.179, Z=+0.012, Yaw=+19.0Ã‚Â° [clear]
+  Iter 5: Y=+0.169, Z=+0.002, Yaw=+18.0Ã‚Â° [clear]
+  Iter 6: Y=+0.159, Z=+0.002, Yaw=+17.0Ã‚Â° [clear]
+  Iter 7: Y=+0.149, Z=+0.002, Yaw=+16.0Ã‚Â° [clear]
+  Iter 8: Y=+0.139, Z=+0.002, Yaw=+15.0Ã‚Â° [clear]
+  Iter 9: Y=+0.129, Z=+0.002, Yaw=+14.0Ã‚Â° [clear]
+  Iter 10: Y=+0.119, Z=+0.002, Yaw=+13.0Ã‚Â° [clear]
+  Iter 11: Y=+0.109, Z=+0.002, Yaw=+12.0Ã‚Â° [clear]
+  Iter 12: Y=+0.099, Z=+0.002, Yaw=+11.0Ã‚Â° [clear]
+  Iter 13: Y=+0.089, Z=+0.002, Yaw=+10.0Ã‚Â° [clear]
+  Iter 14: Y=+0.079, Z=+0.002, Yaw=+9.0Ã‚Â° [clear]
+  Iter 15: Y=+0.069, Z=+0.002, Yaw=+8.0Ã‚Â° [clear]
+  Iter 16: Y=+0.059, Z=+0.002, Yaw=+7.0Ã‚Â° [clear]
+  Iter 17: Y=+0.049, Z=+0.002, Yaw=+6.0Ã‚Â° [clear]
+  Iter 18: Y=+0.039, Z=+0.002, Yaw=+5.0Ã‚Â° [clear]
+  Iter 19: Y=+0.029, Z=+0.002, Yaw=+4.0Ã‚Â° [clear]
+  Iter 20: Y=+0.019, Z=+0.002, Yaw=+3.0Ã‚Â° [clear]
+  Iter 21: Y=+0.009, Z=+0.002, Yaw=+2.0Ã‚Â° [clear]
+  Iter 22: Y=+0.009, Z=+0.002, Yaw=+1.0Ã‚Â° [clear]
+  [OK] Recentered after 23 iterations
+  Final pose:
+    Position: [0.421, 0.009, 0.002]
+    RPY (deg): [0.0, 0.0, 1.0]
+  [OK] Recenter complete
+
+======================================================================
+[CHECKING FOR NEXT WINDOW]
+======================================================================
+
+============================================================
+[SKILL: SCAN] Type: lookahead
+============================================================
+  Generated 5 scan waypoints
+    Frame 1/5
+    Frame 2/5
+    Frame 3/5
+    Frame 4/5
+    Frame 5/5
+  Detecting window...
+
+=== SCANNING FOR WINDOW (lookahead_window1_scan4) ===
+  Generated 5 scan waypoints
+    Frame 1/5
+    Frame 2/5
+    Frame 3/5
+    Frame 4/5
+    Frame 5/5
+
+  Detecting window...
+  Original frame size: 2752x2064
+  Downsampled to: 512x512
+  Computing standard optical flow (first[OK]last frame)...
+    Flow first[OK]last: range [3.2, 27.1], mean 11.0
+    Flow range: [3.17, 27.14]
+    Flow mean: 10.98, median: 8.97
+    PERCENTAGE-BASED thresholding:
+      Flow range: 23.96 (from 3.17 to 27.14)
+      Background threshold: 3.29 (18% of range)
+      Hole threshold: 11.08 (36% of range)
+    Pixels in middle flow range (before morphology): 161490 (61.6%)
+    Pixels after morphology: 161938 (61.8%)
+    Found 2 connected components
+      Component 1: REJECTED (size: 153188)
+      Component 2: VALID (area=8736, score=6373)
+    Selected component 2 by SCORE (score=6373) [SCAN mode]
+  Final mask pixels: 189480
+  Center: (744, 1350), Confidence: 0.111
+  [DEBUG] Saved labeled contour visualization: ./log/detection_lookahead_window1_scan4_labeled.png
+  [DEBUG] Saved mask-labeled visualization: ./log/detection_lookahead_window1_scan4_mask_labeled.png
+  [DEBUG] Contour stats (idx, area, centroid):
+    - 0: area=188532, centroid=(744, 1350)
+  [OK] Saved visualization to ./log/detection_lookahead_window1_scan4.png
+   SAVED DETECTION VISUALIZATION: ./log/detection_lookahead_window1_scan4.png 
+      File size: 2415095 bytes
+    Saved flow frame: ./log/frames/frame_0105.png
+    Saved mask frame: ./log/frames/frame_0106.png
+    Saved detection frame: ./log/frames/frame_0107.png
+  Window at pixel (744, 1350) (conf: 0.111)
+
+  Estimating pose with PnP...
+  Using frame 0 as reference
+  Mask shape: (2064, 2752)
+  Image shape: (2064, 2752, 3)
+  Mask has 189480 nonzero pixels
+  extract_window_corners: mask shape = (2064, 2752), dtype = float32
+    mask range: [0.000, 1.000]
+    nonzero pixels: 189480
+    Found 1 contours
+    Contour areas: [188532.5]
+    Using largest contour: area = 188532 pixels
+    Polygon approximation: 4 vertices
+    Perfect quadrilateral found!
+    Raw corners: [[ 940 1125]
+ [ 495 1194]
+ [ 586 1600]
+ [ 994 1499]]
+    Ordered corners: [[ 586 1600]
+ [ 994 1499]
+ [ 940 1125]
+ [ 495 1194]]
+  Visualization dimensions:
+    Original image: 2752x2064
+    Mask: 2752x2064
+  Saved PnP viz: ./log/pnp_lookahead_window1_scan4.png
+   SAVED PNP VISUALIZATION: ./log/pnp_lookahead_window1_scan4.png 
+      File size: 4297076 bytes
+  Camera frame: t=[-1.79590267  0.95031666  5.24268196], dist=5.62m
+  NED (scaled by 2.0): pos=[ 1.47587617 -0.33159735  0.19178971]
+       rpy(deg)=[-81.78689852   9.17821673  73.69919376]
+  [OK] Saved scan frame 1/5
+  [OK] Saved scan frame 2/5
+  [OK] Saved scan frame 3/5
+  [OK] Saved scan frame 4/5
+  [OK] Saved scan frame 5/5
+  [OK] Window detected at: [ 1.47587617 -0.33159735  0.19178971]
+  Stored component score: 6373 for next VERIFY
+  [OK] Next window visible
+
+[OK] Window 1 complete!
+
+======================================================================
+WINDOW 2 / 4
+======================================================================
+Flow: SCAN → FIX_YAW → ALIGN → VERIFY → APPROACH → RECENTER
+
+============================================================
+[SKILL: SCAN] Type: initial
+============================================================
+  Generated 5 scan waypoints
+    Frame 1/5
+    Frame 2/5
+    Frame 3/5
+    Frame 4/5
+    Frame 5/5
+  Detecting window...
+
+=== SCANNING FOR WINDOW (initial_window1_scan5) ===
+  Generated 5 scan waypoints
+    Frame 1/5
+    Frame 2/5
+    Frame 3/5
+    Frame 4/5
+    Frame 5/5
+
+  Detecting window...
+  Original frame size: 2752x2064
+  Downsampled to: 512x512
+  Computing standard optical flow (first[OK]last frame)...
+    Flow first[OK]last: range [3.2, 27.1], mean 11.0
+    Flow range: [3.17, 27.14]
+    Flow mean: 10.98, median: 8.97
+    PERCENTAGE-BASED thresholding:
+      Flow range: 23.96 (from 3.17 to 27.14)
+      Background threshold: 3.29 (18% of range)
+      Hole threshold: 11.08 (36% of range)
+    Pixels in middle flow range (before morphology): 161490 (61.6%)
+    Pixels after morphology: 161938 (61.8%)
+    Found 2 connected components
+      Component 1: REJECTED (size: 153188)
+      Component 2: VALID (area=8736, score=6373)
+    Selected component 2 by SCORE (score=6373) [SCAN mode]
+  Final mask pixels: 189480
+  Center: (744, 1350), Confidence: 0.111
+  [DEBUG] Saved labeled contour visualization: ./log/detection_initial_window1_scan5_labeled.png
+  [DEBUG] Saved mask-labeled visualization: ./log/detection_initial_window1_scan5_mask_labeled.png
+  [DEBUG] Contour stats (idx, area, centroid):
+    - 0: area=188532, centroid=(744, 1350)
+  [OK] Saved visualization to ./log/detection_initial_window1_scan5.png
+   SAVED DETECTION VISUALIZATION: ./log/detection_initial_window1_scan5.png 
+      File size: 2415095 bytes
+    Saved flow frame: ./log/frames/frame_0113.png
+    Saved mask frame: ./log/frames/frame_0114.png
+    Saved detection frame: ./log/frames/frame_0115.png
+  Window at pixel (744, 1350) (conf: 0.111)
+
+  Estimating pose with PnP...
+  Using frame 0 as reference
+  Mask shape: (2064, 2752)
+  Image shape: (2064, 2752, 3)
+  Mask has 189480 nonzero pixels
+  extract_window_corners: mask shape = (2064, 2752), dtype = float32
+    mask range: [0.000, 1.000]
+    nonzero pixels: 189480
+    Found 1 contours
+    Contour areas: [188532.5]
+    Using largest contour: area = 188532 pixels
+    Polygon approximation: 4 vertices
+    Perfect quadrilateral found!
+    Raw corners: [[ 940 1125]
+ [ 495 1194]
+ [ 586 1600]
+ [ 994 1499]]
+    Ordered corners: [[ 586 1600]
+ [ 994 1499]
+ [ 940 1125]
+ [ 495 1194]]
+  Visualization dimensions:
+    Original image: 2752x2064
+    Mask: 2752x2064
+  Saved PnP viz: ./log/pnp_initial_window1_scan5.png
+   SAVED PNP VISUALIZATION: ./log/pnp_initial_window1_scan5.png 
+      File size: 4297076 bytes
+  Camera frame: t=[-1.79590267  0.95031666  5.24268196], dist=5.62m
+  NED (scaled by 2.0): pos=[ 1.47587617 -0.33159735  0.19178971]
+       rpy(deg)=[-81.78689852   9.17821673  73.69919376]
+  [OK] Saved scan frame 1/5
+  [OK] Saved scan frame 2/5
+  [OK] Saved scan frame 3/5
+  [OK] Saved scan frame 4/5
+  [OK] Saved scan frame 5/5
+  [OK] Window detected at: [ 1.47587617 -0.33159735  0.19178971]
+  Stored component score: 6373 for next VERIFY
+
+Yaw check: current=1.0°, desired=-17.9°, error=18.9°
+  Yaw hint: -18.9° (LEFT)
+  Running FIX_YAW (error > 5°)
+
+============================================================
+[SKILL: FIX_YAW]
+============================================================
+  Yaw iter 0: Yaw=0.0Ã‚Â°, Error=-18.9Ã‚Â°
+  Yaw iter 6: Yaw=-6.0Ã‚Â°, Error=-12.9Ã‚Â°
+  Yaw iter 12: Yaw=-12.0Ã‚Â°, Error=-6.9Ã‚Â°
+  [OK] Yaw aligned after 18 iterations
+
+======================================================================
+[ALIGN-VERIFY CHECK]
+======================================================================
+      Projected pixel: [1347.5, 1339.5]
+Post-yaw error: 308.9px
+  Needs refinement (308.9px > 25px)
+  Running ALIGN-VERIFY cycles
+
+  --- Cycle 1/3 ---
+
+  [SKILL: ALIGN]
+      Projected pixel: [1347.5, 1339.5]
+    Current error: (-28.5, +307.5)px, mag=308.9px
+    Depth from height: h_px=390.0px -> Z=0.308 splat units
+    Corrections: Y=-0.0044, Z=+0.0498
+    [OK] Moved to [0.42123091 0.00482215 0.0515318 ]
+
+  [SKILL: VERIFY] Cycle 0 - Re-scanning...
+      Projected pixel: [1354.3, 1259.2]
+    Target pixel (projected from expected position): (1354, 1259)
+    Previous component score: 6373
+    Will match closest component by score (HIGHEST PRIORITY)
+
+============================================================
+[SKILL: SCAN] Type: verify_c0
+============================================================
+  Generated 5 scan waypoints
+    Frame 1/5
+    Frame 2/5
+    Frame 3/5
+    Frame 4/5
+    Frame 5/5
+  Detecting window...
+
+=== SCANNING FOR WINDOW (verify_c0_window1_scan6) ===
+  Generated 5 scan waypoints
+    Frame 1/5
+    Frame 2/5
+    Frame 3/5
+    Frame 4/5
+    Frame 5/5
+
+  Detecting window...
+  Original frame size: 2752x2064
+  Downsampled to: 512x512
+  Computing standard optical flow (first[OK]last frame)...
+    Flow first[OK]last: range [2.8, 24.9], mean 11.4
+    Flow range: [2.79, 24.93]
+    Flow mean: 11.41, median: 9.11
+    PERCENTAGE-BASED thresholding:
+      Flow range: 22.14 (from 2.79 to 24.93)
+      Background threshold: 2.90 (18% of range)
+      Hole threshold: 10.10 (36% of range)
+    Pixels in middle flow range (before morphology): 139178 (53.1%)
+    Pixels after morphology: 139484 (53.2%)
+    Found 5 connected components
+      Component 1: REJECTED (at edge)
+      Component 2: REJECTED (at edge)
+      Component 3: VALID (area=6461, score=6121)
+      Component 4: VALID (area=2824, score=2072)
+      Component 5: REJECTED (size: 60)
+    Selected component 3 by SCORE MATCHING
+      Target score: 6373
+      Matched score: 6121
+      Distance: 252
+      Area: 6461
+  Final mask pixels: 140083
+  Center: (1233, 1122), Confidence: 0.082
+  [DEBUG] Saved labeled contour visualization: ./log/detection_verify_c0_window1_scan6_labeled.png
+  [DEBUG] Saved mask-labeled visualization: ./log/detection_verify_c0_window1_scan6_mask_labeled.png
+  [DEBUG] Contour stats (idx, area, centroid):
+    - 0: area=139292, centroid=(1233, 1122)
+  [OK] Saved visualization to ./log/detection_verify_c0_window1_scan6.png
+   SAVED DETECTION VISUALIZATION: ./log/detection_verify_c0_window1_scan6.png 
+      File size: 2488474 bytes
+    Saved flow frame: ./log/frames/frame_0139.png
+    Saved mask frame: ./log/frames/frame_0140.png
+    Saved detection frame: ./log/frames/frame_0141.png
+  Window at pixel (1233, 1122) (conf: 0.082)
+
+  Estimating pose with PnP...
+  Using frame 0 as reference
+  Mask shape: (2064, 2752)
+  Image shape: (2064, 2752, 3)
+  Mask has 140083 nonzero pixels
+  extract_window_corners: mask shape = (2064, 2752), dtype = float32
+    mask range: [0.000, 1.000]
+    nonzero pixels: 140083
+    Found 1 contours
+    Contour areas: [139291.5]
+    Using largest contour: area = 139292 pixels
+    Polygon approximation: 5 vertices
+    Quadrilateral found with epsilon=0.03
+    Raw corners: [[1343  924]
+ [1032  984]
+ [1086 1322]
+ [1440 1277]]
+    Ordered corners: [[1086 1322]
+ [1440 1277]
+ [1343  924]
+ [1032  984]]
+  Visualization dimensions:
+    Original image: 2752x2064
+    Mask: 2752x2064
+  Saved PnP viz: ./log/pnp_verify_c0_window1_scan6.png
+   SAVED PNP VISUALIZATION: ./log/pnp_verify_c0_window1_scan6.png 
+      File size: 4264476 bytes
+  Camera frame: t=[-0.52160104  0.32500076  6.0372242 ], dist=6.07m
+  NED (scaled by 2.0): pos=[ 1.54541588 -0.44796246  0.11653195]
+       rpy(deg)=[-83.89616452  10.05726479  88.8396286 ]
+  [OK] Saved scan frame 1/5
+  [OK] Saved scan frame 2/5
+  [OK] Saved scan frame 3/5
+  [OK] Saved scan frame 4/5
+  [OK] Saved scan frame 5/5
+  [OK] Window detected at: [ 1.54541588 -0.44796246  0.11653195]
+  Stored component score: 6121 for next VERIFY
+    Position drift: 0.155 splat units
+      Projected pixel: [1221.1, 1128.5]
+    Alignment error: (-154.9, +96.5)px, mag=182.5px
+    [CONTINUE] Need more alignment
+  [CONTINUE] error=182.5px
+
+  --- Cycle 2/3 ---
+
+  [SKILL: ALIGN]
+      Projected pixel: [1221.1, 1128.5]
+    Current error: (-154.9, +96.5)px, mag=182.5px
+    Depth from height: h_px=345.5px -> Z=0.348 splat units
+    Corrections: Y=-0.0287, Z=+0.0187
+    [OK] Moved to [ 0.42123091 -0.0239096   0.07025205]
+
+  [SKILL: VERIFY] Cycle 1 - Re-scanning...
+      Projected pixel: [1261.1, 1101.2]
+    Target pixel (projected from expected position): (1261, 1101)
+    Previous component score: 6121
+    Will match closest component by score (HIGHEST PRIORITY)
+
+============================================================
+[SKILL: SCAN] Type: verify_c1
+============================================================
+  Generated 5 scan waypoints
+    Frame 1/5
+    Frame 2/5
+    Frame 3/5
+    Frame 4/5
+    Frame 5/5
+  Detecting window...
+
+=== SCANNING FOR WINDOW (verify_c1_window1_scan7) ===
+  Generated 5 scan waypoints
+    Frame 1/5
+    Frame 2/5
+    Frame 3/5
+    Frame 4/5
+    Frame 5/5
+
+  Detecting window...
+  Original frame size: 2752x2064
+  Downsampled to: 512x512
+  Computing standard optical flow (first[OK]last frame)...
+    Flow first[OK]last: range [2.9, 26.7], mean 12.2
+    Flow range: [2.95, 26.66]
+    Flow mean: 12.15, median: 9.88
+    PERCENTAGE-BASED thresholding:
+      Flow range: 23.71 (from 2.95 to 26.66)
+      Background threshold: 3.06 (18% of range)
+      Hole threshold: 10.77 (36% of range)
+    Pixels in middle flow range (before morphology): 135758 (51.8%)
+    Pixels after morphology: 135833 (51.8%)
+    Found 6 connected components
+      Component 1: REJECTED (at edge)
+      Component 2: REJECTED (at edge)
+      Component 3: VALID (area=7080, score=6996)
+      Component 4: VALID (area=4326, score=3329)
+      Component 5: VALID (area=1667, score=871)
+      Component 6: REJECTED (size: 130)
+    Selected component 3 by SCORE MATCHING
+      Target score: 6121
+      Matched score: 6996
+      Distance: 875
+      Area: 7080
+  Final mask pixels: 153363
+  Center: (1345, 1044), Confidence: 0.090
+  [DEBUG] Saved labeled contour visualization: ./log/detection_verify_c1_window1_scan7_labeled.png
+  [DEBUG] Saved mask-labeled visualization: ./log/detection_verify_c1_window1_scan7_mask_labeled.png
+  [DEBUG] Contour stats (idx, area, centroid):
+    - 0: area=152530, centroid=(1345, 1044)
+  [OK] Saved visualization to ./log/detection_verify_c1_window1_scan7.png
+   SAVED DETECTION VISUALIZATION: ./log/detection_verify_c1_window1_scan7.png 
+      File size: 2473556 bytes
+    Saved flow frame: ./log/frames/frame_0148.png
+    Saved mask frame: ./log/frames/frame_0149.png
+    Saved detection frame: ./log/frames/frame_0150.png
+  Window at pixel (1345, 1044) (conf: 0.090)
+
+  Estimating pose with PnP...
+  Using frame 0 as reference
+  Mask shape: (2064, 2752)
+  Image shape: (2064, 2752, 3)
+  Mask has 153363 nonzero pixels
+  extract_window_corners: mask shape = (2064, 2752), dtype = float32
+    mask range: [0.000, 1.000]
+    nonzero pixels: 153363
+    Found 1 contours
+    Contour areas: [152530.5]
+    Using largest contour: area = 152530 pixels
+    Polygon approximation: 4 vertices
+    Perfect quadrilateral found!
+    Raw corners: [[1515  843]
+ [1135  875]
+ [1178 1257]
+ [1558 1213]]
+    Ordered corners: [[1178 1257]
+ [1558 1213]
+ [1515  843]
+ [1135  875]]
+  Visualization dimensions:
+    Original image: 2752x2064
+    Mask: 2752x2064
+  Saved PnP viz: ./log/pnp_verify_c1_window1_scan7.png
+   SAVED PNP VISUALIZATION: ./log/pnp_verify_c1_window1_scan7.png 
+      File size: 4213613 bytes
+  Camera frame: t=[-0.08586288  0.04096672  5.63823883], dist=5.64m
+  NED (scaled by 2.0): pos=[ 1.49458506 -0.37002412  0.0784454 ]
+       rpy(deg)=[-95.59859183   5.80622359  66.13371028]
+  [OK] Saved scan frame 1/5
+  [OK] Saved scan frame 2/5
+  [OK] Saved scan frame 3/5
+  [OK] Saved scan frame 4/5
+  [OK] Saved scan frame 5/5
+  [OK] Window detected at: [ 1.49458506 -0.37002412  0.0784454 ]
+  Stored component score: 6996 for next VERIFY
+    Position drift: 0.101 splat units
+      Projected pixel: [1348.7, 1045.0]
+    Alignment error: (-27.3, +13.0)px, mag=30.3px
+    [OK] Aligned (error < 50px)
+  [CONVERGED] error=30.3px
+
+============================================================
+[SKILL: APPROACH] - Geometric Forward Stepping
+============================================================
+      Projected pixel: [1348.7, 1045.0]
+  Pre-approach pixel error: 30.3px
+  Distance to window: 1.128 splat units
+  Current yaw: -17.0 deg
+  Forward direction (NED): [+0.956, -0.292, +0.000]
+  Moving 1.278 splat units forward in 20 steps
+  Step size: 0.030 splat units
+  Using reduced collision radius: 0.020 splat units
+
+  Getting initial window detection baseline...
+  Original frame size: 2752x2064
+  Downsampled to: 512x512
+  Computing standard optical flow (first[OK]last frame)...
+    Flow first[OK]last: range [2.9, 26.7], mean 12.2
+    Flow range: [2.95, 26.66]
+    Flow mean: 12.15, median: 9.88
+    PERCENTAGE-BASED thresholding:
+      Flow range: 23.71 (from 2.95 to 26.66)
+      Background threshold: 3.06 (18% of range)
+      Hole threshold: 10.77 (36% of range)
+    Pixels in middle flow range (before morphology): 135758 (51.8%)
+    Pixels after morphology: 135833 (51.8%)
+    Found 6 connected components
+      Component 1: REJECTED (at edge)
+      Component 2: REJECTED (at edge)
+      Component 3: VALID (area=7080, score=6996)
+      Component 4: VALID (area=4326, score=3329)
+      Component 5: VALID (area=1667, score=871)
+      Component 6: REJECTED (size: 130)
+    Selected component 5 by SCORE (score=871) [SCAN mode]
+  Final mask pixels: 36331
+  Center: (143, 1319), Confidence: 0.021
+  Initial window area: 36331 pixels
+  Step 1/20: pos=[ 0.44992005 -0.03268076  0.07025205]
+  Step 2/20: pos=[ 0.4786092  -0.04145191  0.07025205]
+  Step 3/20: pos=[ 0.50729834 -0.05022306  0.07025205]
+  Step 4/20: pos=[ 0.53598748 -0.05899421  0.07025205]
+
+  [VERIFY] Checking window detection at step 4...
+  Original frame size: 2752x2064
+  Downsampled to: 512x512
+  Computing standard optical flow (first[OK]last frame)...
+    Flow first[OK]last: range [3.1, 38.6], mean 17.6
+    Flow range: [3.05, 38.55]
+    Flow mean: 17.58, median: 16.69
+    PERCENTAGE-BASED thresholding:
+      Flow range: 35.50 (from 3.05 to 38.55)
+      Background threshold: 3.23 (18% of range)
+      Hole threshold: 14.77 (36% of range)
+    Pixels in middle flow range (before morphology): 126101 (48.1%)
+    Pixels after morphology: 126265 (48.2%)
+    Found 4 connected components
+      Component 1: REJECTED (at edge)
+      Component 2: VALID (area=18242, score=17869)
+      Component 3: VALID (area=4690, score=2979)
+      Component 4: VALID (area=260, score=111)
+    Selected component 4 by SCORE (score=111) [SCAN mode]
+  Final mask pixels: 5782
+  Center: (115, 1555), Confidence: 0.003
+    Current window area: 5782 pixels
+    Area ratio from peak: 0.16
+    Peak area was: 36331 pixels
+    [CONTINUE] Window area at 16% of peak, continuing
+  Step 5/20: pos=[ 0.56467662 -0.06776536  0.07025205]
+  Step 6/20: pos=[ 0.59336577 -0.07653651  0.07025205]
+  Step 7/20: pos=[ 0.62205491 -0.08530766  0.07025205]
+  Step 8/20: pos=[ 0.65074405 -0.09407881  0.07025205]
+
+  [VERIFY] Checking window detection at step 8...
+  Original frame size: 2752x2064
+  Downsampled to: 512x512
+  Computing standard optical flow (first[OK]last frame)...
+    Flow first[OK]last: range [2.1, 101.5], mean 51.8
+    Flow range: [2.14, 101.48]
+    Flow mean: 51.83, median: 74.36
+    PERCENTAGE-BASED thresholding:
+      Flow range: 99.34 (from 2.14 to 101.48)
+      Background threshold: 2.64 (18% of range)
+      Hole threshold: 34.92 (36% of range)
+    Pixels in middle flow range (before morphology): 115218 (44.0%)
+    Pixels after morphology: 115735 (44.1%)
+    Found 2 connected components
+      Component 1: REJECTED (at edge)
+      Component 2: VALID (area=113610, score=106808)
+    Selected component 2 by SCORE (score=106808) [SCAN mode]
+  Final mask pixels: 2462132
+  Center: (1213, 1095), Confidence: 1.000
+    Current window area: 2462132 pixels
+    New peak area: 2462132 pixels
+    Area ratio from peak: 1.00
+    Peak area was: 2462132 pixels
+    [CONTINUE] Window area at 100% of peak, continuing
+  Step 9/20: pos=[ 0.67943319 -0.10284997  0.07025205]
+  Step 10/20: pos=[ 0.70812234 -0.11162112  0.07025205]
+  Step 11/20: pos=[ 0.73681148 -0.12039227  0.07025205]
+  Step 12/20: pos=[ 0.76550062 -0.12916342  0.07025205]
+
+  [VERIFY] Checking window detection at step 12...
+  Original frame size: 2752x2064
+  Downsampled to: 512x512
+  Computing standard optical flow (first[OK]last frame)...
+    Flow first[OK]last: range [4.4, 35.1], mean 15.3
+    Flow range: [4.38, 35.09]
+    Flow mean: 15.27, median: 14.20
+    PERCENTAGE-BASED thresholding:
+      Flow range: 30.71 (from 4.38 to 35.09)
+      Background threshold: 4.53 (18% of range)
+      Hole threshold: 14.51 (36% of range)
+    Pixels in middle flow range (before morphology): 132511 (50.5%)
+    Pixels after morphology: 132562 (50.6%)
+    Found 5 connected components
+      Component 1: REJECTED (at edge)
+      Component 2: REJECTED (bad aspect: 0.26)
+      Component 3: REJECTED (bad aspect: 0.26)
+      Component 4: VALID (area=2527, score=1523)
+      Component 5: REJECTED (size: 116)
+    Selected component 4 by SCORE (score=1523) [SCAN mode]
+  Final mask pixels: 54700
+  Center: (311, 1267), Confidence: 0.032
+    Current window area: 54700 pixels
+    Area ratio from peak: 0.02
+    Peak area was: 2462132 pixels
+    [OK] Window area dropped 98% from peak - passed through!
+    Stopping at step 12/20
+  [OK] Approach complete - moved forward 1.278m
+  Final position (NED): [ 0.76550062 -0.12916342  0.07025205]
+
+  Y displacement: -0.105
+  Came from: LEFT
+
+============================================================
+[SKILL: RECENTER]
+============================================================
+  Goal: Keep X=0.766 (forward distance traveled), reset Y/Z/RPY to zero
+  Starting pose:
+    Position: [0.766, -0.129, 0.070]
+    RPY (deg): [0.0, 0.0, -17.0]
+
+  [SAFETY] Moving 0.1 splat units forward to clear window 1...
+    [WARN] Safety step 1: Collision detected at [ 0.77506367 -0.13208714  0.07025205]
+    [WARN] Safety step 2: Collision detected at [ 0.78462672 -0.13501085  0.07025205]
+    [WARN] Safety step 3: Collision detected at [ 0.79418977 -0.13793457  0.07025205]
+    [WARN] Safety step 4: Collision detected at [ 0.80375281 -0.14085829  0.07025205]
+    [WARN] Safety step 5: Collision detected at [ 0.81331586 -0.143782    0.07025205]
+    [WARN] Safety step 6: Collision detected at [ 0.82287891 -0.14670572  0.07025205]
+    [WARN] Safety step 7: Collision detected at [ 0.83244196 -0.14962944  0.07025205]
+    [WARN] Safety step 8: Collision detected at [ 0.842005   -0.15255315  0.07025205]
+    [WARN] Safety step 9: Collision detected at [ 0.85156805 -0.15547687  0.07025205]
+    [WARN] Safety step 10: Collision detected at [ 0.8611311  -0.15840059  0.07025205]
+  Safety movement complete. New position: [ 0.8611311  -0.15840059  0.07025205]
+  Total forward distance: 0.861 splat units
+
+  Now starting lateral/yaw recenter with X=0.861
+  [COLLISION] Iteration 0: Detected at position [ 0.8611311  -0.14840059  0.06025205]
+    Y=-0.148, Z=+0.060
+    This means we're hitting window 1 while moving back to centerline!
+  Iter 0: Y=-0.148, Z=+0.060, Yaw=-16.0Ã‚Â° [COLLISION]
+  [COLLISION] Iteration 1: Detected at position [ 0.8611311  -0.13840059  0.05025205]
+    Y=-0.138, Z=+0.050
+    This means we're hitting window 1 while moving back to centerline!
+  Iter 1: Y=-0.138, Z=+0.050, Yaw=-15.0Ã‚Â° [COLLISION]
+  [COLLISION] Iteration 2: Detected at position [ 0.8611311  -0.12840059  0.04025205]
+    Y=-0.128, Z=+0.040
+    This means we're hitting window 1 while moving back to centerline!
+  Iter 2: Y=-0.128, Z=+0.040, Yaw=-14.0Ã‚Â° [COLLISION]
+  [COLLISION] Iteration 3: Detected at position [ 0.8611311  -0.11840059  0.03025205]
+    Y=-0.118, Z=+0.030
+    This means we're hitting window 1 while moving back to centerline!
+  Iter 3: Y=-0.118, Z=+0.030, Yaw=-13.0Ã‚Â° [COLLISION]
+  [COLLISION] Iteration 4: Detected at position [ 0.8611311  -0.10840059  0.02025205]
+    Y=-0.108, Z=+0.020
+    This means we're hitting window 1 while moving back to centerline!
+  Iter 4: Y=-0.108, Z=+0.020, Yaw=-12.0Ã‚Â° [COLLISION]
+  [COLLISION] Iteration 5: Detected at position [ 0.8611311  -0.09840059  0.01025205]
+    Y=-0.098, Z=+0.010
+    This means we're hitting window 1 while moving back to centerline!
+  Iter 5: Y=-0.098, Z=+0.010, Yaw=-11.0Ã‚Â° [COLLISION]
+  [COLLISION] Iteration 6: Detected at position [ 8.61131098e-01 -8.84005889e-02  2.52054937e-04]
+    Y=-0.088, Z=+0.000
+    This means we're hitting window 1 while moving back to centerline!
+  Iter 6: Y=-0.088, Z=+0.000, Yaw=-10.0Ã‚Â° [COLLISION]
+  [COLLISION] Iteration 7: Detected at position [ 8.61131098e-01 -7.84005889e-02  2.52054937e-04]
+    Y=-0.078, Z=+0.000
+    This means we're hitting window 1 while moving back to centerline!
+  Iter 7: Y=-0.078, Z=+0.000, Yaw=-9.0Ã‚Â° [COLLISION]
+  [COLLISION] Iteration 8: Detected at position [ 8.61131098e-01 -6.84005889e-02  2.52054937e-04]
+    Y=-0.068, Z=+0.000
+    This means we're hitting window 1 while moving back to centerline!
+  Iter 8: Y=-0.068, Z=+0.000, Yaw=-8.0Ã‚Â° [COLLISION]
+  [COLLISION] Iteration 9: Detected at position [ 8.61131098e-01 -5.84005889e-02  2.52054937e-04]
+    Y=-0.058, Z=+0.000
+    This means we're hitting window 1 while moving back to centerline!
+  Iter 9: Y=-0.058, Z=+0.000, Yaw=-7.0Ã‚Â° [COLLISION]
+  [COLLISION] Iteration 10: Detected at position [ 8.61131098e-01 -4.84005889e-02  2.52054937e-04]
+    Y=-0.048, Z=+0.000
+    This means we're hitting window 1 while moving back to centerline!
+  Iter 10: Y=-0.048, Z=+0.000, Yaw=-6.0Ã‚Â° [COLLISION]
+  [COLLISION] Iteration 11: Detected at position [ 8.61131098e-01 -3.84005889e-02  2.52054937e-04]
+    Y=-0.038, Z=+0.000
+    This means we're hitting window 1 while moving back to centerline!
+  Iter 11: Y=-0.038, Z=+0.000, Yaw=-5.0Ã‚Â° [COLLISION]
+  [COLLISION] Iteration 12: Detected at position [ 8.61131098e-01 -2.84005889e-02  2.52054937e-04]
+    Y=-0.028, Z=+0.000
+    This means we're hitting window 1 while moving back to centerline!
+  Iter 12: Y=-0.028, Z=+0.000, Yaw=-4.0Ã‚Â° [COLLISION]
+  [COLLISION] Iteration 13: Detected at position [ 8.61131098e-01 -1.84005889e-02  2.52054937e-04]
+    Y=-0.018, Z=+0.000
+    This means we're hitting window 1 while moving back to centerline!
+  Iter 13: Y=-0.018, Z=+0.000, Yaw=-3.0Ã‚Â° [COLLISION]
+  [COLLISION] Iteration 14: Detected at position [ 8.61131098e-01 -8.40058893e-03  2.52054937e-04]
+    Y=-0.008, Z=+0.000
+    This means we're hitting window 1 while moving back to centerline!
+  Iter 14: Y=-0.008, Z=+0.000, Yaw=-2.0Ã‚Â° [COLLISION]
+  [COLLISION] Iteration 15: Detected at position [ 8.61131098e-01 -8.40058893e-03  2.52054937e-04]
+    Y=-0.008, Z=+0.000
+    This means we're hitting window 1 while moving back to centerline!
+  Iter 15: Y=-0.008, Z=+0.000, Yaw=-1.0Ã‚Â° [COLLISION]
+  [OK] Recentered after 16 iterations
+  Final pose:
+    Position: [0.861, -0.008, 0.000]
+    RPY (deg): [0.0, 0.0, -1.0]
+  [OK] Recenter complete
+
+======================================================================
+[CHECKING FOR NEXT WINDOW]
+======================================================================
+
+============================================================
+[SKILL: SCAN] Type: lookahead
+============================================================
+  Generated 5 scan waypoints
+    Frame 1/5
+    Frame 2/5
+    Frame 3/5
+    Frame 4/5
+    Frame 5/5
+  Detecting window...
+
+=== SCANNING FOR WINDOW (lookahead_window2_scan8) ===
+  Generated 5 scan waypoints
+    Frame 1/5
+    Frame 2/5
+    Frame 3/5
+    Frame 4/5
+    Frame 5/5
+
+  Detecting window...
+  Original frame size: 2752x2064
+  Downsampled to: 512x512
+  Computing standard optical flow (first[OK]last frame)...
+    Flow first[OK]last: range [4.5, 25.4], mean 11.5
+    Flow range: [4.53, 25.43]
+    Flow mean: 11.53, median: 9.56
+    PERCENTAGE-BASED thresholding:
+      Flow range: 20.90 (from 4.53 to 25.43)
+      Background threshold: 4.63 (18% of range)
+      Hole threshold: 11.42 (36% of range)
+    Pixels in middle flow range (before morphology): 155108 (59.2%)
+    Pixels after morphology: 155647 (59.4%)
+    Found 1 connected components
+      Component 1: REJECTED (size: 155640)
+    No valid components found!
+  Final mask pixels: 0
+  Center: None, Confidence: 0.000
+  [OK] Saved visualization to ./log/detection_lookahead_window2_scan8.png
+   SAVED DETECTION VISUALIZATION: ./log/detection_lookahead_window2_scan8.png 
+      File size: 2098577 bytes
+    Saved flow frame: ./log/frames/frame_0195.png
+    Saved mask frame: ./log/frames/frame_0196.png
+    Saved detection frame: ./log/frames/frame_0197.png
+  [ERROR] No window detected
+    Confidence: 0.000 (threshold: 0.005)
+    Mask pixels: 0
+    Center: None
+  [FAIL] Window not detected
+  No window visible - exploring...
+
+============================================================
+[SKILL: EXPLORE]
+============================================================
+  Came from LEFT, exploring RIGHT (+Y)...
+
+  Exploring RIGHT (total Y offset: +2.50)...
+  Step 5/250: Y=+0.042
+
+  Step 10/250: Y=+0.092 - SCANNING
+
+============================================================
+[SKILL: SCAN] Type: explore_right_s1
+============================================================
+  Generated 5 scan waypoints
+    Frame 1/5
+    Frame 2/5
+    Frame 3/5
+    Frame 4/5
+    Frame 5/5
+  Detecting window...
+
+=== SCANNING FOR WINDOW (explore_right_s1_window2_scan9) ===
+  Generated 5 scan waypoints
+    Frame 1/5
+    Frame 2/5
+    Frame 3/5
+    Frame 4/5
+    Frame 5/5
+
+  Detecting window...
+  Original frame size: 2752x2064
+  Downsampled to: 512x512
+  Computing standard optical flow (first[OK]last frame)...
+    Flow first[OK]last: range [4.4, 29.5], mean 12.2
+    Flow range: [4.37, 29.50]
+    Flow mean: 12.16, median: 10.42
+    PERCENTAGE-BASED thresholding:
+      Flow range: 25.13 (from 4.37 to 29.50)
+      Background threshold: 4.50 (18% of range)
+      Hole threshold: 12.67 (36% of range)
+    Pixels in middle flow range (before morphology): 165178 (63.0%)
+    Pixels after morphology: 165205 (63.0%)
+    Found 2 connected components
+      Component 1: REJECTED (size: 156777)
+      Component 2: REJECTED (at edge)
+    No valid components found!
+  Final mask pixels: 0
+  Center: None, Confidence: 0.000
+  [OK] Saved visualization to ./log/detection_explore_right_s1_window2_scan9.png
+   SAVED DETECTION VISUALIZATION: ./log/detection_explore_right_s1_window2_scan9.png 
+      File size: 2098243 bytes
+    Saved flow frame: ./log/frames/frame_0208.png
+    Saved mask frame: ./log/frames/frame_0209.png
+    Saved detection frame: ./log/frames/frame_0210.png
+  [ERROR] No window detected
+    Confidence: 0.000 (threshold: 0.005)
+    Mask pixels: 0
+    Center: None
+  [FAIL] Window not detected
+  No window found, continuing...
+  Step 15/250: Y=+0.142
+
+  Step 20/250: Y=+0.192 - SCANNING
+
+============================================================
+[SKILL: SCAN] Type: explore_right_s2
+============================================================
+  Generated 5 scan waypoints
+    Frame 1/5
+    Frame 2/5
+    Frame 3/5
+    Frame 4/5
+    Frame 5/5
+  Detecting window...
+
+=== SCANNING FOR WINDOW (explore_right_s2_window2_scan10) ===
+  Generated 5 scan waypoints
+    Frame 1/5
+    Frame 2/5
+    Frame 3/5
+    Frame 4/5
+    Frame 5/5
+
+  Detecting window...
+  Original frame size: 2752x2064
+  Downsampled to: 512x512
+  Computing standard optical flow (first[OK]last frame)...
+    Flow first[OK]last: range [4.0, 34.4], mean 13.8
+    Flow range: [3.96, 34.41]
+    Flow mean: 13.76, median: 10.70
+    PERCENTAGE-BASED thresholding:
+      Flow range: 30.45 (from 3.96 to 34.41)
+      Background threshold: 4.12 (18% of range)
+      Hole threshold: 14.01 (36% of range)
+    Pixels in middle flow range (before morphology): 166735 (63.6%)
+    Pixels after morphology: 166705 (63.6%)
+    Found 2 connected components
+      Component 1: REJECTED (size: 150865)
+      Component 2: VALID (area=15829, score=11185)
+    Selected component 2 by SCORE (score=11185) [SCAN mode]
+  Final mask pixels: 342832
+  Center: (2185, 1115), Confidence: 0.201
+  [DEBUG] Saved labeled contour visualization: ./log/detection_explore_right_s2_window2_scan10_labeled.png
+  [DEBUG] Saved mask-labeled visualization: ./log/detection_explore_right_s2_window2_scan10_mask_labeled.png
+  [DEBUG] Contour stats (idx, area, centroid):
+    - 0: area=341602, centroid=(2185, 1115)
+  [OK] Saved visualization to ./log/detection_explore_right_s2_window2_scan10.png
+   SAVED DETECTION VISUALIZATION: ./log/detection_explore_right_s2_window2_scan10.png 
+      File size: 2133873 bytes
+    Saved flow frame: ./log/frames/frame_0221.png
+    Saved mask frame: ./log/frames/frame_0222.png
+    Saved detection frame: ./log/frames/frame_0223.png
+  Window at pixel (2185, 1115) (conf: 0.201)
+
+  Estimating pose with PnP...
+  Using frame 0 as reference
+  Mask shape: (2064, 2752)
+  Image shape: (2064, 2752, 3)
+  Mask has 342832 nonzero pixels
+  extract_window_corners: mask shape = (2064, 2752), dtype = float32
+    mask range: [0.000, 1.000]
+    nonzero pixels: 342832
+    Found 1 contours
+    Contour areas: [341602.0]
+    Using largest contour: area = 341602 pixels
+    Polygon approximation: 4 vertices
+    Perfect quadrilateral found!
+    Raw corners: [[2483  827]
+ [1871  867]
+ [1866 1354]
+ [2483 1414]]
+    Ordered corners: [[1866 1354]
+ [2483 1414]
+ [2483  827]
+ [1871  867]]
+  Visualization dimensions:
+    Original image: 2752x2064
+    Mask: 2752x2064
+  Saved PnP viz: ./log/pnp_explore_right_s2_window2_scan10.png
+   SAVED PNP VISUALIZATION: ./log/pnp_explore_right_s2_window2_scan10.png 
+      File size: 3784279 bytes
+  Camera frame: t=[1.69180268 0.18801551 3.89795813], dist=4.25m
+  NED (scaled by 2.0): pos=[1.64650919 0.51630266 0.03785516]
+       rpy(deg)=[-84.69178985  -0.16748284 117.11112462]
+  [OK] Saved scan frame 1/5
+  [OK] Saved scan frame 2/5
+  [OK] Saved scan frame 3/5
+  [OK] Saved scan frame 4/5
+  [OK] Saved scan frame 5/5
+  [OK] Window detected at: [1.64650919 0.51630266 0.03785516]
+  Stored component score: 11185 for next VERIFY
+  [SUCCESS] Window found while exploring RIGHT at Y=+0.192!
+
+[OK] Window 2 complete!
+
+======================================================================
+WINDOW 3 / 4
+======================================================================
+Flow: SCAN → FIX_YAW → ALIGN → VERIFY → APPROACH → RECENTER
+
+============================================================
+[SKILL: SCAN] Type: initial
+============================================================
+  Generated 5 scan waypoints
+    Frame 1/5
+    Frame 2/5
+    Frame 3/5
+    Frame 4/5
+    Frame 5/5
+  Detecting window...
+
+=== SCANNING FOR WINDOW (initial_window2_scan11) ===
+  Generated 5 scan waypoints
+    Frame 1/5
+    Frame 2/5
+    Frame 3/5
+    Frame 4/5
+    Frame 5/5
+
+  Detecting window...
+  Original frame size: 2752x2064
+  Downsampled to: 512x512
+  Computing standard optical flow (first[OK]last frame)...
+    Flow first[OK]last: range [4.0, 34.4], mean 13.8
+    Flow range: [3.96, 34.41]
+    Flow mean: 13.76, median: 10.70
+    PERCENTAGE-BASED thresholding:
+      Flow range: 30.45 (from 3.96 to 34.41)
+      Background threshold: 4.12 (18% of range)
+      Hole threshold: 14.01 (36% of range)
+    Pixels in middle flow range (before morphology): 166735 (63.6%)
+    Pixels after morphology: 166705 (63.6%)
+    Found 2 connected components
+      Component 1: REJECTED (size: 150865)
+      Component 2: VALID (area=15829, score=11185)
+    Selected component 2 by SCORE (score=11185) [SCAN mode]
+  Final mask pixels: 342832
+  Center: (2185, 1115), Confidence: 0.201
+  [DEBUG] Saved labeled contour visualization: ./log/detection_initial_window2_scan11_labeled.png
+  [DEBUG] Saved mask-labeled visualization: ./log/detection_initial_window2_scan11_mask_labeled.png
+  [DEBUG] Contour stats (idx, area, centroid):
+    - 0: area=341602, centroid=(2185, 1115)
+  [OK] Saved visualization to ./log/detection_initial_window2_scan11.png
+   SAVED DETECTION VISUALIZATION: ./log/detection_initial_window2_scan11.png 
+      File size: 2133873 bytes
+    Saved flow frame: ./log/frames/frame_0229.png
+    Saved mask frame: ./log/frames/frame_0230.png
+    Saved detection frame: ./log/frames/frame_0231.png
+  Window at pixel (2185, 1115) (conf: 0.201)
+
+  Estimating pose with PnP...
+  Using frame 0 as reference
+  Mask shape: (2064, 2752)
+  Image shape: (2064, 2752, 3)
+  Mask has 342832 nonzero pixels
+  extract_window_corners: mask shape = (2064, 2752), dtype = float32
+    mask range: [0.000, 1.000]
+    nonzero pixels: 342832
+    Found 1 contours
+    Contour areas: [341602.0]
+    Using largest contour: area = 341602 pixels
+    Polygon approximation: 4 vertices
+    Perfect quadrilateral found!
+    Raw corners: [[2483  827]
+ [1871  867]
+ [1866 1354]
+ [2483 1414]]
+    Ordered corners: [[1866 1354]
+ [2483 1414]
+ [2483  827]
+ [1871  867]]
+  Visualization dimensions:
+    Original image: 2752x2064
+    Mask: 2752x2064
+  Saved PnP viz: ./log/pnp_initial_window2_scan11.png
+   SAVED PNP VISUALIZATION: ./log/pnp_initial_window2_scan11.png 
+      File size: 3784279 bytes
+  Camera frame: t=[1.69180268 0.18801551 3.89795813], dist=4.25m
+  NED (scaled by 2.0): pos=[1.64650919 0.51630266 0.03785516]
+       rpy(deg)=[-84.69178985  -0.16748284 117.11112462]
+  [OK] Saved scan frame 1/5
+  [OK] Saved scan frame 2/5
+  [OK] Saved scan frame 3/5
+  [OK] Saved scan frame 4/5
+  [OK] Saved scan frame 5/5
+  [OK] Window detected at: [1.64650919 0.51630266 0.03785516]
+  Stored component score: 11185 for next VERIFY
+
+Yaw check: current=-1.0°, desired=22.5°, error=23.5°
+  Yaw hint: 23.5° (RIGHT)
+  Running FIX_YAW (error > 5°)
+
+============================================================
+[SKILL: FIX_YAW]
+============================================================
+  Yaw iter 0: Yaw=-0.0Ã‚Â°, Error=23.5Ã‚Â°
+  Yaw iter 6: Yaw=6.0Ã‚Â°, Error=17.5Ã‚Â°
+  Yaw iter 12: Yaw=12.0Ã‚Â°, Error=11.5Ã‚Â°
+  Yaw iter 18: Yaw=18.0Ã‚Â°, Error=5.5Ã‚Â°
+  [OK] Yaw aligned after 23 iterations
+
+======================================================================
+[ALIGN-VERIFY CHECK]
+======================================================================
+      Projected pixel: [1390.5, 1111.3]
+Post-yaw error: 80.7px
+  Needs refinement (80.7px > 25px)
+  Running ALIGN-VERIFY cycles
+
+  --- Cycle 1/3 ---
+
+  [SKILL: ALIGN]
+      Projected pixel: [1390.5, 1111.3]
+    Current error: (+14.5, +79.3)px, mag=80.7px
+    Depth from height: h_px=537.0px -> Z=0.224 splat units
+    Corrections: Y=+0.0017, Z=+0.0099
+    [OK] Moved to [0.8611311  0.19327196 0.01015199]
+
+  [SKILL: VERIFY] Cycle 0 - Re-scanning...
+      Projected pixel: [1387.2, 1090.5]
+    Target pixel (projected from expected position): (1387, 1090)
+    Previous component score: 11185
+    Will match closest component by score (HIGHEST PRIORITY)
+
+============================================================
+[SKILL: SCAN] Type: verify_c0
+============================================================
+  Generated 5 scan waypoints
+    Frame 1/5
+    Frame 2/5
+    Frame 3/5
+    Frame 4/5
+    Frame 5/5
+  Detecting window...
+
+=== SCANNING FOR WINDOW (verify_c0_window2_scan12) ===
+  Generated 5 scan waypoints
+    Frame 1/5
+    Frame 2/5
+    Frame 3/5
+    Frame 4/5
+    Frame 5/5
+
+  Detecting window...
+  Original frame size: 2752x2064
+  Downsampled to: 512x512
+  Computing standard optical flow (first[OK]last frame)...
+    Flow first[OK]last: range [4.2, 26.4], mean 14.5
+    Flow range: [4.25, 26.45]
+    Flow mean: 14.53, median: 13.47
+    PERCENTAGE-BASED thresholding:
+      Flow range: 22.20 (from 4.25 to 26.45)
+      Background threshold: 4.36 (18% of range)
+      Hole threshold: 11.57 (36% of range)
+    Pixels in middle flow range (before morphology): 96110 (36.7%)
+    Pixels after morphology: 95978 (36.6%)
+    Found 3 connected components
+      Component 1: REJECTED (at edge)
+      Component 2: VALID (area=10197, score=9615)
+      Component 3: REJECTED (size: 17)
+    Selected component 2 by SCORE MATCHING
+      Target score: 11185
+      Matched score: 9615
+      Distance: 1570
+      Area: 10197
+  Final mask pixels: 220965
+  Center: (1535, 1052), Confidence: 0.130
+  [DEBUG] Saved labeled contour visualization: ./log/detection_verify_c0_window2_scan12_labeled.png
+  [DEBUG] Saved mask-labeled visualization: ./log/detection_verify_c0_window2_scan12_mask_labeled.png
+  [DEBUG] Contour stats (idx, area, centroid):
+    - 0: area=219972, centroid=(1535, 1053)
+  [OK] Saved visualization to ./log/detection_verify_c0_window2_scan12.png
+   SAVED DETECTION VISUALIZATION: ./log/detection_verify_c0_window2_scan12.png 
+      File size: 2063942 bytes
+    Saved flow frame: ./log/frames/frame_0260.png
+    Saved mask frame: ./log/frames/frame_0261.png
+    Saved detection frame: ./log/frames/frame_0262.png
+  Window at pixel (1535, 1052) (conf: 0.130)
+
+  Estimating pose with PnP...
+  Using frame 0 as reference
+  Mask shape: (2064, 2752)
+  Image shape: (2064, 2752, 3)
+  Mask has 220965 nonzero pixels
+  extract_window_corners: mask shape = (2064, 2752), dtype = float32
+    mask range: [0.000, 1.000]
+    nonzero pixels: 220965
+    Found 1 contours
+    Contour areas: [219972.0]
+    Using largest contour: area = 219972 pixels
+    Polygon approximation: 4 vertices
+    Perfect quadrilateral found!
+    Raw corners: [[1296  831]
+ [1301 1281]
+ [1762 1285]
+ [1762  815]]
+    Ordered corners: [[1301 1281]
+ [1762 1285]
+ [1762  815]
+ [1296  831]]
+  Visualization dimensions:
+    Original image: 2752x2064
+    Mask: 2752x2064
+  Saved PnP viz: ./log/pnp_verify_c0_window2_scan12.png
+   SAVED PNP VISUALIZATION: ./log/pnp_verify_c0_window2_scan12.png 
+      File size: 3706762 bytes
+  Camera frame: t=[0.39007411 0.05716385 4.66303386], dist=4.68m
+  NED (scaled by 2.0): pos=[1.69660417 0.61496669 0.02158476]
+       rpy(deg)=[-88.02594168   0.51610332 120.24840741]
+  [OK] Saved scan frame 1/5
+  [OK] Saved scan frame 2/5
+  [OK] Saved scan frame 3/5
+  [OK] Saved scan frame 4/5
+  [OK] Saved scan frame 5/5
+  [OK] Window detected at: [1.69660417 0.61496669 0.02158476]
+  Stored component score: 9615 for next VERIFY
+    Position drift: 0.112 splat units
+      Projected pixel: [1526.0, 1054.0]
+    Alignment error: (+150.0, +22.0)px, mag=151.6px
+    [CONTINUE] Need more alignment
+  [CONTINUE] error=151.6px
+
+  --- Cycle 2/3 ---
+
+  [SKILL: ALIGN]
+      Projected pixel: [1526.0, 1054.0]
+    Current error: (+150.0, +22.0)px, mag=151.6px
+    Depth from height: h_px=460.0px -> Z=0.261 splat units
+    Corrections: Y=+0.0203, Z=+0.0032
+    [OK] Moved to [0.8611311  0.21353009 0.01335389]
+
+  [SKILL: VERIFY] Cycle 1 - Re-scanning...
+      Projected pixel: [1490.8, 1048.0]
+    Target pixel (projected from expected position): (1490, 1047)
+    Previous component score: 9615
+    Will match closest component by score (HIGHEST PRIORITY)
+
+============================================================
+[SKILL: SCAN] Type: verify_c1
+============================================================
+  Generated 5 scan waypoints
+    Frame 1/5
+    Frame 2/5
+    Frame 3/5
+    Frame 4/5
+    Frame 5/5
+  Detecting window...
+
+=== SCANNING FOR WINDOW (verify_c1_window2_scan13) ===
+  Generated 5 scan waypoints
+    Frame 1/5
+    Frame 2/5
+    Frame 3/5
+    Frame 4/5
+    Frame 5/5
+
+  Detecting window...
+  Original frame size: 2752x2064
+  Downsampled to: 512x512
+  Computing standard optical flow (first[OK]last frame)...
+    Flow first[OK]last: range [3.8, 27.4], mean 15.1
+    Flow range: [3.81, 27.41]
+    Flow mean: 15.09, median: 13.91
+    PERCENTAGE-BASED thresholding:
+      Flow range: 23.60 (from 3.81 to 27.41)
+      Background threshold: 3.93 (18% of range)
+      Hole threshold: 11.60 (36% of range)
+    Pixels in middle flow range (before morphology): 92228 (35.2%)
+    Pixels after morphology: 92173 (35.2%)
+    Found 3 connected components
+      Component 1: REJECTED (at edge)
+      Component 2: VALID (area=10994, score=10756)
+      Component 3: REJECTED (bad aspect: 0.18)
+    Selected component 2 by SCORE MATCHING
+      Target score: 9615
+      Matched score: 10756
+      Distance: 1141
+      Area: 10994
+  Final mask pixels: 237646
+  Center: (1437, 1036), Confidence: 0.139
+  [DEBUG] Saved labeled contour visualization: ./log/detection_verify_c1_window2_scan13_labeled.png
+  [DEBUG] Saved mask-labeled visualization: ./log/detection_verify_c1_window2_scan13_mask_labeled.png
+  [DEBUG] Contour stats (idx, area, centroid):
+    - 0: area=236655, centroid=(1437, 1036)
+  [OK] Saved visualization to ./log/detection_verify_c1_window2_scan13.png
+   SAVED DETECTION VISUALIZATION: ./log/detection_verify_c1_window2_scan13.png 
+      File size: 2049953 bytes
+    Saved flow frame: ./log/frames/frame_0269.png
+    Saved mask frame: ./log/frames/frame_0270.png
+    Saved detection frame: ./log/frames/frame_0271.png
+  Window at pixel (1437, 1036) (conf: 0.139)
+
+  Estimating pose with PnP...
+  Using frame 0 as reference
+  Mask shape: (2064, 2752)
+  Image shape: (2064, 2752, 3)
+  Mask has 237646 nonzero pixels
+  extract_window_corners: mask shape = (2064, 2752), dtype = float32
+    mask range: [0.000, 1.000]
+    nonzero pixels: 237646
+    Found 1 contours
+    Contour areas: [236655.0]
+    Using largest contour: area = 236655 pixels
+    Polygon approximation: 4 vertices
+    Perfect quadrilateral found!
+    Raw corners: [[1194  803]
+ [1204 1273]
+ [1676 1285]
+ [1676  799]]
+    Ordered corners: [[1204 1273]
+ [1676 1285]
+ [1676  799]
+ [1194  803]]
+  Visualization dimensions:
+    Original image: 2752x2064
+    Mask: 2752x2064
+  Saved PnP viz: ./log/pnp_verify_c1_window2_scan13.png
+   SAVED PNP VISUALIZATION: ./log/pnp_verify_c1_window2_scan13.png 
+      File size: 3706567 bytes
+  Camera frame: t=[0.14178411 0.0278642  4.48222497], dist=4.48m
+  NED (scaled by 2.0): pos=[1.68167777 0.57563628 0.01892673]
+       rpy(deg)=[-84.30954893  -0.25099039 120.61311687]
+  [OK] Saved scan frame 1/5
+  [OK] Saved scan frame 2/5
+  [OK] Saved scan frame 3/5
+  [OK] Saved scan frame 4/5
+  [OK] Saved scan frame 5/5
+  [OK] Window detected at: [1.68167777 0.57563628 0.01892673]
+  Stored component score: 10756 for next VERIFY
+    Position drift: 0.042 splat units
+      Projected pixel: [1432.7, 1043.1]
+    Alignment error: (+56.7, +11.1)px, mag=57.8px
+    [CONTINUE] Need more alignment
+  [CONTINUE] error=57.8px
+
+  --- Cycle 3/3 ---
+
+  [SKILL: ALIGN]
+      Projected pixel: [1432.7, 1043.1]
+    Current error: (+56.7, +11.1)px, mag=57.8px
+    Depth from height: h_px=478.0px -> Z=0.251 splat units
+    Corrections: Y=+0.0074, Z=+0.0016
+    [OK] Moved to [0.8611311  0.22090208 0.01491645]
+
+  [SKILL: VERIFY] Cycle 2 - Re-scanning...
+      Projected pixel: [1419.2, 1040.0]
+    Target pixel (projected from expected position): (1419, 1040)
+    Previous component score: 10756
+    Will match closest component by score (HIGHEST PRIORITY)
+
+============================================================
+[SKILL: SCAN] Type: verify_c2
+============================================================
+  Generated 5 scan waypoints
+    Frame 1/5
+    Frame 2/5
+    Frame 3/5
+    Frame 4/5
+    Frame 5/5
+  Detecting window...
+
+=== SCANNING FOR WINDOW (verify_c2_window2_scan14) ===
+  Generated 5 scan waypoints
+    Frame 1/5
+    Frame 2/5
+    Frame 3/5
+    Frame 4/5
+    Frame 5/5
+
+  Detecting window...
+  Original frame size: 2752x2064
+  Downsampled to: 512x512
+  Computing standard optical flow (first[OK]last frame)...
+    Flow first[OK]last: range [4.0, 28.2], mean 15.3
+    Flow range: [4.03, 28.22]
+    Flow mean: 15.30, median: 14.12
+    PERCENTAGE-BASED thresholding:
+      Flow range: 24.19 (from 4.03 to 28.22)
+      Background threshold: 4.15 (18% of range)
+      Hole threshold: 12.02 (36% of range)
+    Pixels in middle flow range (before morphology): 97643 (37.2%)
+    Pixels after morphology: 97755 (37.3%)
+    Found 2 connected components
+      Component 1: REJECTED (at edge)
+      Component 2: VALID (area=11109, score=11004)
+    Selected component 2 by SCORE MATCHING
+      Target score: 10756
+      Matched score: 11004
+      Distance: 247
+      Area: 11109
+  Final mask pixels: 241073
+  Center: (1404, 1026), Confidence: 0.141
+  [DEBUG] Saved labeled contour visualization: ./log/detection_verify_c2_window2_scan14_labeled.png
+  [DEBUG] Saved mask-labeled visualization: ./log/detection_verify_c2_window2_scan14_mask_labeled.png
+  [DEBUG] Contour stats (idx, area, centroid):
+    - 0: area=242911, centroid=(1404, 1026)
+  [OK] Saved visualization to ./log/detection_verify_c2_window2_scan14.png
+   SAVED DETECTION VISUALIZATION: ./log/detection_verify_c2_window2_scan14.png 
+      File size: 2044514 bytes
+    Saved flow frame: ./log/frames/frame_0278.png
+    Saved mask frame: ./log/frames/frame_0279.png
+    Saved detection frame: ./log/frames/frame_0280.png
+  Window at pixel (1404, 1026) (conf: 0.141)
+
+  Estimating pose with PnP...
+  Using frame 0 as reference
+  Mask shape: (2064, 2752)
+  Image shape: (2064, 2752, 3)
+  Mask has 241073 nonzero pixels
+  extract_window_corners: mask shape = (2064, 2752), dtype = float32
+    mask range: [0.000, 1.000]
+    nonzero pixels: 241073
+    Found 1 contours
+    Contour areas: [242911.0]
+    Using largest contour: area = 242911 pixels
+    Polygon approximation: 4 vertices
+    Perfect quadrilateral found!
+    Raw corners: [[1161  787]
+ [1167 1265]
+ [1639 1277]
+ [1644  783]]
+    Ordered corners: [[1167 1265]
+ [1639 1277]
+ [1644  783]
+ [1161  787]]
+  Visualization dimensions:
+    Original image: 2752x2064
+    Mask: 2752x2064
+  Saved PnP viz: ./log/pnp_verify_c2_window2_scan14.png
+   SAVED PNP VISUALIZATION: ./log/pnp_verify_c2_window2_scan14.png 
+      File size: 3706126 bytes
+  Camera frame: t=[ 0.05337251 -0.00447959  4.43998517], dist=4.44m
+  NED (scaled by 2.0): pos=[1.68046887 0.56344885 0.01402053]
+       rpy(deg)=[-86.09466569  -0.50713753 121.18541914]
+  [OK] Saved scan frame 1/5
+  [OK] Saved scan frame 2/5
+  [OK] Saved scan frame 3/5
+  [OK] Saved scan frame 4/5
+  [OK] Saved scan frame 5/5
+  [OK] Window detected at: [1.68046887 0.56344885 0.01402053]
+  Stored component score: 11004 for next VERIFY
+    Position drift: 0.013 splat units
+      Projected pixel: [1397.6, 1030.2]
+    Alignment error: (+21.6, -1.8)px, mag=21.6px
+    [OK] Aligned (error < 50px)
+  [CONVERGED] error=21.6px
+
+============================================================
+[SKILL: APPROACH] - Geometric Forward Stepping
+============================================================
+      Projected pixel: [1397.6, 1030.2]
+  Pre-approach pixel error: 21.6px
+  Distance to window: 0.888 splat units
+  Current yaw: 22.0 deg
+  Forward direction (NED): [+0.927, +0.375, +0.000]
+  Moving 1.038 splat units forward in 20 steps
+  Step size: 0.030 splat units
+  Using reduced collision radius: 0.020 splat units
+
+  Getting initial window detection baseline...
+  Original frame size: 2752x2064
+  Downsampled to: 512x512
+  Computing standard optical flow (first[OK]last frame)...
+    Flow first[OK]last: range [4.0, 28.2], mean 15.3
+    Flow range: [4.03, 28.22]
+    Flow mean: 15.30, median: 14.12
+    PERCENTAGE-BASED thresholding:
+      Flow range: 24.19 (from 4.03 to 28.22)
+      Background threshold: 4.15 (18% of range)
+      Hole threshold: 12.02 (36% of range)
+    Pixels in middle flow range (before morphology): 97643 (37.2%)
+    Pixels after morphology: 97755 (37.3%)
+    Found 2 connected components
+      Component 1: REJECTED (at edge)
+      Component 2: VALID (area=11109, score=11004)
+    Selected component 2 by SCORE (score=11004) [SCAN mode]
+  Final mask pixels: 241073
+  Center: (1404, 1026), Confidence: 0.141
+  Initial window area: 241073 pixels
+  Step 1/20: pos=[0.88894661 0.23214028 0.01491645]
+  Step 2/20: pos=[0.91676213 0.24337848 0.01491645]
+  Step 3/20: pos=[0.94457765 0.25461667 0.01491645]
+  Step 4/20: pos=[0.97239316 0.26585487 0.01491645]
+
+  [VERIFY] Checking window detection at step 4...
+  Original frame size: 2752x2064
+  Downsampled to: 512x512
+  Computing standard optical flow (first[OK]last frame)...
+    Flow first[OK]last: range [4.7, 55.0], mean 32.7
+    Flow range: [4.69, 55.01]
+    Flow mean: 32.71, median: 45.96
+    PERCENTAGE-BASED thresholding:
+      Flow range: 50.33 (from 4.69 to 55.01)
+      Background threshold: 4.94 (18% of range)
+      Hole threshold: 21.29 (36% of range)
+    Pixels in middle flow range (before morphology): 109604 (41.8%)
+    Pixels after morphology: 109750 (41.9%)
+    Found 3 connected components
+      Component 1: REJECTED (at edge)
+      Component 2: REJECTED (at edge)
+      Component 3: VALID (area=38510, score=37542)
+    Selected component 3 by SCORE (score=37542) [SCAN mode]
+  Final mask pixels: 834333
+  Center: (1447, 1023), Confidence: 0.490
+    Current window area: 834333 pixels
+    New peak area: 834333 pixels
+    Area ratio from peak: 1.00
+    Peak area was: 834333 pixels
+    [CONTINUE] Window area at 100% of peak, continuing
+  Step 5/20: pos=[1.00020868 0.27709307 0.01491645]
+  Step 6/20: pos=[1.02802419 0.28833127 0.01491645]
+  Step 7/20: pos=[1.05583971 0.29956946 0.01491645]
+  Step 8/20: pos=[1.08365522 0.31080766 0.01491645]
+
+  [VERIFY] Checking window detection at step 8...
+  Original frame size: 2752x2064
+  Downsampled to: 512x512
+  Computing standard optical flow (first[OK]last frame)...
+    Flow first[OK]last: range [5.3, 28.1], mean 14.9
+    Flow range: [5.29, 28.14]
+    Flow mean: 14.87, median: 14.44
+    PERCENTAGE-BASED thresholding:
+      Flow range: 22.85 (from 5.29 to 28.14)
+      Background threshold: 5.40 (18% of range)
+      Hole threshold: 12.83 (36% of range)
+    Pixels in middle flow range (before morphology): 88159 (33.6%)
+    Pixels after morphology: 88466 (33.7%)
+    Found 4 connected components
+      Component 1: REJECTED (at edge)
+      Component 2: REJECTED (at edge)
+      Component 3: REJECTED (size: 22)
+      Component 4: VALID (area=928, score=526)
+    Selected component 4 by SCORE (score=526) [SCAN mode]
+  Final mask pixels: 20097
+  Center: (185, 1202), Confidence: 0.012
+    Current window area: 20097 pixels
+    Area ratio from peak: 0.02
+    Peak area was: 834333 pixels
+    [CONTINUE] Window area at 2% of peak, continuing
+  Step 9/20: pos=[1.11147074 0.32204586 0.01491645]
+  Step 10/20: pos=[1.13928625 0.33328406 0.01491645]
+  Step 11/20: pos=[1.16710177 0.34452226 0.01491645]
+  Step 12/20: pos=[1.19491729 0.35576045 0.01491645]
+
+  [VERIFY] Checking window detection at step 12...
+  Original frame size: 2752x2064
+  Downsampled to: 512x512
+  Computing standard optical flow (first[OK]last frame)...
+    Flow first[OK]last: range [5.7, 29.2], mean 16.7
+    Flow range: [5.74, 29.24]
+    Flow mean: 16.73, median: 18.06
+    PERCENTAGE-BASED thresholding:
+      Flow range: 23.50 (from 5.74 to 29.24)
+      Background threshold: 5.86 (18% of range)
+      Hole threshold: 13.50 (36% of range)
+    Pixels in middle flow range (before morphology): 70702 (27.0%)
+    Pixels after morphology: 70727 (27.0%)
+    Found 1 connected components
+      Component 1: REJECTED (at edge)
+    No valid components found!
+  Final mask pixels: 0
+  Center: None, Confidence: 0.000
+    Current window area: 0 pixels
+    Area ratio from peak: 0.00
+    Peak area was: 834333 pixels
+    [OK] Window area dropped 100% from peak - passed through!
+    Stopping at step 12/20
+  [OK] Approach complete - moved forward 1.038m
+  Final position (NED): [1.19491729 0.35576045 0.01491645]
+
+  Y displacement: +0.135
+  Came from: RIGHT
+
+============================================================
+[SKILL: RECENTER]
+============================================================
+  Goal: Keep X=1.195 (forward distance traveled), reset Y/Z/RPY to zero
+  Starting pose:
+    Position: [1.195, 0.356, 0.015]
+    RPY (deg): [0.0, 0.0, 22.0]
+
+  [SAFETY] Moving 0.1 splat units forward to clear window 1...
+  Safety movement complete. New position: [1.28763567 0.39322111 0.01491645]
+  Total forward distance: 1.288 splat units
+
+  Now starting lateral/yaw recenter with X=1.288
+  Iter 0: Y=+0.383, Z=+0.005, Yaw=+21.0Ã‚Â° [clear]
+  Iter 1: Y=+0.373, Z=+0.005, Yaw=+20.0Ã‚Â° [clear]
+  Iter 2: Y=+0.363, Z=+0.005, Yaw=+19.0Ã‚Â° [clear]
+  Iter 3: Y=+0.353, Z=+0.005, Yaw=+18.0Ã‚Â° [clear]
+  Iter 4: Y=+0.343, Z=+0.005, Yaw=+17.0Ã‚Â° [clear]
+  Iter 5: Y=+0.333, Z=+0.005, Yaw=+16.0Ã‚Â° [clear]
+  Iter 6: Y=+0.323, Z=+0.005, Yaw=+15.0Ã‚Â° [clear]
+  Iter 7: Y=+0.313, Z=+0.005, Yaw=+14.0Ã‚Â° [clear]
+  Iter 8: Y=+0.303, Z=+0.005, Yaw=+13.0Ã‚Â° [clear]
+  Iter 9: Y=+0.293, Z=+0.005, Yaw=+12.0Ã‚Â° [clear]
+  Iter 10: Y=+0.283, Z=+0.005, Yaw=+11.0Ã‚Â° [clear]
+  Iter 11: Y=+0.273, Z=+0.005, Yaw=+10.0Ã‚Â° [clear]
+  Iter 12: Y=+0.263, Z=+0.005, Yaw=+9.0Ã‚Â° [clear]
+  Iter 13: Y=+0.253, Z=+0.005, Yaw=+8.0Ã‚Â° [clear]
+  Iter 14: Y=+0.243, Z=+0.005, Yaw=+7.0Ã‚Â° [clear]
+  Iter 15: Y=+0.233, Z=+0.005, Yaw=+6.0Ã‚Â° [clear]
+  Iter 16: Y=+0.223, Z=+0.005, Yaw=+5.0Ã‚Â° [clear]
+  Iter 17: Y=+0.213, Z=+0.005, Yaw=+4.0Ã‚Â° [clear]
+  Iter 18: Y=+0.203, Z=+0.005, Yaw=+3.0Ã‚Â° [clear]
+  Iter 19: Y=+0.193, Z=+0.005, Yaw=+2.0Ã‚Â° [clear]
+  Iter 20: Y=+0.183, Z=+0.005, Yaw=+1.0Ã‚Â° [clear]
+  Iter 21: Y=+0.173, Z=+0.005, Yaw=+1.0Ã‚Â° [clear]
+  Iter 22: Y=+0.163, Z=+0.005, Yaw=+1.0Ã‚Â° [clear]
+  Iter 23: Y=+0.153, Z=+0.005, Yaw=+1.0Ã‚Â° [clear]
+  Iter 24: Y=+0.143, Z=+0.005, Yaw=+1.0Ã‚Â° [clear]
+  Iter 25: Y=+0.133, Z=+0.005, Yaw=+1.0Ã‚Â° [clear]
+  Iter 26: Y=+0.123, Z=+0.005, Yaw=+1.0Ã‚Â° [clear]
+  Iter 27: Y=+0.113, Z=+0.005, Yaw=+1.0Ã‚Â° [clear]
+  Iter 28: Y=+0.103, Z=+0.005, Yaw=+1.0Ã‚Â° [clear]
+  [COLLISION] Iteration 29: Detected at position [1.28763567 0.09322111 0.00491645]
+    Y=+0.093, Z=+0.005
+    This means we're hitting window 1 while moving back to centerline!
+  Iter 29: Y=+0.093, Z=+0.005, Yaw=+1.0Ã‚Â° [COLLISION]
+  [COLLISION] Iteration 30: Detected at position [1.28763567 0.08322111 0.00491645]
+    Y=+0.083, Z=+0.005
+    This means we're hitting window 1 while moving back to centerline!
+  Iter 30: Y=+0.083, Z=+0.005, Yaw=+1.0Ã‚Â° [COLLISION]
+  [COLLISION] Iteration 31: Detected at position [1.28763567 0.07322111 0.00491645]
+    Y=+0.073, Z=+0.005
+    This means we're hitting window 1 while moving back to centerline!
+  Iter 31: Y=+0.073, Z=+0.005, Yaw=+1.0Ã‚Â° [COLLISION]
+  [COLLISION] Iteration 32: Detected at position [1.28763567 0.06322111 0.00491645]
+    Y=+0.063, Z=+0.005
+    This means we're hitting window 1 while moving back to centerline!
+  Iter 32: Y=+0.063, Z=+0.005, Yaw=+1.0Ã‚Â° [COLLISION]
+  [COLLISION] Iteration 33: Detected at position [1.28763567 0.05322111 0.00491645]
+    Y=+0.053, Z=+0.005
+    This means we're hitting window 1 while moving back to centerline!
+  Iter 33: Y=+0.053, Z=+0.005, Yaw=+1.0Ã‚Â° [COLLISION]
+  [COLLISION] Iteration 34: Detected at position [1.28763567 0.04322111 0.00491645]
+    Y=+0.043, Z=+0.005
+    This means we're hitting window 1 while moving back to centerline!
+  Iter 34: Y=+0.043, Z=+0.005, Yaw=+1.0Ã‚Â° [COLLISION]
+  [COLLISION] Iteration 35: Detected at position [1.28763567 0.03322111 0.00491645]
+    Y=+0.033, Z=+0.005
+    This means we're hitting window 1 while moving back to centerline!
+  Iter 35: Y=+0.033, Z=+0.005, Yaw=+1.0Ã‚Â° [COLLISION]
+  [COLLISION] Iteration 36: Detected at position [1.28763567 0.02322111 0.00491645]
+    Y=+0.023, Z=+0.005
+    This means we're hitting window 1 while moving back to centerline!
+  Iter 36: Y=+0.023, Z=+0.005, Yaw=+1.0Ã‚Â° [COLLISION]
+  [COLLISION] Iteration 37: Detected at position [1.28763567 0.01322111 0.00491645]
+    Y=+0.013, Z=+0.005
+    This means we're hitting window 1 while moving back to centerline!
+  Iter 37: Y=+0.013, Z=+0.005, Yaw=+1.0Ã‚Â° [COLLISION]
+  [COLLISION] Iteration 38: Detected at position [1.28763567 0.00322111 0.00491645]
+    Y=+0.003, Z=+0.005
+    This means we're hitting window 1 while moving back to centerline!
+  Iter 38: Y=+0.003, Z=+0.005, Yaw=+1.0Ã‚Â° [COLLISION]
+  [OK] Recentered after 39 iterations
+  Final pose:
+    Position: [1.288, 0.003, 0.005]
+    RPY (deg): [0.0, 0.0, 1.0]
+  [OK] Recenter complete
+
+======================================================================
+[CHECKING FOR NEXT WINDOW]
+======================================================================
+
+============================================================
+[SKILL: SCAN] Type: lookahead
+============================================================
+  Generated 5 scan waypoints
+    Frame 1/5
+    Frame 2/5
+    Frame 3/5
+    Frame 4/5
+    Frame 5/5
+  Detecting window...
+
+=== SCANNING FOR WINDOW (lookahead_window3_scan15) ===
+  Generated 5 scan waypoints
+    Frame 1/5
+    Frame 2/5
+    Frame 3/5
+    Frame 4/5
+    Frame 5/5
+
+  Detecting window...
+  Original frame size: 2752x2064
+  Downsampled to: 512x512
+  Computing standard optical flow (first[OK]last frame)...
+    Flow first[OK]last: range [6.5, 43.8], mean 23.4
+    Flow range: [6.52, 43.84]
+    Flow mean: 23.37, median: 23.87
+    PERCENTAGE-BASED thresholding:
+      Flow range: 37.32 (from 6.52 to 43.84)
+      Background threshold: 6.70 (18% of range)
+      Hole threshold: 18.83 (36% of range)
+    Pixels in middle flow range (before morphology): 94548 (36.1%)
+    Pixels after morphology: 95144 (36.3%)
+    Found 5 connected components
+      Component 1: REJECTED (at edge)
+      Component 2: VALID (area=6516, score=5682)
+      Component 3: REJECTED (at edge)
+      Component 4: VALID (area=1099, score=881)
+      Component 5: REJECTED (at edge)
+    Selected component 2 by LARGEST SCORE (score=5682) [Window 4 mode]
+  Final mask pixels: 141318
+  Center: (1731, 893), Confidence: 0.083
+  [DEBUG] Saved labeled contour visualization: ./log/detection_lookahead_window3_scan15_labeled.png
+  [DEBUG] Saved mask-labeled visualization: ./log/detection_lookahead_window3_scan15_mask_labeled.png
+  [DEBUG] Contour stats (idx, area, centroid):
+    - 0: area=140353, centroid=(1730, 893)
+  [OK] Saved visualization to ./log/detection_lookahead_window3_scan15.png
+   SAVED DETECTION VISUALIZATION: ./log/detection_lookahead_window3_scan15.png 
+      File size: 2242690 bytes
+    Saved flow frame: ./log/frames/frame_0348.png
+    Saved mask frame: ./log/frames/frame_0349.png
+    Saved detection frame: ./log/frames/frame_0350.png
+  Window at pixel (1731, 893) (conf: 0.083)
+
+  [WINDOW 4] Irregular shape - using hybrid flow + projection tracking
+  Initial distance estimate: 1.500 splat units
+  Initial position estimate
+  Center pixel: (1731, 893)
+  Pixel offset from center: (+355, -139)px
+  Angular offset: (+11.2, -4.4)°
+  Estimated window position: [ 2.77783805  0.32057275 -0.11100593]
+  [OK] Saved scan frame 1/5
+  [OK] Saved scan frame 2/5
+  [OK] Saved scan frame 3/5
+  [OK] Saved scan frame 4/5
+  [OK] Saved scan frame 5/5
+  [OK] Window detected at: [ 2.77783805  0.32057275 -0.11100593]
+  Stored component score: 5682 for next VERIFY
+  [OK] Next window visible
+
+[OK] Window 3 complete!
+
+======================================================================
+WINDOW 4 / 4
+======================================================================
+Flow: SCAN → FIX_YAW → ALIGN → VERIFY → APPROACH → RECENTER
+
+============================================================
+[SKILL: SCAN] Type: initial
+============================================================
+  Generated 5 scan waypoints
+    Frame 1/5
+    Frame 2/5
+    Frame 3/5
+    Frame 4/5
+    Frame 5/5
+  Detecting window...
+
+=== SCANNING FOR WINDOW (initial_window3_scan16) ===
+  Generated 5 scan waypoints
+    Frame 1/5
+    Frame 2/5
+    Frame 3/5
+    Frame 4/5
+    Frame 5/5
+
+  Detecting window...
+  Original frame size: 2752x2064
+  Downsampled to: 512x512
+  Computing standard optical flow (first[OK]last frame)...
+    Flow first[OK]last: range [6.5, 43.8], mean 23.4
+    Flow range: [6.52, 43.84]
+    Flow mean: 23.37, median: 23.87
+    PERCENTAGE-BASED thresholding:
+      Flow range: 37.32 (from 6.52 to 43.84)
+      Background threshold: 6.70 (18% of range)
+      Hole threshold: 18.83 (36% of range)
+    Pixels in middle flow range (before morphology): 94548 (36.1%)
+    Pixels after morphology: 95144 (36.3%)
+    Found 5 connected components
+      Component 1: REJECTED (at edge)
+      Component 2: VALID (area=6516, score=5682)
+      Component 3: REJECTED (at edge)
+      Component 4: VALID (area=1099, score=881)
+      Component 5: REJECTED (at edge)
+    Selected component 2 by LARGEST SCORE (score=5682) [Window 4 mode]
+  Final mask pixels: 141318
+  Center: (1731, 893), Confidence: 0.083
+  [DEBUG] Saved labeled contour visualization: ./log/detection_initial_window3_scan16_labeled.png
+  [DEBUG] Saved mask-labeled visualization: ./log/detection_initial_window3_scan16_mask_labeled.png
+  [DEBUG] Contour stats (idx, area, centroid):
+    - 0: area=140353, centroid=(1730, 893)
+  [OK] Saved visualization to ./log/detection_initial_window3_scan16.png
+   SAVED DETECTION VISUALIZATION: ./log/detection_initial_window3_scan16.png 
+      File size: 2242690 bytes
+    Saved flow frame: ./log/frames/frame_0356.png
+    Saved mask frame: ./log/frames/frame_0357.png
+    Saved detection frame: ./log/frames/frame_0358.png
+  Window at pixel (1731, 893) (conf: 0.083)
+
+  [WINDOW 4] Irregular shape - using hybrid flow + projection tracking
+  Distance to tracked position: 1.528 splat units
+  Smoothed position update
+  Center pixel: (1731, 893)
+  Pixel offset from center: (+355, -139)px
+  Angular offset: (+11.2, -4.4)°
+  Estimated window position: [ 2.78618993  0.32235136 -0.11165562]
+  [OK] Saved scan frame 1/5
+  [OK] Saved scan frame 2/5
+  [OK] Saved scan frame 3/5
+  [OK] Saved scan frame 4/5
+  [OK] Saved scan frame 5/5
+  [OK] Window detected at: [ 2.78618993  0.32235136 -0.11165562]
+  Stored component score: 5682 for next VERIFY
+
+[WINDOW 4] Skipping FIX_YAW - irregular shape
+
+======================================================================
+[ALIGN-VERIFY CHECK]
+======================================================================
+[WINDOW 4] Single alignment pass
+
+  [SKILL: ALIGN - PROJECTION-TRACKED for Window 4]
+    Using tracked window 4 position: [ 2.78618993  0.32235136 -0.11165562]
+      Projected pixel: [1725.3, 893.0]
+    Projection-based error: (+349.3, -139.0)px, mag=375.9px
+    Corrections: Y=+0.0465, Z=-0.0185
+    [WARN] Correction would cause collision, skipping
+  Alignment error: 375.9px
+  Proceeding to APPROACH
+
+============================================================
+[SKILL: APPROACH - PROJECTION-TRACKED for Window 4]
+============================================================
+  Current yaw: 1.0 deg
+  Forward direction (NED): [0.9998477  0.01745241 0.        ]
+  Target window position: [ 2.78618993  0.32235136 -0.11165562]
+  Initial distance to window: 1.537 splat units
+  Moving forward with projection-based centering
+  Total planned distance: 1.84, Steps: 20, Step size: 0.020
+  Applying window 4 offset: Y=+0.02, Z=+0.02
+  New position after offset: [1.28763567 0.02322111 0.02491645]
+      Projected pixel: [1724.7, 857.5]
+  Step 5: Dist=1.436, Error=389.9px
+    [RECENTER] Error > 80px, adjusting...
+    Applied correction: Y=+0.0300, Z=-0.0300
+      Projected pixel: [1710.3, 885.3]
+  Step 10: Dist=1.330, Error=365.1px
+    [RECENTER] Error > 80px, adjusting...
+    Applied correction: Y=+0.0300, Z=-0.0300
+      Projected pixel: [1693.5, 917.8]
+  Step 15: Dist=1.224, Error=337.5px
+    [RECENTER] Error > 80px, adjusting...
+    Applied correction: Y=+0.0300, Z=-0.0300
+      Projected pixel: [1673.7, 956.2]
+  Step 20: Dist=1.118, Error=307.2px
+    [RECENTER] Error > 80px, adjusting...
+    Applied correction: Y=+0.0300, Z=-0.0300
+  [OK] Projection-tracked approach complete
+  Final position: [ 1.68757475  0.15020208 -0.09508355]
+  Minimum distance reached: 1.118 splat units
+
+  Y displacement: +0.147
+  Came from: RIGHT
+
+============================================================
+[SKILL: RECENTER]
+============================================================
+  Goal: Keep X=1.688 (forward distance traveled), reset Y/Z/RPY to zero
+  Starting pose:
+    Position: [1.688, 0.150, -0.095]
+    RPY (deg): [0.0, 0.0, 1.0]
+
+  [SAFETY] Moving 0.1 splat units forward to clear window 1...
+  Safety movement complete. New position: [ 1.78755952  0.15194732 -0.09508355]
+  Total forward distance: 1.788 splat units
+
+  Now starting lateral/yaw recenter with X=1.788
+  Iter 0: Y=+0.142, Z=-0.085, Yaw=+1.0Ã‚Â° [clear]
+  Iter 1: Y=+0.132, Z=-0.075, Yaw=+1.0Ã‚Â° [clear]
+  Iter 2: Y=+0.122, Z=-0.065, Yaw=+1.0Ã‚Â° [clear]
+  [COLLISION] Iteration 3: Detected at position [ 1.78755952  0.11194732 -0.05508355]
+    Y=+0.112, Z=-0.055
+    This means we're hitting window 1 while moving back to centerline!
+  Iter 3: Y=+0.112, Z=-0.055, Yaw=+1.0Ã‚Â° [COLLISION]
+  [COLLISION] Iteration 4: Detected at position [ 1.78755952  0.10194732 -0.04508355]
+    Y=+0.102, Z=-0.045
+    This means we're hitting window 1 while moving back to centerline!
+  Iter 4: Y=+0.102, Z=-0.045, Yaw=+1.0Ã‚Â° [COLLISION]
+  [COLLISION] Iteration 5: Detected at position [ 1.78755952  0.09194732 -0.03508355]
+    Y=+0.092, Z=-0.035
+    This means we're hitting window 1 while moving back to centerline!
+  Iter 5: Y=+0.092, Z=-0.035, Yaw=+1.0Ã‚Â° [COLLISION]
+  [COLLISION] Iteration 6: Detected at position [ 1.78755952  0.08194732 -0.02508355]
+    Y=+0.082, Z=-0.025
+    This means we're hitting window 1 while moving back to centerline!
+  Iter 6: Y=+0.082, Z=-0.025, Yaw=+1.0Ã‚Â° [COLLISION]
+  [COLLISION] Iteration 7: Detected at position [ 1.78755952  0.07194732 -0.01508355]
+    Y=+0.072, Z=-0.015
+    This means we're hitting window 1 while moving back to centerline!
+  Iter 7: Y=+0.072, Z=-0.015, Yaw=+1.0Ã‚Â° [COLLISION]
+  [COLLISION] Iteration 8: Detected at position [ 1.78755952  0.06194732 -0.00508355]
+    Y=+0.062, Z=-0.005
+    This means we're hitting window 1 while moving back to centerline!
+  Iter 8: Y=+0.062, Z=-0.005, Yaw=+1.0Ã‚Â° [COLLISION]
+  [COLLISION] Iteration 9: Detected at position [ 1.78755952  0.05194732 -0.00508355]
+    Y=+0.052, Z=-0.005
+    This means we're hitting window 1 while moving back to centerline!
+  Iter 9: Y=+0.052, Z=-0.005, Yaw=+1.0Ã‚Â° [COLLISION]
+  [COLLISION] Iteration 10: Detected at position [ 1.78755952  0.04194732 -0.00508355]
+    Y=+0.042, Z=-0.005
+    This means we're hitting window 1 while moving back to centerline!
+  Iter 10: Y=+0.042, Z=-0.005, Yaw=+1.0Ã‚Â° [COLLISION]
+  [COLLISION] Iteration 11: Detected at position [ 1.78755952  0.03194732 -0.00508355]
+    Y=+0.032, Z=-0.005
+    This means we're hitting window 1 while moving back to centerline!
+  Iter 11: Y=+0.032, Z=-0.005, Yaw=+1.0Ã‚Â° [COLLISION]
+  [COLLISION] Iteration 12: Detected at position [ 1.78755952  0.02194732 -0.00508355]
+    Y=+0.022, Z=-0.005
+    This means we're hitting window 1 while moving back to centerline!
+  Iter 12: Y=+0.022, Z=-0.005, Yaw=+1.0Ã‚Â° [COLLISION]
+  [COLLISION] Iteration 13: Detected at position [ 1.78755952  0.01194732 -0.00508355]
+    Y=+0.012, Z=-0.005
+    This means we're hitting window 1 while moving back to centerline!
+  Iter 13: Y=+0.012, Z=-0.005, Yaw=+1.0Ã‚Â° [COLLISION]
+  [COLLISION] Iteration 14: Detected at position [ 1.78755952  0.00194732 -0.00508355]
+    Y=+0.002, Z=-0.005
+    This means we're hitting window 1 while moving back to centerline!
+  Iter 14: Y=+0.002, Z=-0.005, Yaw=+1.0Ã‚Â° [COLLISION]
+  [OK] Recentered after 15 iterations
+  Final pose:
+    Position: [1.788, 0.002, -0.005]
+    RPY (deg): [0.0, 0.0, 1.0]
+  [OK] Recenter complete
+
+======================================================================
+[WINDOW 4 COMPLETE - TURNING BACK 180°]
+======================================================================
+
+============================================================
+[SKILL: TURNBACK]
+============================================================
+  Current yaw: 1.0°
+  Target yaw: -179.0°
+  Rotating 180 degrees...
+  Iteration 0: Yaw=-1.0°
+  Iteration 10: Yaw=-21.0°
+  Iteration 20: Yaw=-41.0°
+  Iteration 30: Yaw=-61.0°
+  Iteration 40: Yaw=-81.0°
+  Iteration 50: Yaw=-101.0°
+  Iteration 60: Yaw=-121.0°
+  Iteration 70: Yaw=-141.0°
+  Iteration 80: Yaw=-161.0°
+  [OK] Turned 180° after 90 iterations
+  Final yaw: -179.0°
+
+============================================================
+[RETURN SKILL: RECENTER_RETURN]
+============================================================
+  Goal: Keep X=1.788, reset Y/Z to zero, maintain 180° yaw
+  Starting: [1.788, 0.002, -0.005]
+  [OK] Recentered after 0 iterations
+  Final: [1.688, 0.000, -0.005]
+  Final yaw: -179.0° (target: 180°)
+  [OK] Return recenter complete
+
+[OK] Window 4 complete! Ready for return journey.
+
+[FORWARD JOURNEY COMPLETE]
+
+[OK] Forward journey complete
+  Final position: [ 1.68757475e+00  2.02075556e-04 -5.08354818e-03]
+  Final yaw: -179.0°
+
+Saved 422 frames to ./log/frames/
+
+======================================================================
+GENERATING VIDEO
+======================================================================
+  Creating video from 422 frames...
+  [OK] Video saved: ./log/navigation_video.mp4
+
+======================================================================
+NAVIGATION COMPLETE
+  Windows passed: 4
+======================================================================
+
